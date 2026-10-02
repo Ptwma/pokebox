@@ -214,7 +214,7 @@ export function createFieldBattle(ctx) {
     async start(spec) {
       const mine = myTeam(); if (!mine.length) { hooks.toast?.('You have no Pokémon cards yet — Dr. Vale in Lumen Harbor can help.'); return { result: 'none' }; }
       let enemy;
-      if (spec.kind === 'wild') enemy = [fighter(DB.cards[spec.wild.card.i], .8 + QS.Q().ch * .05 + Math.random() * .08)];
+      if (spec.kind === 'wild') enemy = [fighter(DB.cards[spec.wild.card.i], .8 + Math.max(QS.Q().ch, QS.tierAt(spec.wild.x, spec.wild.z)) * .05 + QS.dangerAt(spec.wild.x, spec.wild.z) * .09 + Math.random() * .08)];
       if (spec.kind === 'wild' && storyCapture(spec.wild.card)) enemy[0].minHp = 1; // a story capture can't be wasted by knocking the Echo out
       else if (spec.mirror) enemy = mine.map(f => fighter(f.card, 1.15));
       else enemy = trainerTeam(spec.npc.key, spec.npc.trainer);

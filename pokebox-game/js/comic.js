@@ -39,7 +39,7 @@ const COMMON = /* glsl */`
 function patch(sh, m) {
   if (sh.vertexShader.includes('varying vec3 vCW;')) return; // already patched (shared/copied onBeforeCompile)
   Object.assign(sh.uniforms, CU);
-  const world = m.userData.comicWorld ? 1 : 0, fol = m.userData.foliage ? 1 : 0;
+  const world = m.userData.comicWorld ? 1 : 0, fol = m.userData.foliage ? 1 : 0, act = m.userData.actor ? 1 : 0;
   sh.vertexShader = 'varying vec3 vCW; varying vec3 vCC;\n' + sh.vertexShader.replace('#include <project_vertex>', `
     { vec4 cw = vec4(transformed, 1.); vec4 co = vec4(0., 0., 0., 1.);
       #ifdef USE_INSTANCING
@@ -63,7 +63,7 @@ function patch(sh, m) {
       float ndl = ${fol ? 'dot(normalize(N * .4 + (viewMatrix * vec4(0., 1., 0., 0.)).xyz), L) * .7 + .35' : 'dot(N, L)'};
       float shT = smoothstep(.2, .8, sh); ${fol ? 'shT = .55 + .45 * shT;' : ''}
       // anime ramp: crisp terminator, a thin warm transition band, saturated cool shadows that keep their hue
-      float lit = smoothstep(-.015, .045, ndl) * shT;
+      float lit = ${act ? 'smoothstep(-.32, -.2, ndl) * mix(1., shT, .65)' : 'smoothstep(-.015, .045, ndl) * shT'};
       float band = smoothstep(-.06, .0, ndl) * (1. - smoothstep(.0, .08, ndl)) * shT;
       vec3 sky = vec3(.55, .62, .8);
       #if NUM_HEMI_LIGHTS > 0
@@ -72,8 +72,9 @@ function patch(sh, m) {
       vec3 tintN = cShadow / max(max(cShadow.r, cShadow.g), max(cShadow.b, .001));
       vec3 shade = alb * mix(vec3(1.), tintN, .55) * cDark * .92 + alb * sky * .16;
       float sl = dot(shade, vec3(.2126, .7152, .0722)); shade = max(mix(vec3(sl), shade, 1.28), 0.);     // shadows stay colourful
+      ${act ? 'shade = alb * mix(vec3(.84, .72, .78), sky * 1.3, .2);   // characters: light, rosy anime shadow (no muddy blue on skin)' : ''}
       vec3 col = mix(shade, alb * sunC * cLit, lit);
-      col += alb * vec3(1., .55, .4) * band * .22;                                                    // warm "subsurface" edge of the terminator
+      col += alb * vec3(1., .55, .4) * band * ${act ? '.0' : '.22'};                                                    // warm "subsurface" edge of the terminator
       vec3 H = normalize(L + V); float gloss = 1. - clamp(roughnessFactor, 0., 1.);
       col += sunC * smoothstep(.95, .975, dot(N, H)) * gloss * .3 * lit;
       float fres = pow(1. - abs(dot(N, V)), 3.);
@@ -150,7 +151,7 @@ export function comicify(m) {
   const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
   m.onBeforeCompile = (sh, r) => { if (prev && prev !== THREE.Material.prototype.onBeforeCompile) prev.call(m, sh, r); patch(sh, m); };
   const base = prevKey && prevKey !== THREE.Material.prototype.customProgramCacheKey ? prevKey.call(m) : '';
-  m.customProgramCacheKey = () => base + '|comic' + (m.userData.comicWorld ? 'W' : '') + (m.userData.foliage ? 'F' : '');
+  m.customProgramCacheKey = () => base + '|comic' + (m.userData.comicWorld ? 'W' : '') + (m.userData.foliage ? 'F' : '') + (m.userData.actor ? 'A' : '');
   m.envMapIntensity = 0; m.needsUpdate = true;
   return m;
 }

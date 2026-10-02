@@ -25,6 +25,8 @@ jobs:
           mkdir -p $W && rsync -a --exclude tools --exclude design --exclude '*.exe' --exclude '*.bat' --exclude '*.vbs' --exclude '*.lnk' pokebox-game/ $W/
           cd pokebox-android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon --warning-mode=summary
           cp app/build/outputs/apk/release/app-release.apk ../Pokebox.apk && ls -la ../Pokebox.apk
+          # guard: the APK must contain the app code (a .gitignore once dropped MainActivity and the app crashed on start)
+          unzip -p ../Pokebox.apk 'classes*.dex' | grep -aq 'Lcom/pokebox/game/MainActivity;' || { echo 'MainActivity missing from APK'; exit 1; }
       - uses: actions/upload-artifact@v4
         with: { name: apk, path: Pokebox.apk, retention-days: 7 }
 

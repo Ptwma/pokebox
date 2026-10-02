@@ -96,6 +96,16 @@ function rigActor(obj, clips, { height }) {
   return { mixer, play, busy: () => oneShot, get current() { return cur; }, has: n => !!act(n) };
 }
 
+/* the character pack is low-poly with hard (per-face) normals: under cel shading every face became its own block.
+   Averaging the normals of vertices that share a position gives smooth, anime-like light bands (done once per geometry). */
+function smoothGeo(geo) {
+  if (!geo || geo.userData.smooth || !geo.attributes.normal) return; geo.userData.smooth = true;
+  const p = geo.attributes.position, n = geo.attributes.normal, acc = new Map(), key = i => `${Math.round(p.getX(i) * 1e4)},${Math.round(p.getY(i) * 1e4)},${Math.round(p.getZ(i) * 1e4)}`;
+  for (let i = 0; i < p.count; i++) { const k = key(i), a = acc.get(k) || [0, 0, 0]; a[0] += n.getX(i); a[1] += n.getY(i); a[2] += n.getZ(i); acc.set(k, a); }
+  for (let i = 0; i < p.count; i++) { const a = acc.get(key(i)), l = Math.hypot(a[0], a[1], a[2]) || 1; n.setXYZ(i, a[0] / l, a[1] / l, a[2] / l); }
+  n.needsUpdate = true;
+}
+
 /* ---------- people */
 const matCache = new Map();
 export const STYLE = { head: 1.3, feet: 1.12 };
@@ -113,14 +123,17 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
     let m = matCache.get(mk);
     if (!m) {
       m = src.clone(); m.roughness = Math.max(.55, m.roughness ?? .8); m.metalness = /Metal|Gold|Visor/i.test(src.name) ? .6 : 0;
-      if (/^Skin/i.test(src.name)) { m.color.set(skin).multiplyScalar(/Darker/i.test(src.name) ? .85 : 1); m.color.offsetHSL(.005, .06, .02); m.roughness = .75; }   // warmer, livelier skin
-      else if (/Hair|Eyebrow|Moustache/i.test(src.name)) { m.color.set(hair).multiplyScalar(/Eyebrow/i.test(src.name) ? .55 : 1); m.color.offsetHSL(0, .1, 0); m.roughness = .45; }  // glossier, saturated hair
-      else if (/^Eye$/i.test(src.name)) { m.color.multiplyScalar(.6); m.roughness = .2; }   // deeper eyes read better at distance
-      else if (src.name === main) { m.color.set(outfit); m.color.offsetHSL(0, .08, 0); }
-      else m.color.offsetHSL(0, .05, 0);
+      // anime palette: clean, slightly pastel colours (no extra saturation — it read as orange skin / plastic clothes)
+      if (/^Skin/i.test(src.name)) { m.color.set(skin).multiplyScalar(/Darker/i.test(src.name) ? .92 : 1); m.color.offsetHSL(0, -.04, .02); m.roughness = 1; }
+      else if (/Hair|Eyebrow|Moustache/i.test(src.name)) { m.color.set(hair).multiplyScalar(/Eyebrow/i.test(src.name) ? .6 : 1); m.roughness = .5; }
+      else if (/^Eye$/i.test(src.name)) { m.color.multiplyScalar(.7); m.roughness = .3; }
+      else if (src.name === main) { m.color.set(outfit); m.color.offsetHSL(0, -.03, .03); m.roughness = .9; }
+      else { m.color.offsetHSL(0, -.06, .04); m.roughness = .9; }
+      m.flatShading = false; m.userData.actor = true;
       matCache.set(mk, m);
     }
     o.material = m; o.castShadow = true; o.receiveShadow = false;
+    smoothGeo(o.geometry);
   });
   // normalise height: measure the bind pose once per model
   let hgt = gltf.userData.h; if (!hgt) { const b = new THREE.Box3().setFromObject(gltf.scene, true); hgt = gltf.userData.h = Math.max(.1, b.max.y - b.min.y); }

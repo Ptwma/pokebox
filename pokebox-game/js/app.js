@@ -727,20 +727,31 @@ async function act(a) {
 }
 
 /* ------------------------------------------------------------------ story scenes (visual-novel style) */
-function playScene(lines, { title } = {}) {
+function playScene(lines, { title, cine, onLine } = {}) {
   return new Promise(res => {
-    const el = $('#scene'); let i = 0, typing = null;
+    const el = $('#scene'); let i = 0, typing = null, done = false;
+    const who2 = who => who === 'you' ? { name: st().name, role: P.item('title', P.ensure().look.title).name, look: P.ensure().look } : P.CAST[who] || { name: who, role: '', look: null };
+    const finish = () => { if (done) return; done = true; clearInterval(typing); el.hidden = true; el.onclick = null; el.classList.remove('cine'); removeEventListener('keydown', key, true); res(); };
+    const type = (pEl, text) => { let k = 0; clearInterval(typing); sfx.tick(); typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16); };
     const show = () => {
-      const [who, text] = lines[i], c = who === 'you' ? { name: st().name, role: P.item('title', P.ensure().look.title).name, look: P.ensure().look } : P.CAST[who];
-      el.innerHTML = `<div class="scbox ${who === 'you' ? 'me' : ''}" style="--i:${i}">${title && i === 0 ? `<div class="sctitle">${esc(title)}</div>` : ''}
-        <div class="scav">${P.avatarSVG(c.look, { size: 170 })}</div>
-        <div class="sctext"><div class="scname"><b>${esc(c.name)}</b><small>${esc(c.role)}</small></div><p id="scP"></p><div class="scnext">${i < lines.length - 1 ? 'Click to continue ▸' : 'Click to close ✓'}</div></div></div>`;
-      const pEl = $('#scP'); let k = 0; clearInterval(typing); sfx.tick();
-      typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16);
-      el.onclick = () => { if (typing) { clearInterval(typing); typing = null; pEl.textContent = text; return; } if (++i < lines.length) show(); else { el.hidden = true; el.onclick = null; removeEventListener('keydown', key); res(); } };
+      const [who, text] = lines[i], c = who2(who);
+      onLine?.(who, i);
+      if (cine) { // Genshin-style: letterbox, no portraits — the 3D actors are on screen; name + subtitle at the bottom
+        if (!el.querySelector('.cdlg')) el.innerHTML = `<div class="lbx t"></div><div class="lbx b"></div><button class="cskip" type="button">Skip ▸▸</button>${title ? `<div class="ctitle">${esc(title)}</div>` : ''}<div class="cdlg"><div class="cname"></div><p id="scP"></p><div class="cnext">▾</div></div>`;
+        const d = el.querySelector('.cdlg'); d.classList.toggle('me', who === 'you'); d.style.animation = 'none'; void d.offsetWidth; d.style.animation = '';
+        d.querySelector('.cname').innerHTML = `<b>${esc(c.name)}</b>${c.role ? `<small>${esc(c.role)}</small>` : ''}`;
+        el.querySelector('.cskip').onclick = e => { e.stopPropagation(); finish(); };
+        type($('#scP'), text);
+      } else {
+        el.innerHTML = `<div class="scbox ${who === 'you' ? 'me' : ''}" style="--i:${i}">${title && i === 0 ? `<div class="sctitle">${esc(title)}</div>` : ''}
+          <div class="scav">${c.look ? P.avatarSVG(c.look, { size: 170 }) : ''}</div>
+          <div class="sctext"><div class="scname"><b>${esc(c.name)}</b><small>${esc(c.role)}</small></div><p id="scP"></p><div class="scnext">${i < lines.length - 1 ? 'Click to continue ▸' : 'Click to close ✓'}</div></div></div>`;
+        type($('#scP'), text);
+      }
+      el.onclick = () => { const pEl = $('#scP'); if (typing) { clearInterval(typing); typing = null; pEl.textContent = text; return; } if (++i < lines.length) show(); else finish(); };
     };
-    const key = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); el.onclick?.(); } };
-    addEventListener('keydown', key); el.hidden = false; show();
+    const key = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); el.onclick?.(); } else if (e.code === 'Escape' && cine) { e.preventDefault(); e.stopImmediatePropagation(); finish(); } };
+    addEventListener('keydown', key, true); el.classList.toggle('cine', !!cine); el.innerHTML = ''; el.hidden = false; show();
   });
 }
 
@@ -879,7 +890,7 @@ function ensureWorld() {
     onStep: st => { if (st) toast(`<b>New objective:</b> ${esc(st.text)}`); worldHud(); },
     onChapter: (ch, idx) => { xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (html) p.innerHTML = html; },
-    onArea: (a) => { areaCard({ kicker: a.sub, name: a.name, sub: 'Wild Echoes · ' + a.echo.join(' / '), color: TYPE_COL[a.echo[0]] || '#ffd257' }); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
+    onArea: (a) => { const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
   $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;

@@ -29,7 +29,7 @@ export const ITEMS = [
   // body type (3D model family) — free
   { id: 'm', slot: 'body', name: 'Build A', u: F }, { id: 'f', slot: 'body', name: 'Build B', u: F },
   // skin — always free
-  ...['#ffe0c7', '#f6cfa9', '#e4b48a', '#c68b62', '#9a6442', '#6e4630'].map((c, i) => ({ id: 'sk' + i, slot: 'skin', name: 'Tone ' + (i + 1), c, u: F })),
+  ...['#ffe8d8', '#fcdcc4', '#f0c6a6', '#d39f7e', '#a8775a', '#74503c'].map((c, i) => ({ id: 'sk' + i, slot: 'skin', name: 'Tone ' + (i + 1), c, u: F })),
   // hair styles
   { id: 'short', slot: 'hair', name: 'Short', u: F }, { id: 'bob', slot: 'hair', name: 'Bob', u: F }, { id: 'long', slot: 'hair', name: 'Long', u: F },
   { id: 'spiky', slot: 'hair', name: 'Spiky', u: { t: 'level', n: 3 } }, { id: 'ponytail', slot: 'hair', name: 'Ponytail', u: { t: 'level', n: 5 } },

@@ -751,3 +751,23 @@ body.game .worldwrap{grid-column:1/-1;grid-row:1/-1}
   background:linear-gradient(100deg,rgba(10,20,40,.2),rgba(10,8,20,.75) 70%),linear-gradient(160deg,#4d8fdc,#79a957 55%,#e6d6a8);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 20px 50px -24px #000;transition:transform .2s}
 .worldhero:hover{transform:translateY(-3px)}
 .worldhero h2{margin:4px 0;font-size:clamp(30px,3.4vw,48px);text-shadow:0 3px 16px rgba(0,0,0,.5)}.worldhero p{margin:0;max-width:560px;opacity:.9}
+
+/* ================= CINEMATIC SCENES (in-world, letterboxed) ================= */
+.scene.cine{background:none;padding:0;align-items:stretch;animation:none}
+.scene.cine .lbx{position:absolute;margin:0;border-radius:0;left:0;right:0;height:11vh;background:#000;z-index:1;animation:cbarIn .6s cubic-bezier(.2,.8,.2,1) both}
+.scene.cine .lbx.t{top:0;transform-origin:top}.scene.cine .lbx.b{bottom:0;transform-origin:bottom}
+@keyframes cbarIn{from{transform:scaleY(0)}}
+.scene.cine .ctitle{position:absolute;top:calc(11vh + 18px);left:0;right:0;text-align:center;font-family:var(--display);font-size:clamp(20px,2.4vw,32px);letter-spacing:.06em;color:#fff;text-shadow:0 2px 16px #000;animation:ctIn 4s ease both;pointer-events:none;z-index:2}
+@keyframes ctIn{0%{opacity:0;transform:translateY(8px)}12%,70%{opacity:1;transform:none}100%{opacity:0}}
+.scene.cine .cskip{position:absolute;top:calc(11vh + 14px + var(--st,0px));right:calc(18px + var(--sr,0px));z-index:3;padding:7px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);color:#fff;font:600 13px var(--ui);cursor:pointer}
+.scene.cine .cskip:hover{background:rgba(0,0,0,.7)}
+.scene.cine .cdlg{position:absolute;left:50%;bottom:calc(11vh + 14px);transform:translateX(-50%);width:min(900px,92vw);z-index:2;text-align:center;padding:16px 26px 12px;background:linear-gradient(90deg,transparent,rgba(8,8,16,.72) 18%,rgba(8,8,16,.72) 82%,transparent);animation:cdIn .35s ease both}
+@keyframes cdIn{from{opacity:0;transform:translate(-50%,8px)}}
+.scene.cine .cname{display:flex;justify-content:center;align-items:baseline;gap:10px;margin-bottom:4px}
+.scene.cine .cname b{font-family:var(--display);font-weight:400;font-size:clamp(18px,2vw,24px);color:var(--gold);letter-spacing:.04em}
+.scene.cine .cdlg.me .cname b{color:#8fd8ff}
+.scene.cine .cname small{color:rgba(255,255,255,.6);font-size:12px}
+.scene.cine .cdlg p{margin:0 auto;max-width:760px;font-size:clamp(15px,1.6vw,19px);line-height:1.5;color:#fff;text-shadow:0 1px 3px #000;min-height:3em}
+.scene.cine .cnext{color:var(--gold);font-size:14px;animation:pulse 1.2s infinite}
+body.cine-on .wtl,body.cine-on .wtr,body.cine-on .wpet,body.cine-on .wprompt,body.cine-on .whelp,body.cine-on .wtouch,body.cine-on header,body.cine-on .rail{opacity:0!important;pointer-events:none!important;transition:opacity .4s}
+@media (max-height:520px){.scene.cine .lbx{height:8vh}.scene.cine .cdlg{bottom:calc(8vh + 6px);padding:8px 16px 6px}.scene.cine .cdlg p{min-height:2.6em;font-size:14px}.scene.cine .ctitle{top:calc(8vh + 8px)}.scene.cine .cskip{top:calc(8vh + 8px)}}

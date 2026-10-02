@@ -118,7 +118,7 @@ export function createWorld(canvas, hooks = {}) {
   const worldRoot = new THREE.Group(), terrainRoot = new THREE.Group(), actorsRoot = new THREE.Group(); scene.add(worldRoot, terrainRoot, actorsRoot);
   const towns = {}, npcs = [], wilds = [], allItems = [], allVillagers = [];
   const keys = {}, cam = { yaw: Math.PI, pitch: .26, dist: 5.6, tYaw: Math.PI, tDist: 5.6, idle: 0 }; // Genshin-like: close, chest height, low pitch
-  let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null;
+  let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null, cineCam = null;
   const perf = { n: 0, s: 0 };
   function applyQuality() {
     quality = hooks.quality?.() || quality;
@@ -529,6 +529,7 @@ export function createWorld(canvas, hooks = {}) {
   const gateObjs = [];
   function buildGates() {
     for (const G of GATES) {
+      if (G.flag !== 'gate-cw') continue; // the world is open: only the Champion's causeway stays sealed
       const r = ROUTES.find(q => q.id === G.route), p = routePoint(r, G.at), g = new THREE.Group(), rot = Math.atan2(p.dx, p.dz);
       const wood = new THREE.MeshStandardMaterial({ color: '#7a5634', roughness: .9 }), stripe = new THREE.MeshStandardMaterial({ color: '#f2c230', roughness: .6 });
       for (let k = -3; k <= 3; k++) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.12, .14, 1.6, 8), wood); post.position.set(k * 1.6, .8, 0); g.add(post); }
@@ -696,9 +697,9 @@ export function createWorld(canvas, hooks = {}) {
   }
   function detectPlace(pp, nr) {
     const q = QS.Q();
-    if (nr.d < 70) { if (!q.visited[nr.id]) { q.visited[nr.id] = Date.now(); } if (lastRegion !== nr.id) { lastRegion = nr.id; lastRoute = null; const a = AREAS[nr.id]; hooks.onArea?.({ name: a.name, sub: a.sub, echo: a.echo, id: nr.id }); swapFx(nr.id); } }
+    if (nr.d < 70) { if (!q.visited[nr.id]) { q.visited[nr.id] = Date.now(); } if (lastRegion !== nr.id) { lastRegion = nr.id; lastRoute = null; const a = AREAS[nr.id]; hooks.onArea?.({ name: a.name, sub: a.sub, echo: a.echo, id: nr.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nr.id); } }
     else { let best = null, bd = 16; for (const r of ROUTES) { const d = segDist(pp.x, pp.z, r.pts); if (d < bd) { bd = d; best = r; } }
-      if (best && lastRoute !== best.id) { lastRoute = best.id; lastRegion = null; hooks.onArea?.({ name: best.name, sub: best.sub, echo: A.echo, route: true, id: best.id }); swapFx(nearestRegion(pp.x, pp.z).id); } }
+      if (best && lastRoute !== best.id) { lastRoute = best.id; lastRegion = null; hooks.onArea?.({ name: best.name, sub: best.sub, echo: A.echo, route: true, id: best.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nearestRegion(pp.x, pp.z).id); } }
   }
   function swapFx(id) {
     if (fxId === id) return; fxId = id;
@@ -765,7 +766,7 @@ export function createWorld(canvas, hooks = {}) {
     const st = QS.stepNow(), isStoryBattle = st?.kind === 'battle' && st.npc === id, isStoryTalk = st?.kind === 'talk' && st.npc === id;
     let lines = np.routeTrainer ? [[id, np.routeTrainer.line]] : QS.npcLines(id);
     if (np.routeTrainer && QS.beaten(np.key)) lines = [[id, 'Good battle earlier! The next town is further along the road.']];
-    if (lines.length) await hooks.talk?.(lines);
+    if (lines.length) await cineTalk(lines);
     if (isStoryTalk) { P.track('talk', { id }); storyEvent('talk', { id }); }
     if (np.shop) { hooks.go?.('#shop'); return; }
     const canFight = np.trainer && (isStoryBattle || (np.routeTrainer && !QS.beaten(np.key)) || (!np.routeTrainer && QS.beaten(np.key)));
@@ -774,6 +775,64 @@ export function createWorld(canvas, hooks = {}) {
   }
   function faceTo(a, x, z) { if (!a) return; const p = a.group.position; a.group.rotation.y = Math.atan2(x - p.x, z - p.z); }
   function savePos() { if (!player) return; const p = player.group.position; P.ensure().world.pos = { v2: 1, x: p.x, z: p.z }; }
+
+  /* ---------- cinematic dialogue (Genshin-style): letterbox, the camera cuts between the people who speak */
+  const cv1 = new THREE.Vector3(), cv2 = new THREE.Vector3(), cv3 = new THREE.Vector3();
+  async function cineTalk(lines, o = {}) {
+    if (!player || mode !== 'explore' || battleCam || !lines?.length) return hooks.talk?.(lines, o);
+    const pp = player.group.position, fwdP = new THREE.Vector3(Math.sin(player.group.rotation.y), 0, Math.cos(player.group.rotation.y));
+    const actors = { you: player.ch || player }, moved = [];
+    const ids = [...new Set(lines.map(l => l[0]).filter(w => w !== 'you'))];
+    ids.forEach((id, k) => {
+      const cand = npcs.filter(n => n.id === id && id !== 'glyph').sort((a, b) => Math.hypot(a.x - pp.x, a.z - pp.z) - Math.hypot(b.x - pp.x, b.z - pp.z))[0];
+      if (!cand) return;
+      if (Math.hypot(cand.x - pp.x, cand.z - pp.z) > 4.5) { // the speaker is elsewhere: they walk up for the scene (put back afterwards)
+        const g = cand.ch.group, side = ids.length > 1 ? (k % 2 ? -1 : 1) * .9 : 0, nx = pp.x + fwdP.x * 2.8 - fwdP.z * side, nz = pp.z + fwdP.z * 2.8 + fwdP.x * side;
+        moved.push({ n: cand, x: cand.x, z: cand.z, ry: g.rotation.y });
+        cand.x = nx; cand.z = nz; g.position.set(nx, H(nx, nz), nz); g.visible = true;
+      }
+      actors[id] = cand.ch;
+    });
+    const posOf = (w, out) => { const a = actors[w]?.group || player.group; return out.copy(a.position); };
+    const cast = Object.keys(actors), mid = new THREE.Vector3(); for (const w of cast) mid.add(posOf(w, cv1)); mid.multiplyScalar(1 / cast.length);
+    for (const w of cast) { const a = actors[w]; if (!a?.group) continue; const others = cast.filter(x => x !== w); if (!others.length) continue; posOf(others[0], cv1); faceTo(a, cv1.x, cv1.z); }
+    for (const n of npcs) { if (n.tag) n.tag.visible = false; if (n.mk) n.mk.visible = false; } beacon.visible = false;
+    const busy0 = busy; busy = true; player.vel?.set(0, 0, 0); player.locomote?.(0); document.body.classList.add('cine-on');
+    const cp = new THREE.Vector3().copy(camera.position), ct = new THREE.Vector3(), want = new THREE.Vector3(), wantT = new THREE.Vector3(); let shotT = 0, shot = 'est', cur = 'you', prev = 'you', first = true;
+    camera.getWorldDirection(ct); ct.multiplyScalar(6).add(camera.position);
+    const baseYaw = Math.atan2(camera.position.x - mid.x, camera.position.z - mid.z);
+    const fov0 = camera.fov;
+    cineCam = (c, dt) => {
+      shotT += dt;
+      if (shot === 'est') { // establishing: slow orbit around the group
+        const a = baseYaw + shotT * .07, r = 7.5 - Math.min(1.5, shotT * .3);
+        want.set(mid.x + Math.sin(a) * r, 0, mid.z + Math.cos(a) * r); want.y = Math.max(H(want.x, want.z) + 1.2, mid.y + 2.6);
+        wantT.set(mid.x, mid.y + 1.3, mid.z);
+      } else { // over the listener's shoulder, onto the speaker's face; slow push-in
+        posOf(cur, cv1); posOf(prev === cur ? (cast.find(w => w !== cur) || 'you') : prev, cv2);
+        cv3.subVectors(cv1, cv2).setY(0); const len = cv3.length() || 1; cv3.multiplyScalar(1 / len);
+        const sideX = -cv3.z, sideZ = cv3.x, sh = (cast.indexOf(cur) % 2 ? -1 : 1) * .75, back = 1.5 - Math.min(.35, shotT * .06);
+        if (cur === prev || cast.length < 2) { want.set(cv1.x + Math.sin(player.group.rotation.y + .6) * 3.2, 0, cv1.z + Math.cos(player.group.rotation.y + .6) * 3.2); }
+        else want.set(cv2.x - cv3.x * back + sideX * sh, 0, cv2.z - cv3.z * back + sideZ * sh);
+        want.y = Math.max(H(want.x, want.z) + .8, cv2.y + 1.75);
+        wantT.set(cv1.x, cv1.y + 1.55, cv1.z);
+      }
+      const k = first ? 1 : Math.min(1, dt * (shotT < .5 ? 5 : 2)); first = false;
+      cp.lerp(want, k); ct.lerp(wantT, k); c.position.copy(cp); c.lookAt(ct);
+      if (c.fov !== 42) { c.fov += (42 - c.fov) * Math.min(1, dt * 3); c.updateProjectionMatrix(); }
+    };
+    try {
+      await hooks.talk?.(lines, { ...o, cine: true, onLine: (who, i) => {
+        const nw = actors[who] ? who : cur;
+        if (i === 0 && (o.title || lines.length > 2)) { shot = 'est'; shotT = 0; cur = nw; setTimeout(() => { if (shot === 'est' && cineCam) { shot = 'ots'; shotT = 0; } }, 2600); }
+        else { if (nw !== cur) { prev = cur; cur = nw; } shot = 'ots'; shotT = 0; first = true; }
+        const a = actors[nw]; if (a?.play && nw !== 'you' && Math.random() < .5) a.play(Math.random() < .5 ? 'Wave' : 'Interact', .25, { once: true });
+      } });
+    } finally {
+      cineCam = null; camera.fov = fov0; camera.updateProjectionMatrix(); snap = true; document.body.classList.remove('cine-on'); busy = busy0; for (const n of npcs) { if (n.tag) n.tag.visible = true; if (n.mk) n.mk.visible = true; } goalT = 0;
+      for (const m of moved) { m.n.x = m.x; m.n.z = m.z; m.n.ch.group.position.set(m.x, H(m.x, m.z), m.z); m.n.ch.group.rotation.y = m.ry; }
+    }
+  }
 
   /* ---------- story glue */
   let storyBusy = false;
@@ -784,15 +843,15 @@ export function createWorld(canvas, hooks = {}) {
   }
   async function chapterDone(chIdx) {
     const ch = QS.STORY[chIdx]; hooks.sfx?.('win');
-    if (ch.outro) await hooks.talk?.(ch.outro, { title: `Chapter complete — ${ch.title}` });
+    if (ch.outro) await cineTalk(ch.outro, { title: `Chapter complete — ${ch.title}` });
     hooks.onChapter?.(ch, chIdx); refreshNPCs(); setTimeout(runStoryAuto, 600);
   }
   async function runStoryAuto() { // steps that play by themselves
     if (paused) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
     if (storyBusy || mode !== 'explore') return; const st = QS.stepNow(); if (!st) return;
-    if (st.kind === 'scene') { storyBusy = true; await hooks.talk?.(st.lines, { title: QS.chapterNow().title }); storyBusy = false; storyEvent('scene', {}); }
+    if (st.kind === 'scene') { storyBusy = true; await cineTalk(st.lines, { title: QS.chapterNow().title }); storyBusy = false; storyEvent('scene', {}); }
     else if (st.kind === 'starter') { storyBusy = true; const i = await hooks.chooseStarter?.(); storyBusy = false; if (i != null) { storyEvent('starter', { i }); spawnCompanions(); } }
-    else if (st.kind === 'capture' && st.lines && !st._told) { st._told = true; await hooks.talk?.(st.lines); }
+    else if (st.kind === 'capture' && st.lines && !st._told) { st._told = true; await cineTalk(st.lines); }
   }
   /* ---------- battles in the world */
   const FB = createFieldBattle({ THREE, scene, camera, H, hooks, makeCardPet, label,
@@ -848,7 +907,7 @@ export function createWorld(canvas, hooks = {}) {
       player.vel.lerp(mv.multiplyScalar(speed), Math.min(1, dt * (onGround ? 10 : 3)));
       const nx = pp.x + player.vel.x * dt, nz = pp.z + player.vel.z * dt, hn = H(nx, nz), ho = H(pp.x, pp.z), st = Math.hypot(nx - pp.x, nz - pp.z) || 1e-4;
       const why = QS.blockedAt(nx, nz);
-      if (why) { player.vel.multiplyScalar(0); if (blockMsgT <= 0) { blockMsgT = 3; const G = GATES.find(g => g.route === why); hooks.toast?.(G ? G.text : 'You can\'t go that way yet.'); } }
+      if (why) { player.vel.multiplyScalar(0); if (blockMsgT <= 0) { blockMsgT = 3; const G = GATES.find(g => g.route === why); hooks.toast?.(why === 'starter' ? 'Rho: "Whoa — not without a partner Echo! Dr. Vale is at the Lab."' : G ? G.text : 'You can\'t go that way yet.'); } }
       else if (hn > -.55 && (hn - ho) / st < 1.25) { pp.x = nx; pp.z = nz; } else player.vel.multiplyScalar(.2);
       blockMsgT -= dt;
       collide(pp);
@@ -863,7 +922,8 @@ export function createWorld(canvas, hooks = {}) {
     if (sky) { sky.position.copy(camera.position); sky.userData.tick(t); }
     if (fxP) fxP.userData.tick(t, pp); if (rainP) rainP.userData.tick(t, pp);
     // camera
-    if (battleCam) battleCam(camera, dt);
+    if (cineCam) cineCam(camera, dt);
+    else if (battleCam) battleCam(camera, dt);
     else {
       // soft auto-follow: when the player runs and the camera has not been touched for a moment, ease in behind them
       cam.idle += dt; const spd = Math.hypot(player.vel.x, player.vel.z);
@@ -1002,7 +1062,7 @@ export function createWorld(canvas, hooks = {}) {
     enter, start, stop, resize, refreshLook, refreshPartner: spawnCompanions, refreshPet: spawnCompanions, refreshStory() { refreshNPCs(); runStoryAuto(); },
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
-    get pet() { return pet; }, get ready() { return !!player && built; }, get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, get mode() { return mode; },
+    get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, get mode() { return mode; },
     get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, decorLog }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },

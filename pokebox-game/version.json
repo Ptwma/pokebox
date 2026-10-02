@@ -1,12 +1,12 @@
 {
-  "version": "2.5.0",
+  "version": "2.6.0",
   "launcher": "2.1",
-  "minApk": 4,
+  "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "The game now starts in the open world — cards, binder, shop and battles live inside the new Lattice device (Esc / menu button)",
-    "Lattice: your trainer card, seals, current objective, team and all card apps in one screen, world pauses while it is open",
-    "Every card screen has a '◀ Veyra' button that takes you straight back where you were",
-    "Story scenes no longer pop up while the Lattice is open"
+    "Android: fixed the app closing right after start (the app code was missing from the 2.4 APK) — download the new Pokebox.apk",
+    "Open world: no more ROAD CLOSED walls — go anywhere; areas ahead of the story have much stronger wild Echoes (danger warning)",
+    "Story scenes are now cinematic: letterbox, the camera cuts between the people talking, Skip button",
+    "Characters: smooth anime shading instead of blocky facets, softer skin and outfit colours"
   ]
 }
