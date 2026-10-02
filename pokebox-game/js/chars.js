@@ -13,15 +13,17 @@ import { addInkHull, applyComic } from './comic.js';
 const DIR = new URL('../assets/', import.meta.url).href;
 export const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
 
-// outfit -> [male model, female model]
+// outfit -> [male model, female model] — anime trainers built in Blender (tools/blender_chars.py) on the Quaternius rigs,
+// so they keep all 10 animations. Old Quaternius models stay in chars/men|women for reference only.
 const OUTFIT = {
-  tee: ['Casual_2', 'Casual'], hoodie: ['Casual_Hoodie', 'Punk'], jacket: ['Punk', 'Medieval'], ranger: ['Adventurer', 'Adventurer'],
-  labcoat: ['Suit', 'Suit'], robe: ['King', 'Witch'], scarf: ['Farmer', 'Formal'], bomber: ['Swat', 'Soldier'],
-  crew: ['Worker', 'Worker'], relay: ['Spacesuit', 'SciFi'], summer: ['Beach', 'Casual'],
+  tee: ['m_tee', 'f_tee'], hoodie: ['m_hoodie', 'f_hoodie'], jacket: ['m_jacket', 'f_jacket'], ranger: ['m_vest', 'f_vest'],
+  labcoat: ['m_coat', 'f_coat'], robe: ['m_coat', 'f_coat'], scarf: ['m_jacket', 'f_skirt'], bomber: ['m_jacket', 'f_jacket'],
+  crew: ['m_vest', 'f_vest'], relay: ['m_hoodie', 'f_hoodie'], summer: ['m_tee', 'f_skirt'],
 };
 const HIDE = /Pistol|Sword/i;
-const NOT_OUTFIT = /Skin|^Eye|Hair|Eyebrow|Moustache|Earring|Visor|Metal|Gold/i;
-export const modelFor = L => { const o = OUTFIT[L.top] || OUTFIT.tee; return (L.body === 'f' ? 'chars/women/' : 'chars/men/') + o[L.body === 'f' ? 1 : 0]; };
+const NOT_OUTFIT = /Skin|^Eye|Hair|Eyebrow|Moustache|Earring|Visor|Metal|Gold|Pupil|Mouth|Blush|Inner|Belt|Buckle|Sole|Shoes|Pants|Skirt/i;
+export const modelFor = L => { const o = OUTFIT[L.top] || OUTFIT.tee; return 'chars/anime/' + o[L.body === 'f' ? 1 : 0]; };
+const ANIME = p => p.startsWith('chars/anime/');
 
 const cache = new Map();
 export function loadGLB(path) {
@@ -49,6 +51,7 @@ function outfitMaterial(path, scene) {
     const m = o.material; if (NOT_OUTFIT.test(m.name)) return;
     tally[m.name] = (tally[m.name] || 0) + (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
   });
+  if (tally.Outfit || (() => { let f = false; scene.traverse(o => { if (o.material?.name === 'Outfit') f = true; }); return f; })()) { mainMat.set(path, 'Outfit'); return 'Outfit'; }
   const best = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || null; mainMat.set(path, best); return best;
 }
 
@@ -141,14 +144,16 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   let head = null; obj.traverse(o => { if (!head && o.isBone && /^Head$/i.test(o.name)) head = o; });
   const hatId = hat && hat !== 'model' ? hat : L.hat;
   if (head) {
-    obj.updateMatrixWorld(true); head.getWorldScale(tmpS); const hs = .285 * height / 2.3 / tmpS.x; // head units -> bone space (1 unit ≈ head width)
-    const mount = new THREE.Group(); mount.scale.setScalar(hs); mount.position.set(0, .2 * height / 2.3 / tmpS.y, .01 / tmpS.z); head.add(mount);
+    obj.updateMatrixWorld(true); head.getWorldScale(tmpS); const an = ANIME(path), hs = .285 * (an ? 1.43 : 1) * height / 2.3 / tmpS.x; // head units -> bone space (1 unit ≈ head width)
+    const mount = new THREE.Group(); mount.scale.setScalar(hs); mount.position.set(0, (an ? .29 : .2) * height / 2.3 / tmpS.y, (an ? .02 : .01) / tmpS.z); head.add(mount);
     if (HAT[hatId] && !/King|Witch|Worker|Farmer|Swat|Spacesuit/.test(path)) mount.add(HAT[hatId](L.top === 'labcoat' ? '#3d8fd6' : outfit));
     if (L.acc && L.acc !== 'none' && !/Spacesuit|Swat/.test(path)) { const a = accessory(L.acc); a.position.y = -.38; mount.add(a); }
   }
   // anime / Pokémon-trainer proportions: bigger head (hats & accessories ride along), slightly bigger feet
-  if (head) head.scale.setScalar(STYLE.head);
-  obj.traverse(o => { if (o.isBone && /^Foot\./.test(o.name)) o.scale.setScalar(STYLE.feet); });
+  if (!ANIME(path)) { // the anime trainers are modelled with these proportions already
+    if (head) head.scale.setScalar(STYLE.head);
+    obj.traverse(o => { if (o.isBone && /^Foot\./.test(o.name)) o.scale.setScalar(STYLE.feet); });
+  }
   applyComic(obj); addInkHull(obj);
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .2, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   const R = rigActor(obj, gltf.animations, { height });

@@ -1,12 +1,11 @@
 {
-  "version": "2.6.0",
+  "version": "2.7.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Android: fixed the app closing right after start (the app code was missing from the 2.4 APK) — download the new Pokebox.apk",
-    "Open world: no more ROAD CLOSED walls — go anywhere; areas ahead of the story have much stronger wild Echoes (danger warning)",
-    "Story scenes are now cinematic: letterbox, the camera cuts between the people talking, Skip button",
-    "Characters: smooth anime shading instead of blocky facets, softer skin and outfit colours"
+    "New anime-style characters made in Blender: big expressive eyes, real hair, smooth shading — 11 outfits for both builds",
+    "Android: the app no longer closes on start (fixed in 2.6 — get the new Pokebox.apk)",
+    "Open world without walls, cinematic story scenes with letterbox and camera cuts"
   ]
 }
