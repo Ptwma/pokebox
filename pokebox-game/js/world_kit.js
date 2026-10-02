@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 
 const DIR = new URL('../assets/world/', import.meta.url).href;
-export const KITS = ['nature', 'pirate', 'village', 'scifi', 'nature_lod']; // nature_lod: the same trees simplified ~8x (far-away LOD)
+export const KITS = ['nature', 'pirate', 'village', 'scifi', 'nature_lod', 'toon_town']; // toon_town: bright Pokémon-style town kit made in Blender (tools/blender_toon_town.py) // nature_lod: the same trees simplified ~8x (far-away LOD)
 const T = {}; // name -> template Object3D
 export const wind = { value: 0 };
 let kitsP = null;
@@ -90,10 +90,28 @@ export function instances(parent, name, list, { shadow = true, tint = null, rece
   return out;
 }
 
+/* ================================================================== toon houses (toon_town kit, one palette material each)
+   footprints in metres (front door at +z): S 5×5 one floor, M 6×6 two floors, L 8×6 two floors */
+const TOON = {
+  S: { w: 5, d: 5, roofs: ['red', 'blue', 'green', 'orange'] },
+  M: { w: 6, d: 6, roofs: ['red', 'blue', 'purple'] },
+  L: { w: 8, d: 6, roofs: ['teal', 'orange'] },
+};
+export const hasToon = () => !!T.TT_House_S_red;
+export function toonHouse(parent, x, y, z, { w = 3, d = 3, floors = 1, rot = 0, seed = 1 } = {}) {
+  const W = w * 2, D = d * 2, size = floors < 2 ? 'S' : Math.max(W, D) <= 6.5 ? 'M' : 'L', spec = TOON[size];
+  const name = `TT_House_${size}_${spec.roofs[Math.abs(seed) % spec.roofs.length]}`;
+  const sc = Math.min(1.35, Math.max(.8, Math.min(W / spec.w, D / spec.d) * 1.08));
+  const o = place(parent, name, x, y - .05, z, { rot, scale: sc }); if (!o) return null;
+  o.userData.radius = Math.hypot(spec.w, spec.d) * sc / 2; o.userData.W = spec.w * sc; o.userData.D = spec.d * sc;
+  return o;
+}
+
 /* ================================================================== modular village house (Medieval Village MegaKit)
    walls are 2 m wide × 3 m tall; outer face = +z of each piece. w,d = modules (2 m each). */
 const ROOFS = { '2x2': 'Roof_RoundTiles_4x4', '2x3': 'Roof_RoundTiles_4x6', '3x3': 'Roof_RoundTiles_6x6', '3x4': 'Roof_RoundTiles_6x8', '4x4': 'Roof_RoundTiles_8x8', '4x5': 'Roof_RoundTiles_8x10' };
 export function house(parent, x, y, z, { w = 3, d = 3, floors = 1, rot = 0, wall = 'Plaster', seed = 1, door = 'front', shutters = true, chimney = true, vines = true, balcony = false } = {}) {
+  if (hasToon()) return toonHouse(parent, x, y, z, { w, d, floors, rot, seed });
   const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = rot; parent.add(g);
   let s = seed; const R = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
   const W = w * 2, D = d * 2;

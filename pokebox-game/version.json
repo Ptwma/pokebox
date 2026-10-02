@@ -1,12 +1,11 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "launcher": "2.1",
   "minApk": 3,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Automatic updates from GitHub (asks before installing)",
-    "Pokebox.exe opens the game directly",
-    "Story fix: capturing a wild Echo now advances the quest",
-    "Route barricades match where the road is really closed"
+    "New Pok\u00e9mon-style toon town made in Blender: bright houses with coloured roofs, new Pok\u00e9box Lab, Card Shop and street lamps",
+    "Lighter towns: about 30% fewer draw calls and triangles in Lumen Harbor",
+    "Blender kit source included (tools/blender_toon_town.py) for more buildings later"
   ]
 }

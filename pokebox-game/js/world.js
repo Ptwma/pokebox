@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import * as P from './progress.js';
 import * as QS from './quests.js';
 import { prepare, makeRigged, tickEchoMaterials } from './chars.js';
-import { loadKits, place, instances, house, has, wind } from './world_kit.js';
+import { loadKits, place, instances, house, has, hasToon, wind } from './world_kit.js';
 import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
 import { createFieldBattle } from './fieldbattle.js';
@@ -168,6 +168,9 @@ export function createWorld(canvas, hooks = {}) {
   const offPath = (x, z) => !nearPath(x, z, 2.6);
 
   function lamp(x, z) {
+    if (has('TT_Lamp')) { const o = kit('TT_Lamp', x, z, { rot: Math.atan2(-x, -z) }); block(x, z, .25);
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(.2, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffd79a').multiplyScalar(1.6) })); glow.position.y = 3.55; o?.add(glow);
+      lampGlows.push({ m: glow.material, base: new THREE.Color('#ffd79a') }); return; }
     const g = new THREE.Group(), iron = new THREE.MeshStandardMaterial({ color: '#23262c', roughness: .5, metalness: .7 });
     const p = new THREE.Mesh(new THREE.CylinderGeometry(.06, .1, 3.2, 8), iron); p.position.y = 1.6;
     const arm = new THREE.Mesh(new THREE.BoxGeometry(.06, .06, .6), iron); arm.position.set(0, 3.1, .25);
@@ -247,14 +250,17 @@ export function createWorld(canvas, hooks = {}) {
   const BUILD = {
     harbor() {
       const ly = h(-10, -11);
-      house(root, -10, ly, -11, { w: 4, d: 3, floors: 2, wall: 'Brick', seed: 11, rot: 0, balcony: true }); blockBox(-10, -11, 4.3, 3.3);
-      kit('Prop_SatelliteDish', -6.5, -12.5, { y: ly + 6.2, scale: .7, rot: .6 });
-      const lt = label('POKÉBOX LABS', 'Research HQ', '#c9a4ff'); lt.scale.set(4.4, 1.1, 1); lt.position.set(-10, ly + 10.5, -8); root.add(lt);
+      if (has('TT_Lab')) { kit('TT_Lab', -10, -11, { y: ly - .05, scale: .72 }); blockBox(-10, -11, 4.8, 3.4); }
+      else { house(root, -10, ly, -11, { w: 4, d: 3, floors: 2, wall: 'Brick', seed: 11, rot: 0, balcony: true }); blockBox(-10, -11, 4.3, 3.3);
+        kit('Prop_SatelliteDish', -6.5, -12.5, { y: ly + 6.2, scale: .7, rot: .6 }); }
+      const lt = label('POKÉBOX LABS', 'Research HQ', '#c9a4ff'); lt.scale.set(4.4, 1.1, 1); lt.position.set(-10, ly + (has('TT_Lab') ? 8.6 : 10.5), -8); root.add(lt);
       for (const [x, z, n] of [[-15.2, -6.4, 'Prop_Crate'], [-14, -6.2, 'Prop_Barrel1'], [-5, -6.6, 'Prop_Crate_Tarp'], [-4, -7.2, 'Prop_Barrel2_Closed']]) kit(n, x, z, { rot: x, scale: .75, block: .6 });
       kit('Prop_Light_Floor', -10, -6.8, { scale: .8 });
       const HS = [[10, -12, 3, 3, 2, 'Plaster', 3], [18, -2, 2, 3, 1, 'Plaster', 5], [-20, 6, 3, 3, 1, 'Brick', 7], [5, -23, 3, 4, 2, 'Plaster', 9], [-5, -24, 2, 2, 1, 'Plaster', 13], [-24, -6, 2, 3, 2, 'Brick', 17], [22, 18, 2, 2, 1, 'Plaster', 19]];
-      for (const [x, z, w, d, f, wall, seed] of HS) { const rot = Math.atan2(-x, -z + 2); house(root, x, h(x, z), z, { w, d, floors: f, wall, seed, rot, balcony: f > 1 }); blockBox(x, z, w + .3, d + .3, rot); }
-      const shopTag = label('CARD SHOP', 'Packs & Vault', '#ffd257'); shopTag.scale.set(3.2, .8, 1); shopTag.position.set(9.3, h(10, -12) + 7.8, -9.4); root.add(shopTag);
+      for (const [x, z, w, d, f, wall, seed] of HS) { const rot = Math.atan2(-x, -z + 2);
+        if (x === 10 && z === -12 && has('TT_Shop')) { kit('TT_Shop', x, z, { rot, scale: 1.05 }); blockBox(x, z, 3.9, 3.4, rot); continue; } // the card shop
+        house(root, x, h(x, z), z, { w, d, floors: f, wall, seed, rot, balcony: f > 1 }); blockBox(x, z, w + .3, d + .3, rot); }
+      const shopTag = label('CARD SHOP', 'Packs & Vault', '#ffd257'); shopTag.scale.set(3.2, .8, 1); shopTag.position.set(9.3, h(10, -12) + (has('TT_Shop') ? 5.4 : 7.8), -9.4); root.add(shopTag);
       fountain(0, 2);
       const plaza = new THREE.Mesh(new THREE.CircleGeometry(11.8, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: cobbleTex(), roughness: .9, polygonOffset: true, polygonOffsetFactor: -2 }));
       plaza.position.set(0, h(0, 2) + .03, 2); plaza.receiveShadow = true; root.add(plaza);
