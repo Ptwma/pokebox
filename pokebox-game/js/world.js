@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import * as P from './progress.js';
 import * as QS from './quests.js';
-import { prepare, makeRigged, tickEchoMaterials } from './chars.js';
+import { prepare, makeRigged, tickEchoMaterials, attachProp } from './chars.js';
 import { loadKits, place, instances, house, has, hasToon, wind, bounds } from './world_kit.js';
 import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
@@ -21,6 +21,44 @@ const npcLook = id => P.CAST[id]?.look;
 const npcName = id => P.CAST[id]?.name || id;
 const TOPS = ['tee', 'hoodie', 'jacket', 'ranger', 'summer', 'crew', 'scarf'], TC = ['tc0', 'tc1', 'tc2', 'tc3', 'tc4', 'tc5', 'tc6', 'tc7', 'tc8'], HC = ['hc0', 'hc1', 'hc2', 'hc3', 'hc4'];
 function villagerLook(R, top) { return { body: R() < .5 ? 'm' : 'f', skin: 'sk' + (R() * 6 | 0), hairColor: HC[R() * HC.length | 0], hat: R() < .25 ? ['cap', 'beanie', 'wide', 'beret'][R() * 4 | 0] : 'none', top: top || TOPS[R() * TOPS.length | 0], topColor: TC[R() * TC.length | 0], acc: R() < .15 ? 'glasses' : 'none' }; }
+/* people of Veyra: who they are decides their body (Blender models chars/anime/*), height, job and what they say */
+const ARCH = {
+  fisher:     { model: 'm_dock', h: 1.02, hat: ['cap', 'wide', 'none'], job: 'fish', names: ['Fisher Hal', 'Old Bram', 'Fisher Nico'], lines: ['Tide brings the Water Echoes in at dawn. Bring a strong card.', 'Thirty years on this dock and I never saw the sea glow like last week.'] },
+  docker:     { model: 'm_dock', h: 1.06, hat: ['cap', 'beanie'], job: 'hammer', names: ['Dockhand Tor', 'Crewman Ivo'], lines: ['Crates of blank Lattice cards, every morning. Somebody is buying a lot of them.', 'Mind the planks, Ranger. I just nailed that one.'] },
+  elder_m:    { model: 'm_elder', h: .94, hair: ['hc4', 'hc4', 'hc0'], acc: ['none', 'glasses'], job: 'chat', names: ['Grandpa Odo', 'Elder Fen', 'Mr. Pell'], lines: ['In my day the cards stayed in the binder. Now they walk around!', 'Sit down a minute, youngster. The Echoes are not going anywhere.'] },
+  elder_f:    { model: 'f_elder', h: .9, hair: ['hc4', 'hc4', 'hc2'], acc: ['none', 'glasses'], job: 'chat', names: ['Granny Mae', 'Mrs. Ilsa', 'Aunt Rosa'], lines: ['My grandson wants to be a Ranger too. Keep an eye out for him, will you?', 'The Relay Center nurse makes the best tea in town.'] },
+  merchant:   { model: 'm_heavy', h: .97, hat: ['none', 'cap'], job: 'sell', names: ['Trader Gus', 'Merchant Abe'], lines: ['Fresh berries! Sealed packs! Everything a Ranger needs!', 'For you, a special price. Well, the normal price, but with a smile.'] },
+  merchant_f: { model: 'f_heavy', h: .95, job: 'sell', names: ['Trader Lina', 'Madame Oda'], lines: ['Glass from the dunes, polished by hand. Look how it catches the light!', 'Buy two, the third is still full price. I am not a charity.'] },
+  scholar:    { model: 'm_scholar', h: 1.0, acc: ['glasses', 'none'], job: 'read', names: ['Archivist Rel', 'Researcher Amos'], lines: ['This glyph appears in every relay log since the first transfer. Fascinating.', 'Please keep your voice down. The signal is very faint tonight.'] },
+  worker_f:   { model: 'f_worker', h: .98, hat: ['none', 'beanie'], job: 'sweep', names: ['Caretaker Jo', 'Sweeper Nell'], lines: ['Sand everywhere, every day. The wind never gives up and neither do I.', 'The plaza does not clean itself, Ranger.'] },
+  gardener:   { model: 'f_elder', h: .9, hair: ['hc4', 'hc1'], hat: ['wide', 'none'], job: 'garden', names: ['Gardener Viv', 'Mrs. Holt'], lines: ['Grass Echoes love my flowerbeds. I let them stay, they keep the bugs away.', 'Water in the morning, never at noon. Remember that.'] },
+  smith:      { model: 'm_athlete', h: 1.06, job: 'hammer', names: ['Smith Barro', 'Mechanic Volk'], lines: ['Pylon brackets, forty a day. My arms are made of steel by now.', 'If your gear breaks, bring it here. If your heart breaks, the bar is next door.'] },
+  athlete:    { model: 'm_athlete', h: 1.06, walker: 1.7, names: ['Runner Kip', 'Ace Dario'], lines: ['Morning run around the whole town. Echoes cannot keep up with me!', 'Train every day and your partner trains with you.'] },
+  athlete_f:  { model: 'f_athlete', h: 1.0, walker: 1.7, names: ['Runner Saya', 'Ace Mira-Lyn'], lines: ['Race you to the Relay Center! ...No? Fine.', 'My partner card and I run five kilometres every morning.'] },
+  bearded:    { model: 'm_beard', h: 1.02, walker: 1.2, hat: ['none', 'beanie', 'cap'], names: ['Courier Ozan', 'Mr. Brann'], lines: ['Delivering cards all over Veyra. The roads are safer since the Rangers came.', 'Nice weather for a walk. For a battle too, I suppose.'] },
+  kid_m:      { model: 'kid_m', h: .64, walker: 2.3, kid: true, hat: ['cap', 'none'], names: ['Timmy', 'Leo', 'Pip'], lines: ['When I grow up I will have ALL the cards. All of them!', 'Did you see that? A wild Echo! Over there! ...It ran away.'] },
+  kid_f:      { model: 'kid_f', h: .6, walker: 2.3, kid: true, names: ['Lily', 'Mina', 'Rae'], lines: ['My big sister is a Ranger. She is way stronger than you.', 'Can I see your partner? Please please please?'] },
+};
+const JOBS = {
+  fish: { prop: 'rod', gap: [8, 14], clip: 'Interact', speed: .5 },
+  hammer: { prop: 'hammer', clip: 'Punch_Right', gap: [.8, 1.7], speed: .7 },
+  sweep: { prop: 'broom', clip: 'Interact', gap: [1.4, 2.6], speed: .55 },
+  read: { prop: 'book', clip: 'Interact', gap: [7, 12], speed: .45 },
+  sell: { clip: 'Wave', alt: 'Interact', gap: [5, 9], speed: .8 },
+  chat: { clip: 'Interact', alt: 'Wave', gap: [3, 6], speed: .7 },
+  garden: { prop: 'can', clip: 'Interact', gap: [2.2, 4], speed: .55 },
+};
+function archLook(a, R) {
+  const A = ARCH[a], pick = (arr, d) => arr ? arr[R() * arr.length | 0] : d;
+  return { model: A.model, h: A.h * (.97 + R() * .06), body: /^f_|kid_f/.test(A.model) ? 'f' : 'm', skin: 'sk' + (R() * 6 | 0), hairColor: pick(A.hair, HC[R() * HC.length | 0]),
+    hat: pick(A.hat, 'none'), top: 'tee', topColor: TC[R() * TC.length | 0], acc: pick(A.acc, 'none') };
+}
+const TOWN_FOLK = { // who walks around each town
+  harbor: ['kid_m', 'kid_f', 'elder_m', 'bearded', 'athlete_f', 'kid_m'], mistvale: ['elder_f', 'kid_f', 'bearded', 'elder_m'], starfall: ['bearded', 'athlete', 'kid_m'],
+  frostline: ['athlete', 'bearded', 'kid_f'], voltspire: ['athlete_f', 'bearded', 'kid_m'], sandreach: ['kid_m', 'kid_f', 'elder_m', 'bearded'],
+};
+const BLD_JOB = { MV_Cottage_A: 'gardener', MV_Cottage_B: 'elder_f', MV_Stilt: 'fisher', MV_Lookout: null, SF_Archive: 'scholar', SF_House: 'scholar', FL_Lodge: 'docker', FL_Chalet_A: 'worker_f', FL_Chalet_B: 'elder_m',
+  VS_Station: 'smith', VS_Block_A: 'smith', VS_Block_B: 'scholar', VS_Block_C: 'worker_f', SR_Market_A: 'merchant', SR_Market_B: 'merchant_f', SR_Workshop: 'smith', SR_Adobe_A: 'worker_f', SR_Adobe_B: 'elder_m', SR_Adobe_C: 'gardener' };
 const VILLAGER_LINES = [
   'The ferry from the mainland is late again. Something in the relay water, they say.', 'My deck sparked in my pocket this morning. Is that normal?',
   'Dr. Vale bought my whole catch of glass-sand. Who needs that much sand?', 'Have you seen the lights over Starfall? Beautiful. Creepy, but beautiful.',
@@ -227,11 +265,21 @@ export function createWorld(canvas, hooks = {}) {
   function addVillagers(n, seed, route) {
     const R = rng(seed); if (quality !== 'high') n = Math.ceil(n * .5);
     for (let i = 0; i < n; i++) {
-      const ch = makeRigged(villagerLook(rng(99 + (seed + i) % 10))); if (!ch) continue;
+      const folk = TOWN_FOLK[areaId] || [], a = R() < .7 && folk.length ? folk[(seed + i) % folk.length] : null, A = a && ARCH[a];
+      const ch = makeRigged(a ? archLook(a, rng(seed * 7 + i)) : villagerLook(rng(99 + (seed + i) % 10))); if (!ch) continue;
       const pts = route.map(([x, z]) => [x + (R() - .5) * 2, z + (R() - .5) * 2]); if (R() < .5) pts.reverse();
       const k = R() * pts.length | 0; const [x, z] = pts[k]; put(ch.group, x, z);
-      villagers.push({ ch, pts, i: (k + 1) % pts.length, wait: R() * 4, speed: 1.3 + R() * .5, line: VILLAGER_LINES[(seed + i) % VILLAGER_LINES.length], x, z });
+      villagers.push({ ch, pts, i: (k + 1) % pts.length, wait: R() * 4, speed: (A?.walker || 1.3) + R() * .5, name: A ? A.names[i % A.names.length] : null, line: A ? A.lines[i % A.lines.length] : VILLAGER_LINES[(seed + i) % VILLAGER_LINES.length], x, z });
     }
+  }
+  /** a person doing their job at a fixed spot (local town coords), facing `face` */
+  function addWorker(a, x, z, face, seed) {
+    const A = ARCH[a]; if (!A) return null; const R = rng(seed);
+    const ch = makeRigged(archLook(a, R)); if (!ch) return null;
+    put(ch.group, x, z); ch.group.rotation.y = face; ch.update(0);
+    const J = JOBS[A.job]; if (J?.prop) attachProp(ch, J.prop);
+    const v = { ch, pts: [[x, z]], i: 0, wait: 0, speed: 0, job: A.job, face, jt: R() * 3, name: A.names[seed % A.names.length], line: A.lines[seed % A.lines.length], x, z };
+    villagers.push(v); block(x, z, .45); return v;
   }
   function glyphEntity(g0) {
     const g = new THREE.Group(), R = rng(7), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#b48cff').multiplyScalar(2) }), geo = new THREE.OctahedronGeometry(.18);
@@ -280,6 +328,7 @@ export function createWorld(canvas, hooks = {}) {
       scatter(ROCKS, 16, 24, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, 2), { rMin: 20, rMax: 46, sMin: .4, sMax: .9, blockR: .9 });
          
       addFind('glyph', 'harbor:0', -27, -14); addFind('glyph', 'harbor:1', 25, -19); sign(-2, 20);
+      for (const [a, x, z, f, sd] of [['fisher', 20.9, 44.5, 0, 1], ['fisher', 31, 36.5, 1.57, 2], ['docker', -14.6, -5, 3.6, 3], ['merchant', 8.8, 3.6, -2.4, 4], ['elder_m', 3.2, -2.6, -2.2, 5], ['elder_f', 4.4, -3.8, .9, 6], ['scholar', -7.6, -6.4, .3, 7], ['worker_f', -3, 9, 2, 8]]) addWorker(a, x, z, f, sd);
       addVillagers(6, 31, [[0, 12], [6, 6], [4, -3], [-5, -2], [-8, 6], [-2, 14]]); addVillagers(2, 37, [[16, 12], [20, 20], [21, 30], [20, 20]]);
       
     },
@@ -435,6 +484,9 @@ export function createWorld(canvas, hooks = {}) {
         decorLog.push(['bld', id, name, sp.x + R.x, sp.z + R.z]);
         kit(name, sp.x, sp.z, { y: sp.y - .15, rot: sp.rot, scale: sc }); blockBox(sp.x, sp.z, (bb.max.x - bb.min.x) * sc * .46, (bb.max.z - bb.min.z) * sc * .46, sp.rot);
         npcs.push([sp.x, sp.z, rad + 1.5]);
+        const who = BLD_JOB[name], dep = (bb.max.z - bb.min.z) * sc / 2 + 1.7;
+        if (who && (di % 3 !== 2)) { const fx = sp.x + Math.sin(sp.rot) * dep, fz = sp.z + Math.cos(sp.rot) * dep;
+          if (h(fx, fz) > .3 && !nearPath(fx, fz, .6)) addWorker(who, fx + Math.cos(sp.rot) * 1.2, fz - Math.sin(sp.rot) * 1.2, sp.rot + (ARCH[who].job === 'chat' ? 0 : Math.PI * .1), seed + di * 13); }
       }
     }
     // benches & flowerbeds along the town paths
@@ -636,6 +688,7 @@ export function createWorld(canvas, hooks = {}) {
     hooks.loading?.(true, 'Veyra');
     const s = P.ensure(), looks = [s.look, ...Object.values(P.CAST).map(c => c.look).filter(Boolean)];
     for (let i = 0; i < 10; i++) looks.push(villagerLook(rng(99 + i)));
+    for (const a in ARCH) looks.push(archLook(a, rng(1)));
     try { await Promise.all([loadKits(), prepare(looks, []), buildGrid()]); } catch (e) { console.warn('[world] asset load', e); }
     buildGlobals();
     for (const id of Object.keys(REGIONS)) buildTown(id);
@@ -771,7 +824,7 @@ export function createWorld(canvas, hooks = {}) {
     busy = true; for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) keys[k] = false; target = null;
     try {
       if (n.kind === 'npc') await talkTo(n.npc);
-      else if (n.kind === 'villager') { faceTo(player, n.v.x, n.v.z); faceTo(n.v.ch, player.group.position.x, player.group.position.z); n.v.ch.play('Wave', .2, { once: true }); n.v.wait = 5; await hooks.talk?.([['you', n.v.line]]); }
+      else if (n.kind === 'villager') { faceTo(player, n.v.x, n.v.z); faceTo(n.v.ch, player.group.position.x, player.group.position.z); n.v.ch.play('Wave', .2, { once: true }); if (!n.v.job) n.v.wait = 5; await hooks.talk?.([[n.v.name || 'Villager', n.v.line]]); }
       else if (n.kind === 'find') {
         const s = P.ensure(); if (s.world.found[n.id]) { hooks.toast?.(n.item.kind === 'pylon' ? 'This pylon is already stable.' : 'You already recorded this one.'); return; }
         P.track('glyph', { id: n.id }); hooks.sfx?.('sparkle'); faceTo(player, n.x, n.z); player.play('Interact', .2, { once: true });
@@ -971,6 +1024,14 @@ export function createWorld(canvas, hooks = {}) {
       if (n.routeTrainer && !QS.beaten(n.key) && d < 7.5 && mode === 'explore' && !busy && !n.spotted) { n.spotted = true; spotted(n); } }
     for (const v of allVillagers) {
       const g = v.ch.group.position, dPl = Math.hypot(pp.x - g.x, pp.z - g.z); v.ch.group.visible = dPl < 55; if (dPl > 55) continue; v.x = g.x; v.z = g.z;
+      if (v.job) { // working people: stay at their spot, loop their work motion with natural pauses, look at you when you come close
+        const J = JOBS[v.job];
+        if (dPl < 3.4) faceSmooth(v.ch, pp.x, pp.z, dt, 3); else faceSmooth(v.ch, g.x + Math.sin(v.face), g.z + Math.cos(v.face), dt, 1.5);
+        v.jt -= dt;
+        if (v.jt <= 0 && J?.clip && dPl > 3.4 && dPl < 40) { v.ch.play(J.alt && Math.random() < .3 ? J.alt : J.clip, .4, { once: true, speed: J.speed * (.85 + Math.random() * .3) }); v.jt = J.gap[0] + Math.random() * (J.gap[1] - J.gap[0]); }
+        else v.ch.locomote(0);
+        if (dPl < 40) v.ch.update(dt); continue;
+      }
       if (v.wait > 0) { v.wait -= dt; v.ch.locomote(0); if (dPl < 4) faceSmooth(v.ch, pp.x, pp.z, dt); }
       else { const [tx, tz] = v.pts[v.i], dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz);
         if (d < .4) { v.i = (v.i + 1) % v.pts.length; v.wait = 1 + Math.random() * 4; }

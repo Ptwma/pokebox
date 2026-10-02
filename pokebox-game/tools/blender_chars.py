@@ -1,5 +1,5 @@
-# Pokebox anime trainers — run inside Blender (text block 'char_lib').
-# build(arm, kind, top) builds a character on a Quaternius armature; bind() + export() write chars/anime/*.glb
+# Pokebox people — run inside Blender (text block 'char_lib').
+# build(arm, kind, top, tag, cols, bd) builds a person on a Quaternius armature (bd: w weight, mus muscle, belly, kid, hair, facial, eye)
 
 import bpy, bmesh, math
 from mathutils import Vector, Matrix
@@ -61,7 +61,7 @@ def join(obs, name):
 def J(arm, n, tail=False):
     b = arm.data.bones[n]; return arm.matrix_world @ (b.tail_local if tail else b.head_local)
 
-def build(arm, kind='m', top='tee', tag='G', cols=None):
+def build(arm, kind='m', top='tee', tag='G', cols=None, bd=None):
     """anime trainer on a Quaternius armature. kind m/f; top tee|long|hoodie|jacket|vest|coat|skirt"""
     C = dict(skin='#fcdcc4', hair='#5a3a26', eye='#4a7fd0', outfit='#d8483c', pants='#2f3e5c', shoes='#f2f2f2', sole='#d8483c', inner='#f4f1ea', belt='#2a2430', skirt='#2f3e5c')
     C.update(cols or {})
@@ -78,8 +78,13 @@ def build(arm, kind='m', top='tee', tag='G', cols=None):
     hp, ch, nk, hd = J(arm, 'Hips'), J(arm, 'Chest'), J(arm, 'Neck'), J(arm, 'Head')
     Y = (hp.y + ch.y) / 2 + .005
     zP = hip.z - .02; zN = nk.z; zH = hd.z
+    bd = dict(bd or {}); W_ = bd.get('w', 1.0); MU = bd.get('mus', 1.0); BEL = bd.get('belly', 0.0); KID = bd.get('kid', False)
     if f: R0 = [(.135, .095), (.092, .072), (.118, .092), (.112, .078), (.04, .04), (.036, .036)]
     else: R0 = [(.13, .095), (.108, .082), (.13, .09), (.125, .08), (.045, .045), (.04, .04)]
+    tw = [W_, W_ * (1 + BEL), W_ * (1 + BEL * .6) * MU ** .5, W_ ** .7 * MU ** .6, W_ ** .6, W_ ** .5]
+    R0 = [(r[0] * k_, r[1] * k_ * (1 + (BEL * .8 if i in (1, 2) else 0))) for i, (r, k_) in enumerate(zip(R0, tw))]
+    if KID: R0 = [(a * .9, b * .9) for a, b in R0]
+    sA = MU * W_ ** .5 * (.85 if KID else 1); sL = W_ ** .7 * MU ** .4 * (.88 if KID else 1)
     V = [(0, Y, zP), (0, Y, zP + (zN - zP) * .3), (0, Y - (.012 if f else 0), zP + (zN - zP) * .62), (0, Y - .005, zN - .09), (0, Y, zN - .01), (0, Y, zH - .01)]
     E = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]; R = list(R0)
     for s in (1, -1):
@@ -87,8 +92,9 @@ def build(arm, kind='m', top='tee', tag='G', cols=None):
         V += [(s * (sh.x + .02), Y, sh.z - .008), (s * el.x, el.y, el.z), (s * (wr.x - .005), wr.y, wr.z), (s * (wr.x + .035), wr.y, wr.z + .001),
               (s * (hip.x - .02 if not f else hip.x), Y, hip.z - .07), (s * kne.x, kne.y + .01, kne.z), (s * ank.x, ank.y, ank.z + .03)]
         E += [(3, b), (b, b + 1), (b + 1, b + 2), (b + 2, b + 3), (0, b + 4), (b + 4, b + 5), (b + 5, b + 6)]
-        R += [(.052, .052) if f else (.058, .058), (.04, .04) if f else (.046, .046), (.031, .03) if f else (.036, .034), (.03, .027),
-              (.098, .095) if f else (.09, .09), (.055, .058) if f else (.06, .062), (.04, .042) if f else (.046, .048)]
+        ra = [(.052, .052) if f else (.058, .058), (.04, .04) if f else (.046, .046), (.031, .03) if f else (.036, .034), (.03, .027)]
+        rl = [(.098, .095) if f else (.09, .09), (.055, .058) if f else (.06, .062), (.04, .042) if f else (.046, .048)]
+        R += [(a * sA, b * sA) for a, b in ra[:3]] + [ra[3]] + [(a * sL, b * sL) for a, b in rl]
     body = skin_body('Body', V, E, R, 0, 2)
     body.data.materials.clear()
     for k in ('Skin', 'Outfit', 'Pants', 'Inner'): body.data.materials.append(mats[k])
@@ -148,9 +154,9 @@ def build(arm, kind='m', top='tee', tag='G', cols=None):
         keep(ellipsoid('pocket', (0, fy - .004, belt_z + .085), (.085, .008, .045), 14, 8), 'Outfit', 'Abdomen')
         for s in (1, -1): keep(ellipsoid('string', (s * .03, Y - .11, zN - .07), (.006, .006, .04), 6, 6), 'Inner', 'Chest')
     if top == 'skirt':
-        sk = cone_skirt('skirt', Y, belt_z + .01, hip.z - .26, .14 if f else .15, .23, .02); keep(sk, 'Skirt', 'Hips')
+        sk = cone_skirt('skirt', Y, belt_z + .01, hip.z - .26, (.14 if f else .15) * W_ * (1 + BEL * .7) * (.9 if KID else 1), .23 * W_ * (1 + BEL * .5) * (.9 if KID else 1), .02); keep(sk, 'Skirt', 'Hips')
     # ---- head
-    k = 1.16; HC = Vector((0, Y, zH + .128 * k + (-.02 if f else 0)))
+    k = bd.get('head', 1.42 if KID else 1.16); HC = Vector((0, Y, zH + .128 * k + (-.02 if f else 0)))
     head = ellipsoid('head', HC, (.148 * k * (.96 if f else 1), .142 * k, .165 * k), 32, 22)
     for v in head.data.vertices:
         z = v.co.z / (.165 * k)
@@ -163,7 +169,7 @@ def build(arm, kind='m', top='tee', tag='G', cols=None):
         return loc if ok else Vector((x, Y - .16, z))
     for s in (1, -1):
         ex, ez = s * .066 * (1.02 if f else 1), HC.z - .03
-        p = surf(ex, ez); ew = 1.12 if f else 1
+        p = surf(ex, ez); ew = (1.12 if f else 1) * bd.get('eye', 1.15 if KID else 1)
         keep(ellipsoid('ew', p + Vector((0, .007, 0)), (.038 * ew, .013, .049 * ew), 20, 14), 'EyeWhite', 'Head')
         keep(ellipsoid('ir', p + Vector((s * -.003, -.003, -.005)), (.027 * ew, .01, .039 * ew), 20, 14), 'Eye', 'Head')
         keep(ellipsoid('pu', p + Vector((s * -.003, -.009, -.008)), (.013 * ew, .006, .02 * ew), 12, 8), 'Pupil', 'Head')
@@ -175,7 +181,18 @@ def build(arm, kind='m', top='tee', tag='G', cols=None):
         keep(ellipsoid('ear', (s * .148 * k * .97, Y + .01, HC.z - .03), (.022, .03, .042), 12, 8), 'Skin', 'Head')
     keep(ellipsoid('mouth', surf(0, HC.z - .125) + Vector((0, .002, 0)), (.02, .005, .005), 12, 6), 'Mouth', 'Head')
     keep(ellipsoid('nose', surf(0, HC.z - .07) + Vector((0, .004, 0)), (.008, .01, .012), 8, 6), 'Skin', 'Head')
-    keep(make_hair(HC, k, Y, f), 'Hair', 'Head')
+    hs_ = bd.get('hair', 'long' if f else 'spiky')
+    if hs_ != 'none': keep(make_hair(HC, k, Y, f, hs_), 'Hair', 'Head')
+    fac = bd.get('facial', 'none')
+    if fac in ('mustache', 'beard'):
+        mu = surf(0, HC.z - .1)
+        for s_ in (1, -1):
+            o = ellipsoid('stache', mu + Vector((s_ * .028, -.004, 0)), (.034, .012, .012), 12, 6); o.rotation_euler.y = s_ * -.25; keep(o, 'Hair', 'Head')
+    if fac == 'beard':
+        bm_ = ellipsoid('beard', HC + Vector((0, -.012, -.012)), (.148 * k * 1.04, .142 * k * 1.06, .165 * k * 1.04), 28, 18)
+        bmb = bmesh.new(); bmb.from_mesh(bm_.data)
+        bmesh.ops.delete(bmb, geom=[v for v in bmb.verts if v.co.z > -.07 or v.co.y > .03], context='VERTS'); bmb.to_mesh(bm_.data); bmb.free()
+        sol = bm_.modifiers.new('s', 'SOLIDIFY'); sol.thickness = .014; apply_all(bm_); smooth(bm_); keep(bm_, 'Hair', 'Head')
     return objs
 
 def ring(name, rx, ry, Y, z, h, th):
@@ -211,29 +228,48 @@ def spike(base, d, L, r, bend=Vector((0, 0, 0)), flat=.7, seg=10):
     me = bpy.data.meshes.new('spk'); bm.to_mesh(me); bm.free()
     o = bpy.data.objects.new('spk', me); bpy.context.scene.collection.objects.link(o); smooth(o); return o
 
-def make_hair(HC, k, Y, f):
+def make_hair(HC, k, Y, f, style=None):
+    style = style or ('long' if f else 'spiky')
     cap = ellipsoid('hair', HC + Vector((0, .01, .02)), (.162 * k, .16 * k, .172 * k), 32, 22)
     bm = bmesh.new(); bm.from_mesh(cap.data); s_ = k
-    kill = [v for v in bm.verts if (v.co.y < -.07 * s_ and v.co.z < .05 * s_) or v.co.z < (-.2 if f else -.11) * s_ or (v.co.y < 0 and v.co.z < -.02 * s_ and abs(v.co.x) < .14 * s_)]
-    bmesh.ops.delete(bm, geom=kill, context='VERTS'); bm.to_mesh(cap.data); bm.free()
-    sol = cap.modifiers.new('s', 'SOLIDIFY'); sol.thickness = .012; sol.offset = 1; apply_all(cap); smooth(cap)
-    parts = [cap]
-    if not f:
+    low = {'long': -.2, 'bob': -.17, 'bun': -.1, 'pony': -.12, 'buzz': -.07, 'short': -.1, 'spiky': -.11, 'bald': -.08}.get(style, -.11)
+    if style == 'bald':   # horseshoe: only the band around the back and sides
+        kill = [v for v in bm.verts if v.co.z > .03 * s_ or v.co.z < -.09 * s_ or v.co.y < -.06 * s_]
+    else:
+        kill = [v for v in bm.verts if (v.co.y < -.07 * s_ and v.co.z < (.07 if style == 'buzz' else .05) * s_) or v.co.z < low * s_ or (v.co.y < 0 and v.co.z < -.02 * s_ and abs(v.co.x) < .14 * s_)]
+    bmesh.ops.delete(bm, geom=kill, context='VERTS')
+    if style == 'buzz':
+        for v in bm.verts: v.co *= .955
+    bm.to_mesh(cap.data); bm.free()
+    sol = cap.modifiers.new('s', 'SOLIDIFY'); sol.thickness = .006 if style in ('buzz', 'bald') else .012; sol.offset = 1; apply_all(cap); smooth(cap)
+    parts = [cap]; bangs = []
+    if style == 'spiky':
         for ax, az, L in [(0, 1.3, .15), (.5, 1.1, .14), (-.5, 1.1, .14), (1.0, .7, .13), (-1.0, .7, .13), (.3, .5, .16), (-.3, .5, .16), (.75, .2, .13), (-.75, .2, .13), (0, .15, .15), (1.25, 0.0, .11), (-1.25, 0.0, .11)]:
             dv = Vector((math.sin(ax) * math.cos(az - .4), math.cos(ax) * .9 + .25, math.sin(az))).normalized()
             parts.append(spike(HC + Vector((dv.x * .15, dv.y * .14 + .01, dv.z * .15 + .02)), dv + Vector((0, .5, 0)), L * k, .06, Vector((0, .3, -.25))))
         bangs = [(-.1, .11, -.25), (-.04, .13, -.08), (.02, .125, .1), (.085, .11, .3), (.135, .09, .5), (-.14, .09, -.5)]
-    else:
-        # long hair: a sheet of locks down the back to the shoulder blades + side locks framing the face
+        for s2 in (1, -1): parts.append(spike(HC + Vector((s2 * .155 * k, -.045, .05)), Vector((s2 * .1, -.15, -1)), .1 * k, .035))
+    elif style == 'short':
+        bangs = [(-.08, .07, -.4), (-.02, .08, -.1), (.04, .075, .2), (.1, .065, .5)]
+    elif style == 'long':
         for i in range(11):
             a = -1.25 + i * .25; base = HC + Vector((math.sin(a) * .15 * k, math.cos(a) * .12 * k + .03, -.02))
             parts.append(spike(base, Vector((math.sin(a) * .15, .25, -1)), .3 * k, .06, Vector((0, .15, .1)), flat=.55))
-        for s in (1, -1): parts.append(spike(HC + Vector((s * .14 * k, -.06, .02)), Vector((s * .08, -.12, -1)), .24 * k, .045, Vector((s * .02, 0, 0)), flat=.6))
+        for s2 in (1, -1): parts.append(spike(HC + Vector((s2 * .14 * k, -.06, .02)), Vector((s2 * .08, -.12, -1)), .24 * k, .045, Vector((s2 * .02, 0, 0)), flat=.6))
         bangs = [(-.1, .1, -.3), (-.045, .12, -.1), (.01, .125, .05), (.065, .115, .2), (.115, .1, .45)]
+    elif style == 'bob':
+        for i in range(9):
+            a = -1.4 + i * .35; base = HC + Vector((math.sin(a) * .155 * k, math.cos(a) * .13 * k + .02, -.04))
+            parts.append(spike(base, Vector((math.sin(a) * .2, .1, -1)), .14 * k, .06, Vector((0, 0, 0)), flat=.6))
+        bangs = [(-.1, .09, -.2), (-.04, .1, -.05), (.03, .1, .1), (.1, .09, .3)]
+    elif style in ('bun', 'pony'):
+        bangs = [(-.09, .08, -.3), (-.03, .09, -.08), (.04, .085, .15), (.1, .075, .4)]
+        if style == 'bun': parts.append(ellipsoid('bun', HC + Vector((0, .14 * k, .12 * k)), (.075 * k, .07 * k, .07 * k), 16, 10))
+        else:
+            parts.append(ellipsoid('tie', HC + Vector((0, .15 * k, .06 * k)), (.035, .035, .035), 10, 6))
+            parts.append(spike(HC + Vector((0, .16 * k, .05 * k)), Vector((0, .5, -1)), .32 * k, .065, Vector((0, .2, .1)), flat=.7))
     for x, L, tw in bangs:
         parts.append(spike(HC + Vector((x * k, -.12 * k, .14 * k)), Vector((tw * .4, -.35, -1)), L * k, .045, Vector((0, -.15, .1))))
-    if not f:
-        for s in (1, -1): parts.append(spike(HC + Vector((s * .155 * k, -.045, .05)), Vector((s * .1, -.15, -1)), .1 * k, .035))
     return join(parts, 'hair')
 
 def bind(arm, objs):

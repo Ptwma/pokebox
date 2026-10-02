@@ -1,11 +1,11 @@
 {
-  "version": "2.8.0",
+  "version": "2.9.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Every town now has its own buildings made in Blender: Mistvale cottages & stilt houses, Starfall observatory & archive, Frostline snowy chalets & lodge, Voltspire towers & power station, Sandreach adobe houses & market",
-    "Removed the black outline around characters and objects",
-    "Anime characters made in Blender (11 outfits)"
+    "Real townsfolk made in Blender: kids, elders, bald and bearded people, heavy and muscular builds, different heights",
+    "People have jobs that fit their town: fishers with rods on the docks, dock workers hammering, merchants, scholars reading, gardeners, sweepers, smiths",
+    "They work with natural pauses, turn to look at you when you come close, and tell you who they are when you talk to them"
   ]
 }

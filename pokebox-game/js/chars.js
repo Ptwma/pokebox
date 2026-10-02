@@ -22,7 +22,7 @@ const OUTFIT = {
 };
 const HIDE = /Pistol|Sword/i;
 const NOT_OUTFIT = /Skin|^Eye|Hair|Eyebrow|Moustache|Earring|Visor|Metal|Gold|Pupil|Mouth|Blush|Inner|Belt|Buckle|Sole|Shoes|Pants|Skirt/i;
-export const modelFor = L => { const o = OUTFIT[L.top] || OUTFIT.tee; return 'chars/anime/' + o[L.body === 'f' ? 1 : 0]; };
+export const modelFor = L => { if (L.model) return 'chars/anime/' + L.model; const o = OUTFIT[L.top] || OUTFIT.tee; return 'chars/anime/' + o[L.body === 'f' ? 1 : 0]; };
 const ANIME = p => p.startsWith('chars/anime/');
 
 const cache = new Map();
@@ -114,6 +114,7 @@ const matCache = new Map();
 export const STYLE = { head: 1.3, feet: 1.12 };
 export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   const L = Object.assign({ body: 'm', skin: 'sk2', hairColor: 'hc1', hat: 'none', top: 'tee', topColor: 'tc1', acc: 'none' }, look);
+  height *= L.h || 1; // body height: kids, elders, tall athletes
   const path = modelFor(L), gltf = ready.get(path);
   if (!gltf) return null;
   const obj = SkeletonUtils.clone(gltf.scene);
@@ -164,7 +165,8 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
     else { R.play('Run', .2); R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 7.8, .85, 1.35)); }
   }
   R.play('Idle', 0); R.mixer.update(Math.random() * 2);
-  return { group: g, model: path, mixer: R.mixer, play: R.play, locomote, busy: R.busy, update: dt => R.mixer.update(dt), parts: { head: head || g }, rigged: true };
+  let hand = null; obj.traverse(o => { if (!hand && o.isBone && /^Wrist\.R$/.test(o.name)) hand = o; });
+  return { group: g, model: path, mixer: R.mixer, play: R.play, locomote, busy: R.busy, update: dt => R.mixer.update(dt), parts: { head: head || g, hand }, rigged: true };
 }
 
 /* ---------- pets / Echo shells */
@@ -235,4 +237,31 @@ export function createPreview(canvas) {
     if (!raf) { last = performance.now(); raf = requestAnimationFrame(loop); }
   }
   return { set, attach(c) { if (c !== canvas) return false; if (!raf) { last = performance.now(); raf = requestAnimationFrame(loop); } return true; } };
+}
+
+/* ---------- hand props for working people (rod, hammer, broom, book, watering can, clipboard).
+   Built along +Y, then turned so that in the idle pose they point the way a person would hold them. */
+const PROP_MAT = {};
+const pm = c => PROP_MAT[c] ||= new THREE.MeshStandardMaterial({ color: c, roughness: .8 });
+function propMesh(kind) {
+  const g = new THREE.Group(), add = (geo, c, y = 0, x = 0, z = 0) => { const m = new THREE.Mesh(geo, pm(c)); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  if (kind === 'rod') { add(new THREE.CylinderGeometry(.012, .02, 2.4, 6), '#6b4a2a', 1.1); add(new THREE.CylinderGeometry(.035, .035, .08, 8), '#2e3440', .15).rotation.z = Math.PI / 2; }
+  else if (kind === 'hammer') { add(new THREE.CylinderGeometry(.025, .03, .55, 6), '#7a5634', .2); add(new THREE.BoxGeometry(.18, .07, .07), '#8a8f99', .48); }
+  else if (kind === 'broom') { add(new THREE.CylinderGeometry(.022, .022, 1.5, 6), '#a77a48', -.25); add(new THREE.ConeGeometry(.16, .32, 8), '#d8b45a', -1.1).rotation.x = Math.PI; }
+  else if (kind === 'book') { add(new THREE.BoxGeometry(.24, .32, .05), '#3d5fa8', .05); add(new THREE.BoxGeometry(.22, .3, .055), '#f1ecdf', .05, .012); }
+  else if (kind === 'can') { add(new THREE.CylinderGeometry(.09, .1, .18, 10), '#57c28f', -.05); add(new THREE.CylinderGeometry(.012, .02, .22, 6), '#57c28f', 0, .12).rotation.z = -1; }
+  else if (kind === 'clip') { add(new THREE.BoxGeometry(.22, .3, .02), '#c9a064', .05); add(new THREE.BoxGeometry(.18, .22, .022), '#ffffff', .03); }
+  return g;
+}
+const PROP_DIR = { rod: [0, .75, 1], hammer: [0, .2, 1], broom: [0, -1, .45], book: [0, .4, 1], can: [0, -1, .2], clip: [0, .5, 1] };
+export function attachProp(ch, kind) {
+  const hand = ch?.parts?.hand; if (!hand) return null;
+  const prop = propMesh(kind); ch.group.updateMatrixWorld(true);
+  const hq = new THREE.Quaternion(); hand.getWorldQuaternion(hq);
+  const gq = new THREE.Quaternion(); ch.group.getWorldQuaternion(gq);
+  const d = new THREE.Vector3(...PROP_DIR[kind]).normalize().applyQuaternion(gq);
+  const want = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+  prop.quaternion.copy(hq.invert().multiply(want));
+  const ws = new THREE.Vector3(); hand.getWorldScale(ws); prop.scale.setScalar(1 / ws.x * (ch.group.scale.x || 1));
+  prop.position.set(0, .06 / ws.y, 0); hand.add(prop); return prop;
 }
