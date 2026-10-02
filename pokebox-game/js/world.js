@@ -32,17 +32,17 @@ const VILLAGER_LINES = [
 /* ------------------------------------------------------------------ regional looks (blended as you walk between regions) */
 export const AREAS = {
   harbor: { name: 'Lumen Harbor', sub: 'Pokébox Labs HQ', echo: ['Water', 'Colorless', 'Grass'], spawn: [0, 17],
-    sky: ['#3f8ee6', '#cfe6fb'], fog: ['#c4dcf2', 90, 300], sunColor: '#fff3dc', clouds: .42, cloud: '#ffffff', exposure: 1.05, hemi: 1.35, sunI: 2.9, sat: 1.16, tint: [1.02, 1, .98], fx: ['pollen', { color: '#fff6c8', n: 220, size: 4 }] },
+    sky: ['#2a78e0', '#bfe0fb'], fog: ['#b4d4f2', 120, 420], sunColor: '#fff3dc', clouds: .42, cloud: '#ffffff', exposure: 1.05, hemi: 1.35, sunI: 2.9, sat: 1.16, tint: [1.02, 1, .98], fx: ['pollen', { color: '#fff6c8', n: 220, size: 4 }] },
   mistvale: { name: 'Mistvale', sub: 'Wetlands', echo: ['Water', 'Grass', 'Psychic'], spawn: [0, 22],
     sky: ['#7fb0b4', '#e2efe8'], fog: ['#cadcd4', 45, 210], sunColor: '#f6f2e0', clouds: .75, cloud: '#eef2ee', exposure: 1.05, hemi: 1.45, sunI: 2.1, sat: 1.1, tint: [.98, 1.02, 1], fx: ['firefly', { color: '#d8ff8a', n: 140, size: 7, hmax: 5 }] },
   starfall: { name: 'Starfall', sub: 'Signal cliffs', echo: ['Metal', 'Psychic', 'Darkness'], spawn: [0, 24], night: true, aurora: true,
     sky: ['#101a4a', '#3a3a7a'], fog: ['#2a2c5c', 70, 260], sunColor: '#c4d0ff', clouds: .3, cloud: '#8a8ec0', exposure: 1.25, hemi: 1.5, sunI: 2, sat: 1.1, tint: [.97, .99, 1.06], bloom: .5, fx: ['mote', { color: '#c6b8ff', n: 200, size: 5 }] },
   frostline: { name: 'Frostline', sub: 'Glacier peaks', echo: ['Water', 'Metal', 'Colorless'], spawn: [0, 26], aurora: true,
-    sky: ['#7aace6', '#eef6ff'], fog: ['#e2ecf8', 70, 260], sunColor: '#fff8ee', clouds: .5, cloud: '#ffffff', exposure: .98, hemi: 1.3, sunI: 2.6, sat: 1.04, tint: [.97, 1, 1.04], fx: ['snow', { color: '#ffffff', n: 520, size: 6, hmax: 16 }] },
+    sky: ['#5d9be6', '#e6f2ff'], fog: ['#d6e6f8', 90, 320], sunColor: '#fff8ee', clouds: .5, cloud: '#ffffff', exposure: .98, hemi: 1.3, sunI: 2.6, sat: 1.04, tint: [.97, 1, 1.04], fx: ['snow', { color: '#ffffff', n: 520, size: 6, hmax: 16 }] },
   voltspire: { name: 'Voltspire', sub: 'Storm plateau', echo: ['Lightning', 'Metal', 'Fighting'], spawn: [0, 24], storm: true,
     sky: ['#4a5670', '#b8b6a4'], fog: ['#8c8a80', 60, 230], sunColor: '#f0eee0', clouds: .9, cloud: '#a8aab4', exposure: 1.05, hemi: 1.45, sunI: 2.1, sat: 1.02, tint: [.99, 1, 1.02], fx: ['spark', { color: '#fff2a0', n: 90, size: 5, hmax: 6 }] },
   sandreach: { name: 'Sandreach', sub: 'Glass dunes', echo: ['Fighting', 'Fire', 'Dragon'], spawn: [0, 26],
-    sky: ['#e8913f', '#fde5bc'], fog: ['#f4d6a8', 90, 300], sunColor: '#ffdcae', clouds: .12, cloud: '#fff4e0', exposure: 1.02, hemi: 1.2, sunI: 3.1, sat: 1.14, tint: [1.04, 1, .94], fx: ['dust', { color: '#f6d9a8', n: 260, size: 5, hmax: 4 }] },
+    sky: ['#e8913f', '#fde5bc'], fog: ['#f0d0a0', 110, 380], sunColor: '#ffdcae', clouds: .12, cloud: '#fff4e0', exposure: 1.02, hemi: 1.2, sunI: 3.1, sat: 1.14, tint: [1.04, 1, .94], fx: ['dust', { color: '#f6d9a8', n: 260, size: 5, hmax: 4 }] },
   rift: { name: 'The Obsidian Rift', sub: 'Beneath Relay Node 7', echo: ['Dragon', 'Fire', 'Darkness'], spawn: [0, 26], night: true,
     sky: ['#061418', '#1b4a44'], fog: ['#12302c', 40, 200], sunColor: '#8affe8', clouds: .5, cloud: '#2a5a54', exposure: 1.3, hemi: 1.5, sunI: 1.8, sat: 1.1, tint: [.96, 1.03, 1.02], bloom: .7, fx: ['mote', { color: '#5cf2d6', n: 280, size: 6 }] },
 };
@@ -90,8 +90,8 @@ const ROCKS = ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'];
 const BUSH = ['Bush_Common', 'Bush_Common_Flowers', 'Bush_Large_Flowers'], FLOWERS = ['Flower_3_Group', 'Flower_4_Group', 'Flower_1_Clump', 'Flower_2_Clump', 'Flower_5_Clump'], PLANTS = ['Fern_1', 'Plant_1_Big', 'Plant_7_Big', 'Clover_1'];
 const PALMS = ['Environment_PalmTree_1', 'Environment_PalmTree_2', 'Environment_PalmTree_3'], CLIFFS = ['Environment_Cliff1', 'Environment_Cliff2', 'Environment_Cliff3', 'Environment_Cliff4'];
 const FLORA = {
-  meadow: { trees: [...TREES, ...BIRCH, 'MapleTree_1'], forest: .5, rocks: ROCKS, bush: BUSH, flowers: FLOWERS, tall: ['Grass_Common_Tall'] },
-  marsh: { trees: [...PINES, ...BIRCH], forest: .45, rocks: ROCKS, bush: [...PLANTS, 'Bush_Common'], flowers: ['Mushroom_Common', 'Fern_1'], tall: ['Grass_Wispy_Tall', 'Grass_Common_Tall'] },
+  meadow: { trees: ['TT_Tree_Round', 'TT_Tree_Round2', 'TT_Tree_Round', 'CommonTree_1', 'CommonTree_3'], forest: .5, rocks: ROCKS, bush: ['TT_Bush', 'Bush_Common', 'Bush_Common_Flowers'], flowers: FLOWERS, tall: ['Grass_Common_Tall'] },
+  marsh: { trees: ['TT_Tree_Pine', 'TT_Tree_Round2', ...PINES.slice(0, 2)], forest: .45, rocks: ROCKS, bush: [...PLANTS, 'Bush_Common'], flowers: ['Mushroom_Common', 'Fern_1'], tall: ['Grass_Wispy_Tall', 'Grass_Common_Tall'] },
   cliffs: { trees: [...PINES, ...TWIST], forest: .55, rocks: ROCKS, bush: BUSH, flowers: FLOWERS, tint: { leaf: '#8fa0d8', other: '#a8a8c8' } },
   snow: { trees: PINES, forest: .55, rocks: ROCKS, bush: [], flowers: [], tint: { leaf: '#e6eef6', other: '#c8ccd6' } },
   plateau: { trees: DEAD, forest: .62, rocks: ROCKS, bush: ['Bush_Common'], flowers: [], tall: ['Grass_Wispy_Tall'], tint: { all: '#c9c07a' } },
@@ -117,7 +117,7 @@ export function createWorld(canvas, hooks = {}) {
   let player = null, pet = null, near = null, busy = false, mode = 'explore', built = false, building = null, envTex = null, env = null;
   const worldRoot = new THREE.Group(), terrainRoot = new THREE.Group(), actorsRoot = new THREE.Group(); scene.add(worldRoot, terrainRoot, actorsRoot);
   const towns = {}, npcs = [], wilds = [], allItems = [], allVillagers = [];
-  const keys = {}, cam = { yaw: Math.PI, pitch: .38, dist: 9.5, tYaw: Math.PI, tDist: 9.5 };
+  const keys = {}, cam = { yaw: Math.PI, pitch: .26, dist: 5.6, tYaw: Math.PI, tDist: 5.6, idle: 0 }; // Genshin-like: close, chest height, low pitch
   let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null;
   const perf = { n: 0, s: 0 };
   function applyQuality() {
@@ -274,7 +274,7 @@ export function createWorld(canvas, hooks = {}) {
       for (const [x, z, n] of [[20.2, 27, 'Prop_Barrel'], [21.8, 29.6, 'Prop_Bucket_Fishes'], [20.4, 33, 'Prop_Chest_Closed'], [22, 41, 'Prop_Anchor'], [28, 36.4, 'Prop_Barrel']]) kit(n, x, z, { y: .68, rot: x * 3, scale: 1.2 });
       scatter(PALMS, 26, 12, (x, z, y) => y > .05 && y < .9 && offPath(x, z) && clearOf(x, z, 1.5), { rMin: 30, rMax: 52, sMin: 1.4, sMax: 2.1, blockR: .5 });
       scatter(['Environment_Rock_2', 'Environment_Rock_4', 'Environment_Rock_3'], 30, 14, (x, z, y) => y > -.6 && y < .5, { rMin: 32, rMax: 56, sMin: 1.5, sMax: 3.2 });
-      scatter([...TREES, ...BIRCH, 'MapleTree_1'], 52, 21, (x, z, y) => y > .9 && offPath(x, z) && clearOf(x, z, 3.5) && Math.hypot(x, z - 2) > 16, { rMin: 16, rMax: 48, sMin: .7, sMax: 1.05, blockR: .6 });
+      scatter(has('TT_Tree_Round') ? ['TT_Tree_Round', 'TT_Tree_Round2', 'TT_Tree_Round', 'CommonTree_1', 'CommonTree_3'] : [...TREES, ...BIRCH, 'CommonTree_2'], 52, 21, (x, z, y) => y > .9 && offPath(x, z) && clearOf(x, z, 3.5) && Math.hypot(x, z - 2) > 16, { rMin: 16, rMax: 48, sMin: .7, sMax: 1.05, blockR: .6 });
       scatter(BUSH, 60, 22, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, 1.2), { rMin: 8, rMax: 44, sMin: .8, sMax: 1.3, shadow: false });
       scatter(FLOWERS, 90, 23, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, .8) && Math.hypot(x, z - 2) > 11.5, { rMin: 6, rMax: 44, sMin: .7, sMax: 1.2, shadow: false });
       scatter(ROCKS, 16, 24, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, 2), { rMin: 20, rMax: 46, sMin: .4, sMax: .9, blockR: .9 });
@@ -285,7 +285,7 @@ export function createWorld(canvas, hooks = {}) {
     },
     mistvale() {
       scatter(PINES, 55, 21, (x, z, y) => y > .5 && offPath(x, z) && clearOf(x, z, 3), { rMin: 10, rMax: 50, sMin: .7, sMax: 1.1, blockR: .6 });
-      scatter(TWIST, 6, 25, (x, z, y) => y > .6 && offPath(x, z) && clearOf(x, z, 6), { rMin: 22, rMax: 44, sMin: .45, sMax: .6, blockR: 1.2 });
+      scatter(has('TT_Tree_Round2') ? ['TT_Tree_Round2', 'TT_Tree_Pine'] : TWIST, 6, 25, (x, z, y) => y > .6 && offPath(x, z) && clearOf(x, z, 6), { rMin: 22, rMax: 44, sMin: .45, sMax: .6, blockR: 1.2 });
       scatter([...PLANTS, 'Fern_1', 'Fern_1'], 180, 22, (x, z, y) => y > -.1 && offPath(x, z), { rMin: 4, rMax: 50, sMin: .7, sMax: 1.3, shadow: false });
       scatter(['Mushroom_Common', 'Mushroom_Laetiporus'], 40, 26, (x, z, y) => y > .2 && offPath(x, z), { rMin: 6, rMax: 46, sMin: .8, sMax: 1.6, shadow: false });
       scatter(ROCKS, 22, 27, (x, z, y) => y > -.3 && offPath(x, z) && clearOf(x, z, 2), { rMin: 8, rMax: 48, sMin: .35, sMax: .8, blockR: .8 });
@@ -374,11 +374,58 @@ export function createWorld(canvas, hooks = {}) {
     root = new THREE.Group(); root.position.set(R.x, 0, R.z); worldRoot.add(root);
     colliders = []; items = []; villagers = []; curLod = { x: R.x, z: R.z, full: [], lod: [] }; townLods.push(curLod);
     try { BUILD[id](); } catch (e) { console.warn('[world] town build', id, e); }
+    try { decorateTown(id); } catch (e) { console.warn('[world] town decor', id, e); }
     if (id === 'rift') { const g0 = new THREE.Group(); g0.position.set(0, h(0, -8), -8); root.add(g0); glyphEntity(g0); }
     for (const c of colliders) { c.x += R.x; c.z += R.z; addCollider(c); }
     for (const it of items) { it.x += R.x; it.z += R.z; allItems.push(it); }
     for (const v of villagers) { v.pts = v.pts.map(([x, z]) => [x + R.x, z + R.z]); v.x += R.x; v.z += R.z; v.ch.group.position.x += R.x; v.ch.group.position.z += R.z; actorsRoot.add(v.ch.group); v.town = id; allVillagers.push(v); }
     towns[id] = { root, x: R.x, z: R.z }; h = H; root = null;
+  }
+
+  /* ================================================================== toon-town extras: Relay Center, Trial Hall (gym), benches & flowerbeds
+     placed automatically on flat, empty ground so they never collide with the hand-built layout or the story NPCs */
+  const decorLog = [];
+  const WARDEN_OF = { mistvale: 'mira', starfall: 'sable', frostline: 'orin', voltspire: 'vera', sandreach: 'dom' };
+  function findSpot(cx, cz, rad, { rMin = 0, rMax = 30, seed = 1, avoid = [], face = null, slope = 1.1 } = {}) {
+    const R = rng(seed);
+    for (let t = 0; t < 260; t++) {
+      const a = R() * Math.PI * 2, r = rMin + R() * (rMax - rMin), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      if (Math.hypot(x, z) < 9 + rad) continue;                                     // keep the plaza free
+      const ys = [[0, 0], [rad * .7, 0], [-rad * .7, 0], [0, rad * .7], [0, -rad * .7]].map(([dx, dz]) => h(x + dx, z + dz));
+      const lo = Math.min(...ys), hi = Math.max(...ys); if (hi - lo > slope || lo < .7) continue;     // flat, dry land
+      if (nearPath(x, z, rad * .75 + 1.2) || !clearOf(x, z, rad * .8)) continue;
+      if (avoid.some(([ax, az, ar]) => Math.hypot(ax - x, az - z) < ar + rad)) continue;
+      return { x, z, y: lo, rot: face ? Math.atan2(face[0] - x, face[1] - z) : 0 };
+    }
+    return null;
+  }
+  function decorateTown(id) {
+    if (!has('TT_RelayCenter') || id === 'rift') return;
+    const R = REGIONS[id], seed = id.length * 97;
+    const npcs = QS.ROSTER.filter(r => r.pos.region === id || Math.hypot(r.pos.x - R.x, r.pos.z - R.z) < 60).map(r => [r.pos.x - R.x, r.pos.z - R.z, 3.5]);
+    // Relay Center: near the middle of town, door facing the plaza
+    const rc = findSpot(0, 0, 6.8, { rMin: 14, rMax: 36, seed: seed + 1, avoid: npcs, face: [0, 0] });
+    if (rc) { decorLog.push(['relay', id, rc.x + R.x, rc.z + R.z]); kit('TT_RelayCenter', rc.x, rc.z, { y: rc.y - .1, rot: rc.rot, scale: .9 }); blockBox(rc.x, rc.z, 5.4, 4.2, rc.rot);
+      const tg = label('RELAY CENTER', 'Rest · save · card storage', '#5cf2d6'); tg.position.set(rc.x, rc.y + 8.2, rc.z); tg.scale.multiplyScalar(1.3); root.add(tg);
+      npcs.push([rc.x, rc.z, 8]); }
+    // Trial Hall next to the town's Warden
+    const wid = WARDEN_OF[id], w = wid && QS.ROSTER.find(r => r.id === wid);
+    if (w) { const wx = w.pos.x - R.x, wz = w.pos.z - R.z; let gs = findSpot(wx, wz, 7.6, { rMin: 8, rMax: 30, seed: seed + 2, slope: 1.1, avoid: npcs.filter(n => Math.hypot(n[0] - wx, n[1] - wz) > 1), face: [wx, wz] });
+      if (!gs) gs = findSpot(wx, wz, 7.6, { rMin: 8, rMax: 48, seed: seed + 5, slope: 1.9, avoid: npcs.filter(n => Math.hypot(n[0] - wx, n[1] - wz) > 1), face: [wx, wz] });
+      if (gs) { decorLog.push(['gym', id, gs.x + R.x, gs.z + R.z]); kit('TT_Gym', gs.x, gs.z, { y: gs.y - .1, rot: gs.rot, scale: .82 }); blockBox(gs.x, gs.z, 6.1, 5.3, gs.rot);
+        const tg = label(AREAS[id].name.toUpperCase() + ' TRIAL HALL', (P.CAST[wid]?.name || 'Warden') + "'s Trial", '#c9a4ff'); tg.position.set(gs.x, gs.y + 9, gs.z); tg.scale.multiplyScalar(1.3); root.add(tg);
+        npcs.push([gs.x, gs.z, 9]); } }
+    // benches & flowerbeds along the town paths
+    const Rr = rng(seed + 3);
+    for (const p of TOWN_PATHS[id] || []) for (let i = 0; i < p.pts.length - 1; i++) {
+      const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
+      for (let d = 4; d < L - 2; d += 9) {
+        const side = Rr() < .5 ? -1 : 1, x = ax + dx * d - dz * side * 2.9, z = az + dz * d + dx * side * 2.9;
+        if (Math.hypot(x, z) < 12 || !clearOf(x, z, 1.4) || h(x, z) < .6 || npcs.some(([nx, nz]) => Math.hypot(nx - x, nz - z) < 3)) continue;
+        const name = Rr() < .55 ? 'TT_Flowerbed' : 'TT_Bench', rot = Math.atan2(dz * side * -1, -dx * side) ;
+        kit(name, x, z, { rot: Math.atan2(-(-dz * side), -(dx * side)), block: .7 });
+      }
+    }
   }
 
   /* ================================================================== terrain streaming (worker) */
@@ -475,7 +522,7 @@ export function createWorld(canvas, hooks = {}) {
   function buildGlobals() {
     sky = makeSky(AREAS.harbor); scene.add(sky);
     water = makeWater({ ...AREAS.harbor, water: '#1d6aab', shallow: '#38c6c4', fog: AREAS.harbor.fog }, H, { hm: gridTex, span: WORLD, size: viewFar * 2.6 + 200 }); scene.add(water);
-    grassMesh = grassFieldImpl(H, null, { n: 26000, r: 60, base: '#3f7a34', tip: '#a8d86a', hgt: .6, seed: 5, hmask: gridTex, span: WORLD }); scene.add(grassMesh);
+    grassMesh = grassFieldImpl(H, null, { n: 70000, r: 60, base: '#2f6630', tip: '#9cd462', hgt: .34, seed: 5, hmask: gridTex, span: WORLD }); scene.add(grassMesh);
     envTex?.dispose(); envTex = envFromSky(renderer, { ...AREAS.harbor, ground: ['#79a957', '#5a8d45', '#98b868'] }); scene.environment = comic ? null : envTex; scene.environmentIntensity = .7;
   }
   /* gate barricades on the routes (shown while closed) */
@@ -682,11 +729,11 @@ export function createWorld(canvas, hooks = {}) {
   let drag = null; const stick = new THREE.Vector2(); let touchRun = false; const touches = new Map(); let pinch = 0;
   canvas.addEventListener('pointerdown', e => { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); drag = null; return; } drag = { x: e.clientX, y: e.clientY, yaw: cam.tYaw, pitch: cam.pitch, moved: false, btn: e.button }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener('pointermove', e => { if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touches.size === 2 && pinch) { const [a, b] = [...touches.values()], d = Math.hypot(a.x - b.x, a.y - b.y); cam.tDist = clamp(cam.tDist - (d - pinch) * .03, 3.5, 18); pinch = d; return; }
-    if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y, sens = hooks.sensitivity?.() || 1; if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true; cam.tYaw = drag.yaw - dx * .006 * sens; cam.pitch = clamp(drag.pitch + dy * .004 * sens * (hooks.invertY?.() ? -1 : 1), .08, 1.15); });
+    if (touches.size === 2 && pinch) { const [a, b] = [...touches.values()], d = Math.hypot(a.x - b.x, a.y - b.y); cam.tDist = clamp(cam.tDist - (d - pinch) * .03, 2.6, 14); pinch = d; return; }
+    if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y, sens = hooks.sensitivity?.() || 1; if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; cam.idle = 0; } cam.tYaw = drag.yaw - dx * .006 * sens; cam.pitch = clamp(drag.pitch + dy * .004 * sens * (hooks.invertY?.() ? -1 : 1), .08, 1.15); });
   canvas.addEventListener('pointerup', e => { touches.delete(e.pointerId); if (touches.size < 2) pinch = 0; if (drag && !drag.moved && drag.btn === 0) clickMove(e); drag = null; });
   canvas.addEventListener('pointercancel', e => { touches.delete(e.pointerId); pinch = 0; drag = null; });
-  canvas.addEventListener('wheel', e => { cam.tDist = clamp(cam.tDist + Math.sign(e.deltaY) * 1.1, 3.5, 18); }, { passive: true });
+  canvas.addEventListener('wheel', e => { cam.tDist = clamp(cam.tDist + Math.sign(e.deltaY) * .8, 2.6, 14); }, { passive: true });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   let target = null; const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
   function clickMove(e) {
@@ -817,10 +864,21 @@ export function createWorld(canvas, hooks = {}) {
     // camera
     if (battleCam) battleCam(camera, dt);
     else {
-      cam.yaw += (cam.tYaw - cam.yaw) * Math.min(1, dt * 8); cam.dist += (cam.tDist - cam.dist) * Math.min(1, dt * 6);
-      camTarget.set(pp.x, pp.y + 1.6, pp.z);
+      // soft auto-follow: when the player runs and the camera has not been touched for a moment, ease in behind them
+      cam.idle += dt; const spd = Math.hypot(player.vel.x, player.vel.z);
+      if (!drag && cam.idle > 1.2 && spd > 1.5) { const behind = Math.atan2(-player.vel.x, -player.vel.z); let d = behind - cam.tYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); cam.tYaw += d * Math.min(1, dt * .9) * Math.min(1, spd / 6); }
+      cam.yaw += (cam.tYaw - cam.yaw) * Math.min(1, dt * 8);
+      // camera collision: pull in when a building stands between the player and the camera
+      const want = cam.tDist; let clip = want;
+      for (let k = 1; k <= 8; k++) { const dd = want * k / 8, qx = pp.x + Math.sin(cam.yaw) * dd, qz = pp.z + Math.cos(cam.yaw) * dd;
+        for (const c of nearColliders(qx, qz, 1)) { const inside = c.box ? (() => { const dx = qx - c.x, dz = qz - c.z, lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c; return Math.abs(lx) < c.hw + .3 && Math.abs(lz) < c.hd + .3; })() : c.r > 1.4 && Math.hypot(qx - c.x, qz - c.z) < c.r;
+          if (inside) { clip = Math.min(clip, Math.max(1.6, dd - .6)); break; } }
+        if (clip < want) break; }
+      cam.dist += (clip - cam.dist) * Math.min(1, dt * (clip < cam.dist ? 14 : 4));
+      const tY = pp.y + 1.35 + (cam.dist < 3.5 ? .15 : 0);
+      camTarget.set(pp.x, tY, pp.z);
       const cx = pp.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, cz = pp.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist;
-      const cy = Math.max(pp.y + 1.6 + Math.sin(cam.pitch) * cam.dist, H(cx, cz) + .8, .6);
+      const cy = Math.max(tY + Math.sin(cam.pitch) * cam.dist, H(cx, cz) + .6, .6);
       camPos.set(cx, cy, cz); if (snap) { camera.position.copy(camPos); snap = false; } else camera.position.lerp(camPos, Math.min(1, dt * 7)); camera.lookAt(camTarget);
     }
     const fov = hooks.fov?.() || 58; if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
@@ -936,13 +994,15 @@ export function createWorld(canvas, hooks = {}) {
   return {
     setStick(x, y) { stick.set(x, y); }, setRun(v) { touchRun = !!v; },
     key(code, isDown = true) { const ev = { code, key: code, target: document.body, preventDefault() {} }; if (isDown) down(ev); else up(ev); },
+    teleport(x, z) { teleport(x, z); },
+    setView(yaw, pitch = cam.pitch, dist = cam.tDist) { cam.yaw = cam.tYaw = yaw; cam.pitch = pitch; cam.tDist = cam.dist = dist; cam.idle = 0; snap = true; },
     travelTo(id) { const R = REGIONS[id]; if (!R) return; teleport(R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)); },
     snapshot(w = 960) { if (post) post.render(0); else renderer.render(scene, camera); const src = renderer.domElement, c = document.createElement('canvas'); c.width = w; c.height = Math.round(w * src.height / src.width); c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', .82); },
     enter, start, stop, resize, refreshLook, refreshPartner: spawnCompanions, refreshPet: spawnCompanions, refreshStory() { refreshNPCs(); runStoryAuto(); },
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, decorLog }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },
   };

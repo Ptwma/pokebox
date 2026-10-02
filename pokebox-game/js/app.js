@@ -857,7 +857,7 @@ function ensurePets() { const s = st(); s.pets ||= { owned: {}, active: null }; 
 const IS_APP = /PokeboxAndroid/.test(navigator.userAgent), TOUCH = IS_APP || matchMedia('(pointer: coarse)').matches;
 if (TOUCH) document.documentElement.classList.add('touch'); if (IS_APP) document.documentElement.classList.add('app', 'lowfx');
 const WEAK_GPU = (() => { try { const gl = document.createElement('canvas').getContext('webgl2'), d = gl?.getExtension('WEBGL_debug_renderer_info'); const r = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; return /Intel|UHD|Iris|HD Graphics|Mali|Adreno|PowerVR|Apple GPU/i.test(r); } catch { return false; } })();
-const gfx = () => { const g = st().settings; return { q: g.gfx || (IS_APP ? 'low' : 'medium'), auto: g.autoGfx !== false, fov: g.fov || 58, sens: g.sens || 1, inv: !!g.invertY, scale: g.rscale || (IS_APP ? .9 : WEAK_GPU ? .8 : 1) }; };
+const gfx = () => { const g = st().settings; return { q: g.gfx || (IS_APP ? 'low' : 'medium'), auto: g.autoGfx !== false, fov: g.fov || 50, sens: g.sens || 1, inv: !!g.invertY, scale: g.rscale || (IS_APP ? .9 : WEAK_GPU ? .8 : 1) }; };
 let worldPartner = null, worldPet = null;
 function ensureWorld() {
   if (world) return world;

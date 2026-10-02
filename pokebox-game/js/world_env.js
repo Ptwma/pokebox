@@ -181,7 +181,7 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
   }
   let hm = hmask; if (!hm) { hm = new THREE.DataTexture(data, M, M, THREE.RGFormat, THREE.FloatType); hm.magFilter = hm.minFilter = THREE.LinearFilter; hm.needsUpdate = true; }
   const blade = new THREE.BufferGeometry();
-  blade.setAttribute('position', new THREE.Float32BufferAttribute([-w, 0, 0, w, 0, 0, -w * .6, .5, 0, w * .6, .5, 0, 0, 1, 0], 3));
+  blade.setAttribute('position', new THREE.Float32BufferAttribute([-w * 1.1, 0, 0, w * 1.1, 0, 0, -w * .75, .45, .02, w * .75, .45, .02, 0, 1, .06], 3)); // wide, slightly curved blade
   blade.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4]);
   const geo = new THREE.InstancedBufferGeometry(); geo.index = blade.index; geo.attributes.position = blade.attributes.position;
   const Rg = rng(seed), off = new Float32Array(n * 4), rot = new Float32Array(n * 2);
@@ -210,7 +210,12 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
       }`,
     fragmentShader: `uniform vec3 cBase, cTip; varying float vH; varying float vShade;
       #include <fog_pars_fragment>
-      void main(){ float k = floor(smoothstep(0., 1., vH) * 2. + .6) / 2.; vec3 c = mix(cBase, cTip, .25 + .75 * k) * vShade; gl_FragColor = vec4(c, .15);
+      void main(){
+        // soft root→tip gradient (dark roots blend into the ground), per-blade hue drift between teal and sun-yellow
+        float k = smoothstep(0., 1., vH); float hue = (vShade - .78) / .22;
+        vec3 tip = mix(cTip * vec3(.86, 1., .95), cTip * vec3(1.08, 1.04, .78), hue);
+        vec3 c = mix(cBase * .8, tip, .1 + .9 * k * k) * (.9 + .1 * hue);
+        gl_FragColor = vec4(c, .15);
         #include <colorspace_fragment>
         #include <fog_fragment>
       }` });

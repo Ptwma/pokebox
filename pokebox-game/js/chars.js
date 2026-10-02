@@ -98,7 +98,8 @@ function rigActor(obj, clips, { height }) {
 
 /* ---------- people */
 const matCache = new Map();
-export function makeRigged(look, { scale = 1, hat, height = 2.3 } = {}) {
+export const STYLE = { head: 1.3, feet: 1.12 };
+export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   const L = Object.assign({ body: 'm', skin: 'sk2', hairColor: 'hc1', hat: 'none', top: 'tee', topColor: 'tc1', acc: 'none' }, look);
   const path = modelFor(L), gltf = ready.get(path);
   if (!gltf) return null;
@@ -112,9 +113,11 @@ export function makeRigged(look, { scale = 1, hat, height = 2.3 } = {}) {
     let m = matCache.get(mk);
     if (!m) {
       m = src.clone(); m.roughness = Math.max(.55, m.roughness ?? .8); m.metalness = /Metal|Gold|Visor/i.test(src.name) ? .6 : 0;
-      if (/^Skin/i.test(src.name)) m.color.set(skin).multiplyScalar(/Darker/i.test(src.name) ? .85 : 1);
-      else if (/Hair|Eyebrow|Moustache/i.test(src.name)) m.color.set(hair).multiplyScalar(/Eyebrow/i.test(src.name) ? .7 : 1);
-      else if (src.name === main) m.color.set(outfit);
+      if (/^Skin/i.test(src.name)) { m.color.set(skin).multiplyScalar(/Darker/i.test(src.name) ? .85 : 1); m.color.offsetHSL(.005, .06, .02); m.roughness = .75; }   // warmer, livelier skin
+      else if (/Hair|Eyebrow|Moustache/i.test(src.name)) { m.color.set(hair).multiplyScalar(/Eyebrow/i.test(src.name) ? .55 : 1); m.color.offsetHSL(0, .1, 0); m.roughness = .45; }  // glossier, saturated hair
+      else if (/^Eye$/i.test(src.name)) { m.color.multiplyScalar(.6); m.roughness = .2; }   // deeper eyes read better at distance
+      else if (src.name === main) { m.color.set(outfit); m.color.offsetHSL(0, .08, 0); }
+      else m.color.offsetHSL(0, .05, 0);
       matCache.set(mk, m);
     }
     o.material = m; o.castShadow = true; o.receiveShadow = false;
@@ -130,6 +133,9 @@ export function makeRigged(look, { scale = 1, hat, height = 2.3 } = {}) {
     if (HAT[hatId] && !/King|Witch|Worker|Farmer|Swat|Spacesuit/.test(path)) mount.add(HAT[hatId](L.top === 'labcoat' ? '#3d8fd6' : outfit));
     if (L.acc && L.acc !== 'none' && !/Spacesuit|Swat/.test(path)) { const a = accessory(L.acc); a.position.y = -.38; mount.add(a); }
   }
+  // anime / Pokémon-trainer proportions: bigger head (hats & accessories ride along), slightly bigger feet
+  if (head) head.scale.setScalar(STYLE.head);
+  obj.traverse(o => { if (o.isBone && /^Foot\./.test(o.name)) o.scale.setScalar(STYLE.feet); });
   applyComic(obj); addInkHull(obj);
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .2, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   const R = rigActor(obj, gltf.animations, { height });

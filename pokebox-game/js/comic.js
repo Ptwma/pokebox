@@ -62,18 +62,28 @@ function patch(sh, m) {
       #endif
       float ndl = ${fol ? 'dot(normalize(N * .4 + (viewMatrix * vec4(0., 1., 0., 0.)).xyz), L) * .7 + .35' : 'dot(N, L)'};
       float shT = smoothstep(.2, .8, sh); ${fol ? 'shT = .55 + .45 * shT;' : ''}
-      float lit = smoothstep(-.04, .16, ndl) * shT;
+      // anime ramp: crisp terminator, a thin warm transition band, saturated cool shadows that keep their hue
+      float lit = smoothstep(-.015, .045, ndl) * shT;
+      float band = smoothstep(-.06, .0, ndl) * (1. - smoothstep(.0, .08, ndl)) * shT;
       vec3 sky = vec3(.55, .62, .8);
       #if NUM_HEMI_LIGHTS > 0
         sky = getHemisphereLightIrradiance(hemisphereLights[0], N) * .42;
       #endif
-      vec3 tintN = mix(vec3(1.), cShadow / max(max(cShadow.r, cShadow.g), max(cShadow.b, .001)), .4);
-      vec3 shade = alb * (tintN * cDark * .78 + sky * .22);
+      vec3 tintN = cShadow / max(max(cShadow.r, cShadow.g), max(cShadow.b, .001));
+      vec3 shade = alb * mix(vec3(1.), tintN, .55) * cDark * .92 + alb * sky * .16;
+      float sl = dot(shade, vec3(.2126, .7152, .0722)); shade = max(mix(vec3(sl), shade, 1.28), 0.);     // shadows stay colourful
       vec3 col = mix(shade, alb * sunC * cLit, lit);
+      col += alb * vec3(1., .55, .4) * band * .22;                                                    // warm "subsurface" edge of the terminator
       vec3 H = normalize(L + V); float gloss = 1. - clamp(roughnessFactor, 0., 1.);
-      col += sunC * smoothstep(.93, .97, dot(N, H)) * gloss * .25 * lit;
+      col += sunC * smoothstep(.95, .975, dot(N, H)) * gloss * .3 * lit;
       float fres = pow(1. - abs(dot(N, V)), 3.);
-      col += (sky * .5 + alb * .3) * fres * .35 * (.4 + .6 * lit);
+      col += (sky * .5 + alb * .3) * fres * .22 * (.4 + .6 * lit);
+      ${world || fol ? '' : `
+      #ifndef USE_INSTANCING
+        // characters & props: thin bright rim (anime key-light rim)
+        float rimE = smoothstep(.62, .74, 1. - abs(dot(N, V)));
+        col += mix(cLit, vec3(1.), .4) * rimE * .32 * (.35 + .65 * lit);
+      #endif`}
       outgoingLight = col + totalEmissiveRadiance;
     } else if (cOn > .5) {
       vec3 alb = diffuseColor.rgb;
@@ -242,8 +252,8 @@ const FINAL = {
       if (toon > .5) { // cheap edge AA on the colour (FXAA-like blend along luminance edges)
         float ed = smoothstep(.04, .2, abs(lum(Tl.rgb) - lum(Tr.rgb)) + abs(lum(Tu.rgb) - lum(Td.rgb)));
         col = mix(col, (Tl.rgb + Tr.rgb + Tu.rgb + Td.rgb + col * 2.) / 6., ed * .55); }
-      // grade: filmic curve, crushed blacks, contrast, desaturation, warm highlights / cool shadows
-      col = film(col);
+      // grade: filmic curve (toon: softer shoulder so skies & grass keep their colour), contrast, split toning
+      col = toon > .5 ? clamp(1. - exp(-col * exposure * 1.18), 0., 1.) * 1.04 : film(col);
       float L = lum(col);
       col = mix(vec3(L), col, sat);
       col = mix(col, col * shTint * 2.2, split * (1. - smoothstep(.05, .5, L)));
@@ -276,9 +286,9 @@ export function createComicPost(renderer, scene, camera, quality) {
     const T = A.toon || {};
     U.inkCol.value.set(T.ink || '#2b2236'); INK.cInk.value.set(T.ink || '#2b2236'); U.inkFar.value = 90;
     U.shTint.value.set(T.cool || '#6f8cd8'); U.hiTint.value.set(T.warm || '#fff1d6');
-    U.sat.value = T.sat ?? 1.02; U.split.value = T.split ?? .1; U.vig.value = .16; U.exposure.value = T.exposure ?? (A.night ? 1.15 : 1.02);
-    U.contrast.value = 1.04; U.crush.value = 0; U.grain.value = 0;
-    CU.cShadow.value.set(T.shadow || (A.night ? '#4a4fa8' : '#7d86c8')); CU.cLit.value.set(T.lit || A.sunColor || '#fff6e8');
+    U.sat.value = T.sat ?? 1.08; U.split.value = T.split ?? .14; U.vig.value = .2; U.exposure.value = T.exposure ?? (A.night ? 1.15 : 1.02);
+    U.contrast.value = 1.07; U.crush.value = .01; U.grain.value = 0;
+    CU.cShadow.value.set(T.shadow || (A.night ? '#4a4fa8' : '#6f78d6')); CU.cLit.value.set(T.lit || A.sunColor || '#fff6e8');
     CU.cSunK.value = (T.key ?? (A.night ? .9 : 1.05)) / Math.max(.5, A.sunI || 2.6); CU.cDark.value = T.dark ?? (A.night ? .5 : .62);
     CU.cHatch.value = 0; CU.cPaint.value = 0;
     if (bloom) bloom.strength = (A.bloom ?? .3) * .6;
