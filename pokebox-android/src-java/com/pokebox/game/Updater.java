@@ -154,6 +154,13 @@ public class Updater {
     @JavascriptInterface
     public void reload() { act.runOnUiThread(() -> { if (act instanceof MainActivity) ((MainActivity) act).refreshOverride(); web.reload(); }); }
 
+    /** the title screen may be portrait; the game itself is played sideways */
+    @JavascriptInterface
+    public void landscape() { act.runOnUiThread(() -> act.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)); }
+
+    @JavascriptInterface
+    public void anyOrientation() { act.runOnUiThread(() -> act.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER)); }
+
     @JavascriptInterface
     public void openUrl(String url) {
         if (url == null || !url.startsWith("https://github.com/")) return; // only the release page

@@ -1,5 +1,4 @@
-# Pokebox people — run inside Blender (text block 'char_lib').
-# build(arm, kind, top, tag, cols, bd) builds a person on a Quaternius armature (bd: w weight, mus muscle, belly, kid, hair, facial, eye)
+# Pokebox people — Blender text 'char_lib'. build(arm, kind, top, tag, cols, bd) + bind() (joins, decimates to ~5k tris) + export()
 
 import bpy, bmesh, math
 from mathutils import Vector, Matrix
@@ -288,6 +287,13 @@ def bind(arm, objs):
     for o in rig + autos: o.select_set(True)
     bpy.context.view_layer.objects.active = main; bpy.ops.object.join()
     main.name = 'Trainer'; main.data.name = 'Trainer'
+    # game budget: ~5k triangles per person (was ~16k) — decimate before the armature modifier, weights are kept
+    tris = sum(len(p.vertices) - 2 for p in main.data.polygons)
+    if tris > 5200:
+        d = main.modifiers.new('dec', 'DECIMATE'); d.ratio = 5200 / tris; d.use_collapse_triangulate = True
+        bpy.context.view_layer.objects.active = main
+        while main.modifiers[0].name != 'dec': bpy.ops.object.modifier_move_up(modifier='dec')
+        bpy.ops.object.modifier_apply(modifier='dec')
     objs[:] = [main]
 
 def export(arm, objs, path):

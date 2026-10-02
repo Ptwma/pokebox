@@ -52,12 +52,14 @@ export function makeSky(A) {
         c += sunCol * (pow(sd, 900.) * 6. + pow(sd, 12.) * .35 * (1. - night) + pow(sd, 3.) * .08);  // disc + glow
         if (y > 0.) {                                                                  // clouds on a dome projection
           vec2 uv = d.xz / (y + .12);
-          float c1 = fbm(uv * 1.3 + vec2(time * .012, time * .004));
-          float c2 = fbm(uv * 3.1 - vec2(time * .02, 0.));
-          float cv = c1 * .75 + c2 * .35, th = 1.02 - cloudAmt * .8;
-          float cl = smoothstep(th, th + .03, cv) * smoothstep(0., .25, y);
-          vec3 cc = mix(cloudCol * .62, cloudCol * 1.05, step(.55, c2 + (cv - th) * .8)) + sunCol * step(.8, pow(sd, 6.)) * .25;
-          cc = mix(cc, cloudCol * .3, (1. - smoothstep(0., .035, cv - th)) * .7);
+          // big soft cumulus (anime sky): large shapes, bright sunlit tops, blue-grey bellies, soft edges, silver lining toward the sun
+          float c1 = fbm(uv * .62 + vec2(time * .010, time * .003));
+          float c2 = fbm(uv * 1.9 - vec2(time * .016, 0.));
+          float cv = c1 * .8 + c2 * .32, th = 1.0 - max(cloudAmt, .55) * .78;
+          float cl = smoothstep(th, th + .1, cv) * smoothstep(0., .2, y);
+          float lit = smoothstep(.25, .85, c2 * .5 + (cv - th) * 2.6 + .15);
+          vec3 cc = mix(mix(cloudCol, vec3(.62, .7, .86), .45) * .82, cloudCol * 1.07, lit);
+          cc += sunCol * pow(sd, 5.) * (1. - smoothstep(0., .14, cv - th)) * .55;
           c = mix(c, cc, cl * .92);
           if (night > .02) {                                                           // stars
             vec2 sp = d.xz / (y + .6) * 180.; float st = step(.9965, h(floor(sp))) * (.6 + .4 * sin(time * 3. + h(floor(sp)) * 40.));
@@ -181,8 +183,15 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
   }
   let hm = hmask; if (!hm) { hm = new THREE.DataTexture(data, M, M, THREE.RGFormat, THREE.FloatType); hm.magFilter = hm.minFilter = THREE.LinearFilter; hm.needsUpdate = true; }
   const blade = new THREE.BufferGeometry();
-  blade.setAttribute('position', new THREE.Float32BufferAttribute([-w * 1.1, 0, 0, w * 1.1, 0, 0, -w * .75, .45, .02, w * .75, .45, .02, 0, 1, .06], 3)); // wide, slightly curved blade
-  blade.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4]);
+  // a tuft of 4 soft blades (different heights, leaning outwards) instead of one stiff spike: reads as a lawn, not as needles
+  const P = [], I = [];
+  [[0, 1, 0], [2.1, .78, .18], [4.2, .86, -.12], [1.1, .62, .3]].forEach(([a, hh, lean], b) => {
+    const ca = Math.cos(a), sa = Math.sin(a), o = P.length / 3, ox = sa * .05, oz = ca * .05;
+    const pt = (x, y, z) => P.push(ox + x * ca + z * sa, y * hh, oz - x * sa + z * ca);
+    pt(-w * 1.3, 0, 0); pt(w * 1.3, 0, 0); pt(-w * .85, .45, .04 + lean * .2); pt(w * .85, .45, .04 + lean * .2); pt(0, 1, .12 + lean * .35);
+    I.push(o, o + 1, o + 2, o + 1, o + 3, o + 2, o + 2, o + 3, o + 4);
+  });
+  blade.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); blade.setIndex(I);
   const geo = new THREE.InstancedBufferGeometry(); geo.index = blade.index; geo.attributes.position = blade.attributes.position;
   const Rg = rng(seed), off = new Float32Array(n * 4), rot = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) { off.set([(Rg() * 2 - 1) * R, 0, (Rg() * 2 - 1) * R, (.55 + Rg() * .8) * hgt], i * 4); rot.set([Rg() * 6.2832, Rg()], i * 2); }
@@ -214,7 +223,7 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
         // soft root→tip gradient (dark roots blend into the ground), per-blade hue drift between teal and sun-yellow
         float k = smoothstep(0., 1., vH); float hue = (vShade - .78) / .22;
         vec3 tip = mix(cTip * vec3(.86, 1., .95), cTip * vec3(1.08, 1.04, .78), hue);
-        vec3 c = mix(cBase * .8, tip, .1 + .9 * k * k) * (.9 + .1 * hue);
+        vec3 c = mix(cBase * .96, tip, .22 + .78 * k) * (.92 + .08 * hue);   // roots match the ground: reads as a lawn, not as dark spikes
         gl_FragColor = vec4(c, .15);
         #include <colorspace_fragment>
         #include <fog_fragment>

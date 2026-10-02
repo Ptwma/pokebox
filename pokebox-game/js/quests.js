@@ -271,17 +271,13 @@ export function ringLimit() {
   const f = Q().flags;
   return f['gate-r6'] ? 360 : f['gate-r5'] ? 314 : f['gate-r4'] ? 252 : f['gate-r3'] ? 193 : f['gate-r2'] ? 133 : f['gate-r1'] ? 72 : 14;
 }
-/** may the player stand here? returns null or the reason. Veyra is open: the only hard locks are leaving town before
- *  you have a partner Echo, and the Champion's causeway to the Rift (the finale). Everything else is soft-gated by danger. */
-export function blockedAt(x, z) {
-  const q = Q(), f = q.flags, r = Math.hypot(x, z);
-  if (r < 350 && !f['gate-cw']) return 'cw';
-  if (q.starter == null) { const u = ringU(x, z); if (u > 16 && u < 350) return 'starter'; }
-  return null;
-}
+/** may the player stand here? Veyra is fully open — nothing blocks you; areas ahead of the story are only dangerous. */
+export function blockedAt() { return null; }
 /** the chapter in which the story reaches each part of the ring (u in degrees) — used for danger */
 const TIER = [[0, 0], [30, 1], [59, 2], [121, 3], [180, 4], [239, 5], [301, 6], [340, 3], [360, 0]];
+const RIFT_TIER = 8;
 export function tierAt(x, z) {
+  const r = Math.hypot(x, z); if (r < 300) return RIFT_TIER - (r / 300) * 2; // the Rift and its causeway: endgame danger
   const u = ringU(x, z);
   for (let i = 1; i < TIER.length; i++) { const [u1, t1] = TIER[i], [u0, t0] = TIER[i - 1]; if (u <= u1) return t0 + (t1 - t0) * (u - u0) / (u1 - u0); }
   return 0;

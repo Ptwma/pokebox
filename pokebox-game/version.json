@@ -1,11 +1,15 @@
 {
-  "version": "2.9.0",
+  "version": "3.0.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Real townsfolk made in Blender: kids, elders, bald and bearded people, heavy and muscular builds, different heights",
-    "People have jobs that fit their town: fishers with rods on the docks, dock workers hammering, merchants, scholars reading, gardeners, sweepers, smiths",
-    "They work with natural pauses, turn to look at you when you come close, and tell you who they are when you talk to them"
+    "New title screen and main menu with its own music; on phones it asks you to turn the phone sideways before the game",
+    "The whole island is open: walk anywhere, climb steep slopes, the Rift and its causeway are reachable (very dangerous early)",
+    "New plants made in Blender: lush trees, birches, pines, palms, cacti, bushes, flower patches — no more out-of-place assets",
+    "Denser, softer grass that blends with the ground; bigger anime clouds",
+    "70 landmarks between towns: camps, old ruins, flower groves, lookout towers and treasure chests with coins",
+    "Phones: sharp image with automatic resolution for smooth frame rate, compact HUD, tap the action bubble to interact",
+    "Much faster: each person is one draw call (5k triangles instead of 16k), fewer vegetation draw calls"
   ]
 }

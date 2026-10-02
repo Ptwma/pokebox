@@ -103,9 +103,9 @@ const TOWN_R = 44, TOWN_BLEND = 72;
 
 /* ------------------------------------------------------------------ biomes */
 export const BIOMES = {
-  meadow:   { ground: ['#5c9c44', '#3e7f3a', '#86bb56'], sand: '#e8d7a4', rock: '#8f8a80', path: '#cdb07c', grass: ['#3f7a34', '#a8d86a'], grassK: 1, snowY: 99 },
+  meadow:   { ground: ['#5a9a42', '#478838', '#72ac4c'], sand: '#e8d7a4', rock: '#8f8a80', path: '#cdb07c', grass: ['#4a8a36', '#a4d468'], grassK: 1, snowY: 99 },
   marsh:    { ground: ['#5e9150', '#3f7045', '#7ea55e'], sand: '#aaa37a', rock: '#707768', path: '#978764', grass: ['#2f6a3d', '#9cc978'], grassK: 1.1, snowY: 99 },
-  cliffs:   { ground: ['#6f86a6', '#55698a', '#8ea2c0'], sand: '#8a8fa6', rock: '#6f7488', path: '#a4a6be', grass: ['#3d4f78', '#8fa6d8'], grassK: .7, snowY: 99 },
+  cliffs:   { ground: ['#5f8f86', '#4a7670', '#7fa89a'], sand: '#8a8fa6', rock: '#6f7488', path: '#a4a6be', grass: ['#3f6e66', '#9cc8b4'], grassK: .8, snowY: 99 },
   snow:     { ground: ['#e8f1fa', '#cddcee', '#ffffff'], sand: '#e6eef6', rock: '#8a9aae', path: '#bccadc', grass: ['#8aa0a8', '#dfeaf0'], grassK: .15, snowY: 2.5 },
   plateau:  { ground: ['#a19a66', '#7d7850', '#bdb27c'], sand: '#958d6c', rock: '#77725f', path: '#b0a27a', grass: ['#6d6a3c', '#d8cf80'], grassK: .75, snowY: 99 },
   dunes:    { ground: ['#eab974', '#d69f5a', '#f4d396'], sand: '#f4d9a2', rock: '#be7c4a', path: '#d1a264', grass: ['#9a7a3a', '#ecd28a'], grassK: .18, snowY: 99 },

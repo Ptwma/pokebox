@@ -8,6 +8,7 @@ import { startSpace } from './space.js';
 import * as P from './progress.js';
 import { createWorld, AREAS } from './world.js';
 import * as QS from './quests.js';
+import { runTitle } from './title.js';
 import { autoCheck, manualCheck } from './updater.js';
 import { createPreview, PETS } from './chars.js';
 import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
@@ -870,7 +871,7 @@ function ensurePets() { const s = st(); s.pets ||= { owned: {}, active: null }; 
 const IS_APP = /PokeboxAndroid/.test(navigator.userAgent), TOUCH = IS_APP || matchMedia('(pointer: coarse)').matches;
 if (TOUCH) document.documentElement.classList.add('touch'); if (IS_APP) document.documentElement.classList.add('app', 'lowfx');
 const WEAK_GPU = (() => { try { const gl = document.createElement('canvas').getContext('webgl2'), d = gl?.getExtension('WEBGL_debug_renderer_info'); const r = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; return /Intel|UHD|Iris|HD Graphics|Mali|Adreno|PowerVR|Apple GPU/i.test(r); } catch { return false; } })();
-const gfx = () => { const g = st().settings; return { q: g.gfx || (IS_APP ? 'low' : 'medium'), auto: g.autoGfx !== false, fov: g.fov || 50, sens: g.sens || 1, inv: !!g.invertY, scale: g.rscale || (IS_APP ? .9 : WEAK_GPU ? .8 : 1) }; };
+const gfx = () => { const g = st().settings; return { q: g.gfx || (TOUCH ? 'low' : 'medium'), auto: g.autoGfx !== false, fov: g.fov || (TOUCH ? 55 : 50), sens: g.sens || 1, inv: !!g.invertY, scale: g.rscale || (WEAK_GPU ? .85 : 1) }; };
 let worldPartner = null, worldPet = null;
 function ensureWorld() {
   if (world) return world;
@@ -889,7 +890,9 @@ function ensureWorld() {
     talk: (lines, o) => playScene(lines, o), confirm: worldConfirm, chooseStarter, goal: worldGoal,
     onStep: st => { if (st) toast(`<b>New objective:</b> ${esc(st.text)}`); worldHud(); },
     onChapter: (ch, idx) => { xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
-    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (html) p.innerHTML = html; },
+    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
+      if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); navigator.vibrate?.(8); }; }
+      else p.innerHTML = html; },
     onArea: (a) => { const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
@@ -1153,8 +1156,16 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
   C.snapshotValue(); P.ensure(); P.newlyUnlocked(); lastReady = P.readyCount(); route(); achievements();
   const start = () => { $('#splash').classList.add('out'); sfx.burst(); const d = C.dailyState(); if (d.ready) setTimeout(() => toast('🎁 Your daily reward is ready in the Lobby.'), 700); if (!P.ensure().story.done[1] && !location.hash.startsWith('#journey')) setTimeout(() => toast('📜 Your Journey in Veyra begins — <a href="#journey" class="gold">open Journey ▸</a>'), 1600); };
   const qp = new URLSearchParams(location.search);
-  if (qp.has('nosplash') || qp.has('launch') || IS_APP) start(); // Pokebox.exe and the Android app open straight into the game
-  else { const b = $('#spStart'); b.hidden = false; b.focus(); b.onclick = start; addEventListener('keydown', function k(e) { if (!$('#splash').classList.contains('out')) { removeEventListener('keydown', k); start(); } }); }
+  if (qp.has('nosplash')) start(); // tests
+  else { // title screen / main menu (Pokebox.exe and the Android app land here too); the world keeps loading behind it
+    $('#splash').classList.add('out');
+    const worldReady = new Promise(res => { const t0 = Date.now(); (function poll() { if (window.__world?.ready || Date.now() - t0 > 45000) res(); else setTimeout(poll, 300); })(); });
+    const prog = P.ensure(); const hasProgress = !!(QS?.Q?.().ch || QS?.Q?.().step || prog.story?.done?.[1]);
+    runTitle({ touch: TOUCH, hasProgress, ready: worldReady,
+      onStart: () => { document.body.classList.add('ingame'); if (location.hash && location.hash !== '#world') location.hash = '#world'; start(); },
+      onCards: () => { document.body.classList.add('ingame'); start(); location.hash = '#collection'; },
+      onSettings: () => { document.body.classList.add('ingame'); start(); location.hash = '#world'; setTimeout(() => openMenu('settings'), 400); } });
+  }
   window.__ready = true;
   setTimeout(autoCheck, 3500); // new version on GitHub? ask the player (never during the first seconds)
   if (!IS_APP) setInterval(() => fetch('/__ping').catch(() => {}), 20000);

@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 
 const DIR = new URL('../assets/world/', import.meta.url).href;
-export const KITS = ['nature', 'pirate', 'village', 'scifi', 'nature_lod', 'toon_town', 'towns2']; // toon_town: bright Pokémon-style town kit made in Blender (tools/blender_toon_town.py) // nature_lod: the same trees simplified ~8x (far-away LOD)
+export const KITS = ['nature', 'pirate', 'village', 'scifi', 'nature_lod', 'toon_town', 'towns2', 'toon_flora']; // toon_town: bright Pokémon-style town kit made in Blender (tools/blender_toon_town.py) // nature_lod: the same trees simplified ~8x (far-away LOD)
 const T = {}; // name -> template Object3D
 export const wind = { value: 0 };
 let kitsP = null;
@@ -71,7 +71,7 @@ export function tinted(m, tint) {
 
 /* instancing: one InstancedMesh per sub-mesh of the template. list = [[x,y,z,rotY,scale], ...] */
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(), tmpP = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
-export function instances(parent, name, list, { shadow = true, tint = null, receive = true, cell = 26 } = {}) {
+export function instances(parent, name, list, { shadow = true, tint = null, receive = true, cell = 64 } = {}) {
   const t = T[name]; if (!t || !list.length) return [];
   // split into spatial cells so each InstancedMesh has a tight bounding sphere (frustum culling works)
   const cells = new Map();

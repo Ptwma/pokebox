@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as P from './progress.js';
 import { applyComic } from './comic.js';
 
@@ -109,6 +110,30 @@ function smoothGeo(geo) {
   n.needsUpdate = true;
 }
 
+const mergedCache = new Map();
+function mergedGeo(path, meshes) {
+  if (mergedCache.has(path)) return mergedCache.get(path);
+  let geo = null;
+  try {
+    const KEEP = ['position', 'normal', 'skinIndex', 'skinWeight'];
+    const geos = meshes.map((o, i) => { const g = o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!KEEP.includes(k)) g.deleteAttribute(k);
+      g.setAttribute('mid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1)); g.morphAttributes = {}; return g; });
+    geo = mergeGeometries(geos, false); if (geo) geo.computeBoundingSphere();
+  } catch (e) { console.warn('[chars] merge failed', path, e); geo = null; }
+  mergedCache.set(path, geo); return geo;
+}
+function mergedMaterial(cols) {
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .85, metalness: 0 }); m.name = 'PersonPalette'; m.userData.actor = true;
+  const u = { value: cols };
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uCols = u;
+    sh.vertexShader = 'attribute float mid;\nvarying float vMid;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vMid = mid;');
+    sh.fragmentShader = 'uniform vec3 uCols[16];\nvarying float vMid;\n' + sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( uCols[int(vMid + .5)], opacity );');
+  };
+  m.customProgramCacheKey = () => 'pbxPerson';
+  return m;
+}
+
 /* ---------- people */
 const matCache = new Map();
 export const STYLE = { head: 1.3, feet: 1.12 };
@@ -139,6 +164,18 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
     o.material = m; o.castShadow = true; o.receiveShadow = false;
     smoothGeo(o.geometry);
   });
+  // one draw call per person: the anime models are a single node with ~15 primitives (one per colour). Merge them into one
+  // skinned geometry with a per-vertex colour slot and give each person a small colour table instead of 15 materials.
+  if (ANIME(path)) {
+    const parts = []; obj.traverse(o => { if (o.isSkinnedMesh && o.visible) parts.push(o); });
+    const geo = parts.length > 1 && mergedGeo(path, parts);
+    if (geo) {
+      const cols = parts.map(o => o.material.color.clone()); while (cols.length < 16) cols.push(new THREE.Color(1, 1, 1));
+      parts.forEach((o, i) => { if (/EyeShine/.test(o.material.name)) cols[i].multiplyScalar(1.6); });
+      const keep = parts[0]; keep.geometry = geo; keep.material = mergedMaterial(cols.slice(0, 16)); keep.castShadow = true; keep.frustumCulled = false;
+      for (const o of parts.slice(1)) o.parent?.remove(o);
+    }
+  }
   // normalise height: measure the bind pose once per model
   let hgt = gltf.userData.h; if (!hgt) { const b = new THREE.Box3().setFromObject(gltf.scene, true); hgt = gltf.userData.h = Math.max(.1, b.max.y - b.min.y); }
   const g = new THREE.Group(); const k = height / hgt * scale; obj.scale.setScalar(k); g.add(obj);
