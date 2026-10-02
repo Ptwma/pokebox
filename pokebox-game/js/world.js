@@ -1084,6 +1084,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       camPos.set(cx, cy, cz); if (snap) { camera.position.copy(camPos); snap = false; } else camera.position.lerp(camPos, Math.min(1, dt * 7)); camera.lookAt(camTarget);
     }
     const fov = hooks.fov?.() || 58; if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    if (post?.U?.sunUv) { // screen position of the sun for the light shafts (fade when it is behind the camera or far off-screen)
+      tmp.copy(camera.position).addScaledVector(sunDir, 900).project(camera); const vis = tmp.z < 1 ? 1 - clamp((Math.max(Math.abs(tmp.x), Math.abs(tmp.y)) - .9) / .8, 0, 1) : 0;
+      post.U.sunUv.value.set(tmp.x * .5 + .5, tmp.y * .5 + .5); post.U.sunVis.value = vis * (sunDir.y > .02 ? 1 : 0) * (env?.look?.night ? .25 : 1); post.U.rays.value = quality === 'low' ? 0 : 1; }
     streamT -= dt; if (streamT <= 0) { streamT = .35; streamChunks(pp.x, pp.z); for (const o of gateObjs) if (!QS.flag(o.G.flag)) o.g.visible = o.g.position.distanceTo(pp) < 160; for (const id in towns) towns[id].root.visible = Math.hypot(towns[id].x - pp.x, towns[id].z - pp.z) < viewFar + 70; for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - pp.x, lm.z - pp.z) < viewFar * .85; }
     for (const n of npcs) { const d = Math.hypot(pp.x - n.x, pp.z - n.z); n.ch.group.visible = d < 70 && n.id !== 'glyph'; if (n.glyphFx) n.glyphFx.visible = d < 120; if (d < 45) n.ch.update(dt); n.mk.rotation.y = t * 2; n.mk.position.y = 3.25 + Math.sin(t * 3) * .08;
       if (d < 6) faceSmooth(n.ch, pp.x, pp.z, dt, 4); else { let dd = n.face - n.ch.group.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); n.ch.group.rotation.y += dd * Math.min(1, dt * 1.5); }

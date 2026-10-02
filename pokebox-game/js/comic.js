@@ -217,12 +217,13 @@ const FINAL = {
     exposure: { value: .95 }, sat: { value: .72 }, contrast: { value: 1.12 }, crush: { value: .035 },
     shTint: { value: new THREE.Color('#2e3a6a') }, hiTint: { value: new THREE.Color('#ffd9a8') }, split: { value: .3 },
     vig: { value: .42 }, grain: { value: .045 }, boil: { value: 1 }, paper: { value: new THREE.Color('#f4ead8') }, toon: { value: 1 },
+    sunUv: { value: new THREE.Vector2(.5, .8) }, sunVis: { value: 0 }, sunCol: { value: new THREE.Color('#fff2d0') }, rays: { value: 1 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
   fragmentShader: /* glsl */`
     #include <packing>
-    uniform sampler2D tCol, tDepth; uniform vec2 res; uniform float cNear, cFar, time, lineW, ink, inkFar, exposure, sat, contrast, crush, split, vig, grain, boil, toon;
-    uniform vec3 inkCol, shTint, hiTint, paper; varying vec2 vUv;
+    uniform sampler2D tCol, tDepth; uniform vec2 res, sunUv; uniform float cNear, cFar, time, lineW, ink, inkFar, exposure, sat, contrast, crush, split, vig, grain, boil, toon, sunVis, rays;
+    uniform vec3 inkCol, shTint, hiTint, paper, sunCol; varying vec2 vUv;
     float lin(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cNear, cFar); }
     float hs(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(hs(i), hs(i + vec2(1,0)), f.x), mix(hs(i + vec2(0,1)), hs(i + vec2(1,1)), f.x), f.y); }
@@ -253,6 +254,13 @@ const FINAL = {
       if (toon > .5) { // cheap edge AA on the colour (FXAA-like blend along luminance edges)
         float ed = smoothstep(.04, .2, abs(lum(Tl.rgb) - lum(Tr.rgb)) + abs(lum(Tu.rgb) - lum(Td.rgb)));
         col = mix(col, (Tl.rgb + Tr.rgb + Tu.rgb + Td.rgb + col * 2.) / 6., ed * .55); }
+      // sun shafts: march toward the sun on screen and gather open sky (light shining past trees, roofs and hills)
+      if (sunVis > .01 && rays > .5) {
+        vec2 dlt = (sunUv - vUv) * (.75 / 14.); vec2 p = vUv + dlt * hs(gl_FragCoord.xy); float acc = 0., wgt = 1.;
+        for (int i = 0; i < 14; i++) { p += dlt; acc += step(cFar * .985, lin(clamp(p, 0., 1.))) * wgt; wgt *= .93; }
+        float fall = 1. - smoothstep(0., .85, length((vUv - sunUv) * vec2(res.x / res.y, 1.)));
+        col += sunCol * acc / 9.2 * fall * fall * sunVis * .22 * (1. - sky * .6);
+      }
       // grade: filmic curve (toon: softer shoulder so skies & grass keep their colour), contrast, split toning
       col = toon > .5 ? clamp(1. - exp(-col * exposure * 1.18), 0., 1.) * 1.04 : film(col);
       float L = lum(col);

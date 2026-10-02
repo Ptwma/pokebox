@@ -1,10 +1,10 @@
 {
-  "version": "3.2.0",
+  "version": "3.3.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Townsfolk now have real work animations made in Blender: sweeping, hammering, fishing, reading, watering plants, talking with gestures",
-    "They work in natural stretches with breaks, and stop to face you when you walk up to them"
+    "Sun shafts: light streams past trees, roofs and hills when you look toward the sun (medium/high)",
+    "Meadows have big natural colour patches — sunny yellow-green and deep green — instead of one flat green"
   ]
 }

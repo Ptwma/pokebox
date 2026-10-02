@@ -198,7 +198,7 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
   geo.setAttribute('ofs', new THREE.InstancedBufferAttribute(off, 4)); geo.setAttribute('rot', new THREE.InstancedBufferAttribute(rot, 2)); geo.instanceCount = n;
   const mat = new THREE.ShaderMaterial({ fog: true, side: THREE.DoubleSide,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { time: { value: 0 }, player: { value: new THREE.Vector3(0, -99, 0) }, cBase: { value: col(base) }, cTip: { value: col(tip) }, gFar: { value: GFX.grassFar }, R: { value: R }, span: { value: span } }]),
-    vertexShader: `attribute vec4 ofs; attribute vec2 rot; uniform float time, gFar, R, span; uniform vec3 player; uniform sampler2D hmask; varying float vH; varying float vShade;
+    vertexShader: `attribute vec4 ofs; attribute vec2 rot; uniform float time, gFar, R, span; uniform vec3 player; uniform sampler2D hmask; varying float vH; varying float vShade; varying float vVar;
       #include <fog_pars_vertex>
       void main(){
         vec2 wxz = player.xz + mod(ofs.xz - player.xz + R, 2. * R) - R;          // wrap the patch around the player
@@ -214,16 +214,18 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
         vec2 away = base.xz - player.xz; float pd = length(away); float push = (1. - smoothstep(.2, 1.4, pd)) * bend;
         wp.xz += normalize(away + 1e-4) * push * .55; wp.y -= push * .25 * s;
         vH = position.y; vShade = .78 + .22*rot.y;
+        vVar = sin(base.x * .043 + sin(base.z * .021) * 2.) * .5 + sin(base.z * .037 + base.x * .019) * .5;   // large meadow patches: sunny yellow-green vs deep green
         vec4 mvPosition = viewMatrix * vec4(wp, 1.); gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,
-    fragmentShader: `uniform vec3 cBase, cTip; varying float vH; varying float vShade;
+    fragmentShader: `uniform vec3 cBase, cTip; varying float vH; varying float vShade; varying float vVar;
       #include <fog_pars_fragment>
       void main(){
         // soft root→tip gradient (dark roots blend into the ground), per-blade hue drift between teal and sun-yellow
         float k = smoothstep(0., 1., vH); float hue = (vShade - .78) / .22;
         vec3 tip = mix(cTip * vec3(.86, 1., .95), cTip * vec3(1.08, 1.04, .78), hue);
         vec3 c = mix(cBase * .96, tip, .22 + .78 * k) * (.92 + .08 * hue);   // roots match the ground: reads as a lawn, not as dark spikes
+        c *= mix(vec3(.84, .94, .86), vec3(1.1, 1.05, .8), smoothstep(-.8, .8, vVar));
         gl_FragColor = vec4(c, .15);
         #include <colorspace_fragment>
         #include <fog_fragment>
