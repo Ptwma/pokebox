@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import * as P from './progress.js';
 import * as QS from './quests.js';
 import * as C from './core.js';
+import * as RK from './rank.js';
 import { prepare, makeRigged, tickEchoMaterials, attachProp } from './chars.js';
 import { loadKits, place, instances, house, has, hasToon, wind, bounds } from './world_kit.js';
 import { createComicPost, applyComic, CU } from './comic.js';
@@ -655,7 +656,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const s = P.ensure(); if (s.world.found[it.id]) { hooks.toast?.('Empty — you already opened this chest.'); return; }
     s.world.found[it.id] = Date.now(); faceTo(player, it.x, it.z); player.play('Interact', .2, { once: true }); hooks.sfx?.('sparkle');
     const coins = Math.round(60 + it.tier * 45 + Math.random() * 40), xp = Math.round(25 + it.tier * 12);
-    C.addCoins(coins); hooks.xp?.(xp); C.save(); it.glow.visible = false; if (it.chest) it.chest.rotation.x = -.25;
+    C.addCoins(coins); hooks.xp?.(xp); RK.add(RK.RP.chest, 'Treasure'); C.save(); it.glow.visible = false; if (it.chest) it.chest.rotation.x = -.25;
     hooks.toast?.(`Treasure chest! <span class="gold">+${coins} coins · +${xp} XP</span>`);
   }
 
@@ -891,7 +892,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         P.track('glyph', { id: n.id }); hooks.sfx?.('sparkle'); faceTo(player, n.x, n.z); player.play('Interact', .2, { once: true });
         if (n.item.g.userData.beam) n.item.g.remove(n.item.g.userData.beam);
         const msg = { glyph: 'Glyph stone recorded — the script shimmers and goes still.', glass: 'Glass silhouette recorded — it matches a Pokémon from a 30-year-old transfer log.', pylon: 'Relay pylon stabilised — the storm around it quietens.' }[n.item.kind];
-        hooks.toast?.(msg + ` <span class="gold">+40 XP</span>`); hooks.xp?.(40); storyEvent('find', { id: n.id });
+        hooks.toast?.(msg + ` <span class="gold">+40 XP</span>`); hooks.xp?.(40); RK.add(RK.RP.find, 'Discovery'); storyEvent('find', { id: n.id });
       } else if (n.kind === 'wild') await wildBattle(n.w);
       else if (n.kind === 'travel') hooks.travel?.();
       else if (n.kind === 'chest') openChest(n.item);

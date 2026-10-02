@@ -318,3 +318,25 @@ html.touch .wprompt{top:auto;bottom:calc(max(16px,4vh) + clamp(110px,32vh,165px)
   background:rgba(255,255,255,.92);color:#1b2b5c;box-shadow:0 4px 0 rgba(30,40,90,.5);border-radius:14px;animation:vtFadeInUp .2s both}
 html.touch .wprompt b.tap{display:inline-grid;place-items:center;width:28px;height:28px;margin-right:8px;border-radius:50%;background:#ffd54a;color:#1b2b5c;font-size:16px}
 html.touch .tb{font-size:clamp(20px,5vh,28px)}
+
+/* ================= Ranger Rank ================= */
+.wrank{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:99px;font:700 11px var(--ui);letter-spacing:.04em;color:#10131c;background:var(--rc,#9aa3b5);box-shadow:0 0 10px color-mix(in srgb,var(--rc,#9aa3b5) 60%,transparent)}
+.rankchip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0;font:600 12px var(--ui)}
+.rankchip i{font-style:normal}.rankchip b{color:var(--rc)}.rankchip em{font-style:normal;color:var(--muted)}
+.rankchip .rbar{flex-basis:100%;height:4px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden}.rankchip .rbar i{display:block;height:100%;background:var(--rc)}
+.rankup{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:350;display:grid;justify-items:center;padding:18px 34px;border-radius:20px;background:rgba(12,10,24,.92);
+  box-shadow:0 0 0 2px var(--rc),0 0 60px color-mix(in srgb,var(--rc) 60%,transparent);color:#fff;text-align:center;animation:rkIn .5s cubic-bezier(.2,1.4,.4,1) both;transition:opacity .6s,transform .6s}
+.rankup small{letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}.rankup b{font:400 40px var(--display);color:var(--rc)}.rankup span{color:var(--gold);font-weight:700}
+.rankup.out{opacity:0;transform:translate(-50%,-20px)}
+@keyframes rkIn{from{opacity:0;transform:translate(-50%,20px) scale(.8)}}
+.rkgrid{display:grid;grid-template-columns:1fr 1.3fr;gap:16px;margin-bottom:16px}
+@media (max-width:800px){.rkgrid{grid-template-columns:1fr}}
+.rkme{display:grid;justify-items:start;align-content:start;gap:8px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--rc) 50%,transparent)}
+.rkbadge{font-size:44px;filter:drop-shadow(0 0 14px var(--rc))}.rkme h3{margin:0;color:var(--rc);font-size:38px}.rkrp{font-size:20px}.rkme .cbar{width:100%}
+.rklog{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.rklog span{padding:3px 8px;border-radius:8px;background:rgba(92,242,214,.12);color:#5cf2d6;font-size:12px}.rklog span.neg{background:rgba(255,90,78,.12);color:#ff8a7a}.rklog em{color:var(--muted);font-style:normal}
+.rkboard{display:grid;gap:4px;max-height:460px;overflow:auto}
+.rkrow{display:grid;grid-template-columns:34px 1fr auto 70px;gap:10px;align-items:center;padding:7px 10px;border-radius:10px;background:rgba(255,255,255,.03)}
+.rkrow.me{background:rgba(255,213,74,.14);box-shadow:inset 0 0 0 1px rgba(255,213,74,.5)}.rkrow .pos{font:400 20px var(--display);color:var(--muted)}.rkrow .rp{text-align:right;font-weight:700}.rkt{font-size:12px;font-weight:700}
+.tile.rktiers{display:flex!important;flex-wrap:wrap;gap:8px}.rktiers span{display:grid;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.04);opacity:.55;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--rc) 40%,transparent)}
+.rktiers span.got{opacity:1;background:color-mix(in srgb,var(--rc) 18%,transparent)}.rktiers b{color:var(--rc)}.rktiers small{color:var(--muted)}
+html.touch .wrank{font-size:10px;padding:1px 6px}

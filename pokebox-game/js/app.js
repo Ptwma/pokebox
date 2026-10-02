@@ -9,6 +9,7 @@ import * as P from './progress.js';
 import { createWorld, AREAS } from './world.js';
 import * as QS from './quests.js';
 import { runTitle } from './title.js';
+import * as RK from './rank.js';
 import { autoCheck, manualCheck } from './updater.js';
 import { createPreview, PETS } from './chars.js';
 import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
@@ -302,7 +303,7 @@ const VIEWS = {};
 let current = '';
 function rerender() { const h = location.hash.slice(1) || 'home'; const [name, arg] = h.split('/'); (VIEWS[name] || VIEWS.home)(arg, true); updateTop(); }
 /* smooth, context-aware transitions (View Transitions API; CSS fallback) */
-const ORDER = ['home', 'shop', 'binder', 'collection', 'market', 'battle', 'profile'];
+const ORDER = ['home', 'shop', 'binder', 'collection', 'market', 'battle', 'ranking', 'profile'];
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 function transition(update, type) {
   if (!document.startViewTransition || reduceMotion.matches) { update(); return null; }
@@ -717,7 +718,7 @@ async function act(a) {
     else if (e.t === 'end') {
       const T = bT(), ladder = B.opts?.ladder !== false && !B.opts?.T;
       P.track('battle', { win: e.result === 'win', tier: B.tier, types: [...new Set(B.b.p.team.map(f => f.type))] });
-      if (e.result === 'win') { B.firstWin = ladder && !st().battle.beaten[B.tier]; st().battle.wins++; C.addCoins(T.reward); if (T.token && B.firstWin) st().tokens += T.token; if (ladder) st().battle.beaten[B.tier] = Date.now(); sfx.win(); B.opts?.onWin?.(); }
+      if (e.result === 'win') { B.firstWin = ladder && !st().battle.beaten[B.tier]; st().battle.wins++; C.addCoins(T.reward); if (T.token && B.firstWin) st().tokens += T.token; if (ladder) { st().battle.beaten[B.tier] = Date.now(); RK.add(RK.RP.ladder(B.tier), 'Ladder'); } sfx.win(); B.opts?.onWin?.(); }
       else { st().battle.losses++; sfx.lose(); }
       C.save(true); await bw(500); showResult(e.result);
       const gain = e.result === 'win' ? (B.opts?.xp ?? 40 + B.tier * 15) : 10; setTimeout(() => xp(gain), 1800); // let the victory screen breathe first
@@ -759,6 +760,25 @@ function playScene(lines, { title, cine, onLine } = {}) {
 /* ------------------------------------------------------------------ Journey */
 const AREA = { harbor: 'Lumen Harbor', mistvale: 'Mistvale', sandreach: 'Sandreach', starfall: 'Starfall Observatory', voltspire: 'Voltspire', frostline: 'Frostline Peaks', rift: 'The Obsidian Rift' };
 function resetIn(ms) { const h = Math.floor(ms / 3.6e6), m = Math.floor(ms % 3.6e6 / 6e4); return h > 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`; }
+/* ------------------------------------------------------------------ Ranger Rank */
+function rankChip(big) { const r = RK.rankOf(), n = RK.nextRank(); return `<span class="rankchip ${big ? 'big' : ''}" style="--rc:${r.col}"><i>🏆</i><b>${esc(r.name)}</b><em>${fmt(RK.rp())} RP</em>${n ? `<span class="rbar"><i style="width:${(RK.progress() * 100).toFixed(1)}%"></i></span>` : ''}</span>`; }
+RK.setPromoteHook(r => { sfx.rare?.(3); const b = document.createElement('div'); b.className = 'rankup'; b.style.setProperty('--rc', r.col);
+  b.innerHTML = `<small>Rank up!</small><b>${esc(r.name)}</b><span>+${fmt(r.reward)} coins</span>`; document.body.append(b); setTimeout(() => b.classList.add('out'), 3200); setTimeout(() => b.remove(), 4000); worldHud?.(); });
+VIEWS.ranking = () => {
+  const ch = QS?.Q?.().ch || 0, rows = RK.leaderboard(ch), r = RK.rankOf(), n = RK.nextRank(), log = (st().rank?.log || []).slice(0, 8);
+  view.innerHTML = `<section class="wrap ranking"><div class="sech"><div><div class="eyebrow">Ranger Rank</div><h2 class="display">Ranking</h2></div>
+    <p class="muted">Win battles, capture Echoes, open chests and finish Trials to earn Rank Points. Every promotion pays coins — and you never drop below a tier you reached.</p></div>
+    <div class="rkgrid">
+      <div class="tile rkme" style="--rc:${r.col}"><div class="rkbadge">🏆</div><h3 class="display">${esc(r.name)}</h3><b class="rkrp">${fmt(RK.rp())} RP</b>
+        ${n ? `<div class="cbar"><i style="width:${(RK.progress() * 100).toFixed(1)}%"></i></div><small>${fmt(n.rp - RK.rp())} RP to <b>${esc(n.name)}</b> (+${fmt(n.reward)} coins)</small>` : '<small>Top rank reached.</small>'}
+        <div class="rklog">${log.map(([, v, w]) => `<span class="${v < 0 ? 'neg' : ''}">${v > 0 ? '+' : ''}${v} <em>${esc(w)}</em></span>`).join('') || '<em class="muted">No ranked results yet — go battle!</em>'}</div></div>
+      <div class="tile rkboard"><div class="eyebrow">Veyra leaderboard</div>
+        ${rows.map(x => `<div class="rkrow ${x.me ? 'me' : ''}"><span class="pos">${x.pos}</span><b>${esc(x.name)}</b><span class="rkt" style="color:${x.rank.col}">${esc(x.rank.name)}</span><span class="rp">${fmt(x.rp)}</span></div>`).join('')}</div>
+    </div>
+    <div class="tile rktiers">${RK.RANKS.map(k => `<span class="${RK.rp() >= k.rp ? 'got' : ''}" style="--rc:${k.col}"><b>${esc(k.name)}</b><small>${fmt(k.rp)} RP</small></span>`).join('')}</div>
+  </section>`;
+};
+
 VIEWS.journey = () => {
   const s = P.ensure(), done = P.storyDone(), ch = P.chapter(), ready = !done && P.chapterReady(ch), ch4 = ch.choice && !s.story.choice;
   const all = P.challenges(), now = new Date(), midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
@@ -912,6 +932,7 @@ function ensureWorld() {
 function worldHud() {
   const s = P.ensure(), L = C.levelInfo();
   $('#wAv').innerHTML = P.avatarSVG(s.look, { size: 46 }); $('#wNameP').textContent = s.name; $('#wLv').textContent = L.lv; $('#wXp').style.width = (L.pct * 100).toFixed(1) + '%'; $('#wCoins').textContent = fmt(st().coins);
+  { const r = RK.rankOf(), el = $('#wRank'); if (el) { el.textContent = r.name; el.style.setProperty('--rc', r.col); } }
   const ch = P.chapter(), done = P.storyDone();
   if (QS) { renderQuestHud(); } else $('#wQuest').innerHTML = done ? `<div class="eyebrow">Journey complete</div><b>Veyra is stable — for now.</b>` : `<div class="eyebrow">Chapter ${ch.n} · ${esc(ch.title)}</div>${ch.goals.map(g => { const c = g.cur(), ok = c >= g.need; return `<div class="wq ${ok ? 'ok' : ''}"><i>${ok ? '✓' : ''}</i><span>${esc(g.text)}</span><small>${Math.min(c, g.need)}/${g.need}</small></div>`; }).join('')}${P.chapterReady() ? '<a class="wqgo" href="#journey">Chapter ready — open Journey ▸</a>' : ''}`;
   const cc = companionCard(), pe = $('#wPet'); pe.hidden = !cc;
@@ -942,6 +963,7 @@ const LAT_APPS = [
   { k: '#shop', ic: '🎁', t: 'Supply Drops', s: 'Open card packs' },
   { k: '#market', ic: '📈', t: 'Market', s: 'Card values & selling' },
   { k: 'map', ic: '🗺️', t: 'Map & Travel', s: 'Relay Ferry' },
+  { k: '#ranking', ic: '🏆', t: 'Ranking', s: 'Ranger Rank & leaderboard' },
   { k: '#profile', ic: '🧢', t: 'Trainer', s: 'Look, titles, stats' },
   { k: 'settings', ic: '⚙️', t: 'Settings', s: 'Graphics · sound · controls' },
 ];
@@ -952,7 +974,7 @@ function openLattice() {
   L.innerHTML = `<div class="latbox" role="dialog" aria-label="Lattice device">
     <aside class="latme">
       <div class="lathead"><span class="latlogo">◆</span><div><b>LATTICE</b><small>Ranger device · Echo storage</small></div></div>
-      <div class="latcard">${P.avatarSVG(s.look, { size: 92 })}<div><b>${esc(s.name)}</b><small>Level ${Lv.lv} · ${fmt(st().coins)} coins</small>
+      <div class="latcard">${P.avatarSVG(s.look, { size: 92 })}<div><b>${esc(s.name)}</b><small>Level ${Lv.lv} · ${fmt(st().coins)} coins</small>${rankChip()}
         <span class="xpbar"><i style="width:${(Lv.pct * 100).toFixed(1)}%"></i></span><span class="latseals">${q ? Array.from({ length: 9 }, (_, i) => `<i class="${i < q.seals.length ? 'on' : ''}">◆</i>`).join('') : ''}</span></div></div>
       ${stp ? `<div class="latobj"><small>Chapter ${q.ch + 1} · ${esc(ch.title)}</small><b>${esc(stp.text)}</b></div>` : ''}
       <div class="latteam"><small>Team</small><div>${team.map(i => `<img src="${cardImg(DB.cards[i])}" alt="${esc(DB.cards[i].n)}" title="${esc(DB.cards[i].n)}">`).join('') || '<em>No partners yet</em>'}</div>${cc ? `<small>Walking with <b>${esc(cc.n)}</b></small>` : ''}</div>

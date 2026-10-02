@@ -3,6 +3,7 @@
 // and the fight plays out with the battle.js rules (types, energy, signature moves, ultimates, guard, switching).
 // Wild Echoes can be CAPTURED once weakened: the blank Lattice card flies out and shakes 1-3 times.
 import * as C from './core.js';
+import * as RK from './rank.js';
 import { DB, isMon } from './core.js';
 import { Battle, fighter, SIG, MOVES, ENERGY_MAX, estimate, mult } from './battle.js';
 import { onomato, impactFrame, TYPE_COL as TC } from './comicfx.js';
@@ -194,9 +195,11 @@ export function createFieldBattle(ctx) {
     if (result === 'win') {
       const xp = spec.kind === 'wild' ? 14 + QS.Q().ch * 3 : 40 + QS.Q().ch * 18, coins = spec.kind === 'wild' ? 10 : Math.round(80 + QS.Q().ch * 45 * (T?.lvl || 1));
       C.addCoins(coins); hooks.xp?.(xp); C.S.battle.wins++; C.save();
-      hooks.toast?.(`${spec.kind === 'wild' ? 'The wild ' + esc(spec.wild.card.n) + ' faded back into the grass.' : 'You beat ' + esc(spec.name) + '!'} <span class="gold">+${coins} coins · +${xp} XP</span>`);
-    } else if (result === 'caught') { hooks.xp?.(20); hooks.toast?.(`<b>${esc(extra.card.n)}</b> joined your collection${extra.isNew ? ' <em class="gold">NEW</em>' : ''}. ${C.S.team.includes(extra.card.i) ? 'It joined your team!' : ''}`); }
-    else if (result === 'lose') { C.S.battle.losses++; C.save(); hooks.toast?.('Your team fainted… you blacked out and woke up in the last town.'); }
+      const nid = spec.npc?.id, rp = spec.kind === 'wild' ? RK.RP.wild : ['maren', 'mira', 'sable', 'orin', 'vera', 'dom', 'lyra', 'kest'].includes(nid) ? RK.RP.warden : nid === 'rho' || nid === 'kai' ? RK.RP.rival : RK.RP.trainer(T?.lvl || 1);
+      RK.add(rp, spec.kind === 'wild' ? 'Wild Echo' : spec.name || 'Trainer');
+      hooks.toast?.(`${spec.kind === 'wild' ? 'The wild ' + esc(spec.wild.card.n) + ' faded back into the grass.' : 'You beat ' + esc(spec.name) + '!'} <span class="gold">+${coins} coins · +${xp} XP · +${rp} RP</span>`);
+    } else if (result === 'caught') { hooks.xp?.(20); RK.add(RK.RP.capture, 'Capture'); hooks.toast?.(`<b>${esc(extra.card.n)}</b> joined your collection${extra.isNew ? ' <em class="gold">NEW</em>' : ''}. ${C.S.team.includes(extra.card.i) ? 'It joined your team!' : ''}`); }
+    else if (result === 'lose') { C.S.battle.losses++; C.save(); RK.add(RK.RP.lose, 'Defeat'); hooks.toast?.('Your team fainted… you blacked out and woke up in the last town.'); }
     await cleanup(result === 'lose');
     const r = { result, ...extra }; const fn = resolveFn; resolveFn = null; fn?.(r);
   }
