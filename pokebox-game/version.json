@@ -1,11 +1,11 @@
 {
-  "version": "2.7.0",
+  "version": "2.8.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "New anime-style characters made in Blender: big expressive eyes, real hair, smooth shading — 11 outfits for both builds",
-    "Android: the app no longer closes on start (fixed in 2.6 — get the new Pokebox.apk)",
-    "Open world without walls, cinematic story scenes with letterbox and camera cuts"
+    "Every town now has its own buildings made in Blender: Mistvale cottages & stilt houses, Starfall observatory & archive, Frostline snowy chalets & lodge, Voltspire towers & power station, Sandreach adobe houses & market",
+    "Removed the black outline around characters and objects",
+    "Anime characters made in Blender (11 outfits)"
   ]
 }

@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 
 const DIR = new URL('../assets/world/', import.meta.url).href;
-export const KITS = ['nature', 'pirate', 'village', 'scifi', 'nature_lod', 'toon_town']; // toon_town: bright Pokémon-style town kit made in Blender (tools/blender_toon_town.py) // nature_lod: the same trees simplified ~8x (far-away LOD)
+export const KITS = ['nature', 'pirate', 'village', 'scifi', 'nature_lod', 'toon_town', 'towns2']; // toon_town: bright Pokémon-style town kit made in Blender (tools/blender_toon_town.py) // nature_lod: the same trees simplified ~8x (far-away LOD)
 const T = {}; // name -> template Object3D
 export const wind = { value: 0 };
 let kitsP = null;

@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as P from './progress.js';
-import { addInkHull, applyComic } from './comic.js';
+import { applyComic } from './comic.js';
 
 const DIR = new URL('../assets/', import.meta.url).href;
 export const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
@@ -154,7 +154,7 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
     if (head) head.scale.setScalar(STYLE.head);
     obj.traverse(o => { if (o.isBone && /^Foot\./.test(o.name)) o.scale.setScalar(STYLE.feet); });
   }
-  applyComic(obj); addInkHull(obj);
+  applyComic(obj); // no ink hull: the black outline around characters is gone
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .2, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   const R = rigActor(obj, gltf.animations, { height });
   function locomote(speed) {
@@ -202,7 +202,7 @@ export function makePet(kind, { size = 1.1, echo = null } = {}) {
   const obj = SkeletonUtils.clone(gltf.scene);
   obj.traverse(o => { if (!o.isMesh) return; o.castShadow = true; const base = litMaterial(o.material); o.material = echo ? echoMaterial(base, echo) : base; });
   let hgt = gltf.userData.h; if (!hgt) { const b = new THREE.Box3().setFromObject(gltf.scene, true); hgt = gltf.userData.h = Math.max(.1, b.max.y - b.min.y); gltf.userData.base = b.min.y; }
-  if (!echo) { applyComic(obj); addInkHull(obj); }
+  if (!echo) applyComic(obj);
   const g = new THREE.Group(), k = size / hgt; obj.scale.setScalar(k); obj.position.y = -gltf.userData.base * k + (PETS[kind]?.fly ? .9 : 0); g.add(obj);
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.45, 18), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .22, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   const R = rigActor(obj, gltf.animations, { height: size });

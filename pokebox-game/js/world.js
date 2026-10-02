@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import * as P from './progress.js';
 import * as QS from './quests.js';
 import { prepare, makeRigged, tickEchoMaterials } from './chars.js';
-import { loadKits, place, instances, house, has, hasToon, wind } from './world_kit.js';
+import { loadKits, place, instances, house, has, hasToon, wind, bounds } from './world_kit.js';
 import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
 import { createFieldBattle } from './fieldbattle.js';
@@ -318,11 +318,13 @@ export function createWorld(canvas, hooks = {}) {
     },
     starfall() {
       const oy = h(-4, -14);
+      if (has('SF_Observatory')) { kit('SF_Observatory', -4, -14, { y: oy - .1, rot: Math.atan2(4, 14), scale: 1.05 }); block(-4, -14, 6.4); }
+      else {
       kit('Platform_Round1', -4, -14, { y: oy + .05, scale: 1.6 });
       const dome = new THREE.Mesh(new THREE.SphereGeometry(5.2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#dfe3ee', roughness: .35, metalness: .4 })); dome.position.set(-4, oy + 2.8, -14); root.add(dome); dome.castShadow = true;
       const baseC = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 5.8, 2.8, 32), new THREE.MeshStandardMaterial({ color: '#8e9aa6', roughness: .8 })); baseC.position.set(-4, oy + 1.4, -14); root.add(baseC); baseC.castShadow = baseC.receiveShadow = true; block(-4, -14, 6);
       const slit = new THREE.Mesh(new THREE.BoxGeometry(1.4, 5.6, .4), new THREE.MeshBasicMaterial({ color: '#1a1d2e' })); slit.position.set(-4, oy + 5.2, -9.2); slit.rotation.x = -.55; root.add(slit);
-      const scope = new THREE.Mesh(new THREE.CylinderGeometry(.55, .8, 6, 16), new THREE.MeshStandardMaterial({ color: '#4a4f63', metalness: .7, roughness: .3 })); scope.rotation.x = .9; scope.position.set(-4, oy + 7, -10); root.add(scope);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(.55, .8, 6, 16), new THREE.MeshStandardMaterial({ color: '#4a4f63', metalness: .7, roughness: .3 })); scope.rotation.x = .9; scope.position.set(-4, oy + 7, -10); root.add(scope); }
       kit('Prop_SatelliteDish', 8, -4, { scale: .8, rot: 2.5, block: 1 }); kit('Prop_SatelliteDish', 14, -12, { scale: .6, rot: 1.8, block: .8 });
       kit('Prop_Computer', 6.5, -2.5, { scale: .9, rot: 2 }); kit('Prop_Crate', 9.5, -1.5, { scale: .7, block: .6 }); kit('Column_Round', 11, -4, { scale: .7 });
       scatter(PINES, 36, 41, (x, z, y) => offPath(x, z) && clearOf(x, z, 3), { rMin: 14, rMax: 44, sMin: .6, sMax: 1, blockR: .6, tint: { leaf: '#6e7fa8', other: '#8a8aa8' } });
@@ -415,6 +417,26 @@ export function createWorld(canvas, hooks = {}) {
       if (gs) { decorLog.push(['gym', id, gs.x + R.x, gs.z + R.z]); kit('TT_Gym', gs.x, gs.z, { y: gs.y - .1, rot: gs.rot, scale: .82 }); blockBox(gs.x, gs.z, 6.1, 5.3, gs.rot);
         const tg = label(AREAS[id].name.toUpperCase() + ' TRIAL HALL', (P.CAST[wid]?.name || 'Warden') + "'s Trial", '#c9a4ff'); tg.position.set(gs.x, gs.y + 9, gs.z); tg.scale.multiplyScalar(1.3); root.add(tg);
         npcs.push([gs.x, gs.z, 9]); } }
+    // regional districts (towns2 kit made in Blender): every town gets its own architecture around the plaza
+    const DIST = {
+      mistvale: [['MV_Cottage_A', 3], ['MV_Cottage_B', 3], ['MV_Stilt', 2], ['MV_Lookout', 1]],
+      starfall: [['SF_Archive', 1], ['SF_House', 5]],
+      frostline: [['FL_Lodge', 1], ['FL_Chalet_A', 3], ['FL_Chalet_B', 3]],
+      voltspire: [['VS_Station', 1], ['VS_Block_B', 2], ['VS_Block_A', 3], ['VS_Block_C', 3]],
+      sandreach: [['SR_Workshop', 1], ['SR_Adobe_B', 2], ['SR_Adobe_A', 3], ['SR_Adobe_C', 3], ['SR_Market_A', 2], ['SR_Market_B', 2]],
+      harbor: [['SR_Market_B', 1], ['SR_Market_A', 1]],
+    }[id] || [];
+    let di = 0;
+    for (const [name, n] of DIST) {
+      if (!has(name)) continue; const bb = bounds(name), sc = name.includes('Market') ? 1 : .85, rad = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2 * sc;
+      for (let k = 0; k < n; k++) {
+        const sp = findSpot(0, 0, rad, { rMin: 12 + rad, rMax: 46, seed: seed + 40 + di++ * 7, avoid: npcs, face: [0, 0], slope: 1.3 });
+        if (!sp) continue;
+        decorLog.push(['bld', id, name, sp.x + R.x, sp.z + R.z]);
+        kit(name, sp.x, sp.z, { y: sp.y - .15, rot: sp.rot, scale: sc }); blockBox(sp.x, sp.z, (bb.max.x - bb.min.x) * sc * .46, (bb.max.z - bb.min.z) * sc * .46, sp.rot);
+        npcs.push([sp.x, sp.z, rad + 1.5]);
+      }
+    }
     // benches & flowerbeds along the town paths
     const Rr = rng(seed + 3);
     for (const p of TOWN_PATHS[id] || []) for (let i = 0; i < p.pts.length - 1; i++) {

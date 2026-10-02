@@ -249,7 +249,7 @@ const FINAL = {
       float iw = min(min(c0.a, min(Tl.a, Tr.a)), min(Tu.a, Td.a));
       float ce = smoothstep(.3, .55, abs(lum(tr) - lum(tl)) + abs(lum(tu) - lum(td)) + .35 * (length(tr - tl) + length(tu - td))) * (1. - sky);
       float fade = 1. - smoothstep(inkFar * .3, inkFar, c);
-      float e = clamp(max(sil, max(crease * mix(.75, .35, toon), ce * .45 * (1. - toon))) * fade * ink * clamp(iw, 0., 1.), 0., 1.);
+      float e = clamp(max(sil, max(crease * mix(.75, .35, toon), ce * .45 * (1. - toon))) * fade * ink * clamp(iw, 0., 1.), 0., 1.) * (1. - toon); // anime look: no black ink lines
       if (toon > .5) { // cheap edge AA on the colour (FXAA-like blend along luminance edges)
         float ed = smoothstep(.04, .2, abs(lum(Tl.rgb) - lum(Tr.rgb)) + abs(lum(Tu.rgb) - lum(Td.rgb)));
         col = mix(col, (Tl.rgb + Tr.rgb + Tu.rgb + Td.rgb + col * 2.) / 6., ed * .55); }
