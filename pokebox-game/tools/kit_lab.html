@@ -1,0 +1,18 @@
+<!doctype html><html><body style="margin:0;background:#9ab"><canvas id="c" style="width:1600px;height:900px"></canvas>
+<script type="importmap">{ "imports": { "three": "../vendor/three/build/three.module.js", "three/addons/": "../vendor/three/addons/" } }</script>
+<script type="module">
+import * as THREE from 'three'; import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+const Q=new URLSearchParams(location.search), kit=Q.get('kit')||'nature';
+const r=new THREE.WebGLRenderer({canvas:c,antialias:true}); r.setSize(1600,900,false); r.outputColorSpace=THREE.SRGBColorSpace; r.setClearColor('#9fc3e0');
+const s=new THREE.Scene(); s.add(new THREE.HemisphereLight('#fff','#665',1.5)); const d=new THREE.DirectionalLight('#fff',2); d.position.set(5,10,6); s.add(d);
+const L=new GLTFLoader(); L.setMeshoptDecoder(MeshoptDecoder);
+let items=[];
+if (kit.includes('/') || kit==='pets') { // folder of glb: chars/men etc
+  const names=Q.get('n').split(',');
+  for (const n of names) { const g=await L.loadAsync('../assets/'+kit+'/'+n+'.glb'); const m=new THREE.AnimationMixer(g.scene); const cl=g.animations.find(a=>/^Idle$|Flying|Idle/.test(a.name)); if(cl){m.clipAction(cl).play(); m.update(.3);} items.push([n,g.scene]); }
+} else { const g=await L.loadAsync('../assets/world/'+kit+'.glb'); items=g.scene.children.slice().map(o=>[o.name,o]); }
+const cols=Math.ceil(Math.sqrt(items.length*1.8)), sp=+(Q.get('sp')||6);
+items.forEach(([n,o],i)=>{ o.position.set((i%cols-cols/2)*sp, 0, -Math.floor(i/cols)*sp); s.add(o); });
+const rows=Math.ceil(items.length/cols); const cam=new THREE.PerspectiveCamera(40,16/9,.1,2000);
+cam.position.set(0, sp*rows*.9, sp*2.2); cam.lookAt(0,0,-sp*rows/2); r.render(s,cam); window.names=items.map(x=>x[0]); window.done=1;
+</script></body></html>

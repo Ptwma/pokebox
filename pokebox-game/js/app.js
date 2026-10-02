@@ -1,0 +1,1111 @@
+// Pokebox — game shell: home, shop, binder, collection, market, battle, profile
+import * as C from './core.js';
+import { DB, S, RARITY, RSHORT, RCOLOR, TCOLOR, fmt, esc, cardImg, setImg } from './core.js';
+import { sfx, setSound } from './audio.js';
+import { createOpener, T_ZOOMED } from './opener.js';
+import { createVfx } from './vfx.js';
+import { startSpace } from './space.js';
+import * as P from './progress.js';
+import { createWorld, AREAS } from './world.js';
+import * as QS from './quests.js';
+import { autoCheck, manualCheck } from './updater.js';
+import { createPreview, PETS } from './chars.js';
+import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
+import { Battle, TRAINERS, fighter, enemyTeam, bestTeam, power, mult, SIG, MOVES, ENERGY_MAX, estimate } from './battle.js';
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const view = $('#view');
+let state = C.load();
+const st = () => C.S;   // live save object (C.S is re-bound on import)
+
+/* ------------------------------------------------------------------ helpers */
+function toast(msg, kind = '') {
+  const t = document.createElement('div'); t.className = 'toast ' + kind; t.innerHTML = msg; $('#toasts').append(t);
+  requestAnimationFrame(() => t.classList.add('on')); setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 400); }, 3200);
+}
+let shownCoins = null, coinAnim = 0;
+function updateTop() {
+  const target = st().coins;
+  if (shownCoins === null) shownCoins = target;
+  if (target !== shownCoins) {
+    cancelAnimationFrame(coinAnim); const from = shownCoins, t0 = performance.now();
+    $('.res.coins').classList.remove('bump'); void $('.res.coins').offsetWidth; $('.res.coins').classList.add('bump');
+    const step = now => { const k = Math.min(1, (now - t0) / 600); shownCoins = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3))); $('#coins').textContent = fmt(shownCoins); if (k < 1) coinAnim = requestAnimationFrame(step); };
+    coinAnim = requestAnimationFrame(step);
+  } else $('#coins').textContent = fmt(target);
+  $('#tokens').textContent = st().tokens; $('#tokenPill').hidden = !st().tokens; $('#uniq').textContent = fmt(C.uniqueCount());
+  const av = $('#hudAv'), key = JSON.stringify(st().look || {}); if (av && av.dataset.k !== key) { av.innerHTML = P.avatarSVG(P.ensure().look, { size: 40, bg: false }); av.dataset.k = key; }
+  const jn = P.readyCount(), jb = $('#jBadge'); if (jb) { jb.hidden = !jn; jb.textContent = jn; }
+  const L = C.levelInfo(); $('#hudLv').textContent = L.lv; $('#hudXp').style.width = (L.pct * 100).toFixed(1) + '%'; $('#hudXpT').textContent = `${fmt(L.cur)} / ${fmt(L.need)} XP`;
+}
+function xp(n) {
+  const ups = C.gainXP(n); updateTop();
+  if (ups.length) { const u = ups[ups.length - 1], args = [u.lv, ups.reduce((a, x) => a + x.coins, 0), ups.reduce((a, x) => a + x.token, 0)];
+    if (deferLv || !$('#opening').hidden) pendingLv = args; else showLevelUp(...args); } // never cover a pack opening
+}
+let pendingLv = null, deferLv = false;
+function showLevelUp(lv, coins, tokens) {
+  const el = $('#lvup'); el.hidden = false; sfx.win();
+  el.innerHTML = `<div class="lvbox"><div class="eyebrow">Trainer level up</div><div class="n">${lv}</div><h2 class="display grad">Level ${lv} reached</h2>
+    <p><span class="gold">+${fmt(coins)} coins</span>${tokens ? ` · <b>+${tokens} free pack</b>` : ''}</p><button class="btn gold big" type="button" id="lvOk">Awesome</button></div>`;
+  $('#lvOk').onclick = () => { el.hidden = true; }; $('#lvOk').focus();
+}
+C.onChange(updateTop);
+function achievements() { for (const a of C.checkAch()) { toast(`<b>Achievement:</b> ${esc(a.name)} <span class="gold">+${fmt(a.reward)}</span>`, 'ach'); sfx.coin(); } updateTop(); }
+const rarityChip = r => `<span class="rchip" style="--rc:${RCOLOR[r]}">${RSHORT[r]}</span>`;
+const typeDot = t => `<span class="tdot" style="--tc:${TCOLOR[t] || '#777'}" title="${t}"></span>`;
+function cardTile(c, opt = {}) {
+  const owned = st().owned[c.i] || 0, miss = opt.binder && !owned;
+  return `<button class="ctile ${miss ? 'miss' : ''} r${c.r}" data-card="${c.i}" type="button" aria-label="${esc(c.n)}">
+    <span class="cimg"><img loading="lazy" src="${cardImg(c)}" alt="" onerror="this.parentNode.classList.add('broken')"></span>
+    ${owned > 1 ? `<span class="count">×${owned}</span>` : ''}${opt.isNew ? '<span class="newb">NEW</span>' : ''}
+    <span class="cmeta"><span class="cn">${esc(c.n)}</span><span class="cv">${rarityChip(c.r)} ${opt.binder ? '#' + esc(c.no) : fmt(C.price(c))}</span></span>
+  </button>`;
+}
+function packTile(s) {
+  const th = setImg(s, 'pack'), p = C.setProgress(s.code);
+  return `<article class="ptile" data-set="${s.code}">
+    <div class="pimg" data-go="#pack/${encodeURIComponent(s.code)}" title="Pack details">${th ? `<img loading="lazy" src="${th}" alt="${esc(s.name)} booster pack">` : `<div class="genpack"><span>${esc(s.name)}</span></div>`}</div>
+    <div class="pinfo"><div class="pname">${esc(s.name)}</div><div class="pser">${esc(s.series)} · ${p.have}/${p.total} collected</div><div class="pbar"><i style="width:${(p.have / p.total * 100).toFixed(1)}%"></i></div></div>
+    <div class="pbuy"><button class="btn" data-open="${s.code}" type="button">Open · <span class="coin"></span>${fmt(s.price)}</button>
+    <button class="btn ghost sm" data-quick="${s.code}" type="button" title="Open 5 packs without animation">×5 quick</button></div>
+  </article>`;
+}
+function vaultTile(p) {
+  const left = C.vaultLeft(p.code);
+  return `<article class="vtile ${left ? '' : 'soldout'}" data-go="#pack/${p.code}" tabindex="0" role="link" aria-label="${esc(p.name)}">
+    <div class="vring"><img loading="lazy" src="${C.vaultArt(p)}" alt="${esc(p.name)}"></div>
+    <div class="vinfo"><div class="vtags">${p.tags.map(t => `<span>${esc(t)}</span>`).join('')}</div><b>${esc(p.name)}</b>
+      <div class="vprice"><span class="coin"></span>${fmt(p.price)} <small>pt</small></div>
+      <div class="avail"><span>AVAILABLE</span><span>LEFT <b>${left}</b>/${p.stock}</span></div><div class="abar"><i style="width:${left / p.stock * 100}%"></i></div></div>
+  </article>`;
+}
+function spark(vals, w = 120, h = 32) {
+  const mn = Math.min(...vals), mx = Math.max(...vals), sx = w / (vals.length - 1), sy = v => h - 3 - (mx === mn ? .5 : (v - mn) / (mx - mn)) * (h - 6);
+  const d = vals.map((v, i) => `${i ? 'L' : 'M'}${(i * sx).toFixed(1)},${sy(v).toFixed(1)}`).join('');
+  const up = vals[vals.length - 1] >= vals[0];
+  return `<svg class="spark ${up ? 'up' : 'down'}" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><path d="${d}L${w},${h}L0,${h}Z" class="fill"/><path d="${d}" class="line"/><circle cx="${w}" cy="${sy(vals[vals.length - 1])}" r="2.6"/></svg>`;
+}
+function lazyGrid(el, items, render, chunk = 120) {
+  let n = 0; el.innerHTML = '';
+  const more = () => { el.insertAdjacentHTML('beforeend', items.slice(n, n + chunk).map(render).join('')); n += chunk; if (n < items.length) io.observe(sentinel); else sentinel.remove(); };
+  const sentinel = document.createElement('div'); sentinel.className = 'sentinel';
+  const io = new IntersectionObserver(e => { if (e[0].isIntersecting) { io.unobserve(sentinel); more(); el.append(sentinel); } }, { rootMargin: '800px' });
+  el.after(sentinel); more();
+  if (!items.length) el.innerHTML = '<p class="empty">Nothing here yet.</p>';
+}
+
+/* ------------------------------------------------------------------ card modal */
+function openCard(i) {
+  const c = DB.cards[i], s = DB.setBy[c.s], owned = st().owned[c.i] || 0, hist = C.priceHistory(c), pr = C.price(c), prev = hist[hist.length - 2];
+  const ch = ((pr - prev) / prev * 100);
+  const inTeam = st().team.includes(c.i);
+  const m = $('#modal'); m.hidden = false; document.body.classList.add('noscroll');
+  m.innerHTML = `<div class="mcard" role="dialog" aria-modal="true" aria-label="${esc(c.n)}">
+    <button class="x" data-close type="button" aria-label="Close">✕</button>
+    <div class="tiltwrap"><div class="tilt r${c.r}" id="tilt"><img src="${C.cardHD(c) || cardImg(c)}" data-fallback="${cardImg(c)}" onerror="if(this.dataset.fallback&&this.src!==this.dataset.fallback)this.src=this.dataset.fallback" alt="${esc(c.n)}"><span class="glare"></span><span class="holo"></span></div></div>
+    <div class="mdet">
+      <div class="eyebrow">${esc(s.name)} · #${esc(c.no)}</div>
+      <h2 class="display">${esc(c.n)}</h2>
+      <div class="chips">${rarityChip(c.r)} <span>${RARITY[c.r]}</span> ${typeDot(c.t)} <span>${c.t}</span></div>
+      ${C.isMon(c) ? `<div class="stats"><div><b>${c.hp}</b><small>HP</small></div><div><b>${c.atk}</b><small>ATK</small></div><div><b>${c.spd}</b><small>SPD</small></div><div><b>${Math.round(power(c))}</b><small>POWER</small></div></div>` : ''}
+      <div class="mkt"><div><small>Market price</small><b><span class="coin"></span>${fmt(pr)}</b><span class="delta ${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch).toFixed(1)}%</span></div>${spark(hist, 180, 44)}</div>
+      <div class="own">${owned ? `You own <b>${owned}</b>` : 'Not in your collection'}</div>
+      <div class="acts">
+        ${owned ? `<button class="btn" data-sell="${c.i}" type="button">Sell 1 · <span class="coin"></span>${fmt(C.sellPrice(c))}</button>` : `<button class="btn" data-buy="${c.i}" type="button">Buy · <span class="coin"></span>${fmt(C.buyPrice(c))}</button>`}
+        ${owned > 1 ? `<button class="btn ghost" data-sellx="${c.i}" type="button">Sell duplicates (${owned - 1})</button>` : ''}
+        ${owned && C.isMon(c) ? `<button class="btn ghost" data-team="${c.i}" type="button">${inTeam ? 'Remove from team' : 'Add to battle team'}</button>` : ''}
+      </div>
+    </div></div>`;
+  const tilt = $('#tilt'), wrap = $('.tiltwrap');
+  wrap.onpointermove = e => { const r = wrap.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+    tilt.style.transform = `rotateY(${x * 22}deg) rotateX(${-y * 22}deg)`; tilt.style.setProperty('--mx', (x + .5) * 100 + '%'); tilt.style.setProperty('--my', (y + .5) * 100 + '%'); };
+  wrap.onpointerleave = () => { tilt.style.transform = ''; };
+  // phones: tilt the card with the gyroscope
+  if (matchMedia('(pointer: coarse)').matches && 'DeviceOrientationEvent' in window) {
+    const onOri = e => { if (!tilt.isConnected) { removeEventListener('deviceorientation', onOri); return; } const x = Math.max(-1, Math.min(1, (e.gamma || 0) / 30)), y = Math.max(-1, Math.min(1, ((e.beta || 45) - 45) / 30));
+      tilt.style.transform = `rotateY(${x * 16}deg) rotateX(${-y * 16}deg)`; tilt.style.setProperty('--mx', (x * .5 + .5) * 100 + '%'); tilt.style.setProperty('--my', (y * .5 + .5) * 100 + '%'); };
+    addEventListener('deviceorientation', onOri, { passive: true });
+  }
+}
+function closeModal() {
+  const m = $('#modal'); if (m.hidden || m.classList.contains('closing')) return;
+  m.classList.add('closing'); document.body.classList.remove('noscroll');
+  setTimeout(() => { m.hidden = true; m.innerHTML = ''; m.classList.remove('closing'); }, 200);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-card],[data-close],[data-sell],[data-sellx],[data-buy],[data-team],[data-open],[data-vault],[data-quick],[data-go]');
+  if (!t) { if (e.target.id === 'modal') closeModal(); return; }
+  if (t.dataset.card != null && !t.closest('.opening')) {
+    sfx.click(); const im = t.querySelector('img'), inModal = t.closest('#modal');
+    if (im && !inModal && document.startViewTransition && !reduceMotion.matches) { im.style.viewTransitionName = 'hero-card'; transition(() => { im.style.viewTransitionName = ''; openCard(+t.dataset.card); $('#tilt img').style.viewTransitionName = 'hero-card'; }, 'card'); }
+    else openCard(+t.dataset.card);
+  }
+  else if (t.dataset.close != null) closeModal();
+  else if (t.dataset.sell) { const c = DB.cards[+t.dataset.sell], p = C.sellPrice(c); if (C.removeCard(c)) { C.addCoins(p); P.track('sell'); sfx.coin(); toast(`Sold ${esc(c.n)} for <span class="gold">${fmt(p)}</span>`); openCard(c.i); rerender(); } }
+  else if (t.dataset.sellx) { const c = DB.cards[+t.dataset.sellx], n = st().owned[c.i] - 1, p = C.sellPrice(c) * n; if (n > 0 && C.removeCard(c, n)) { C.addCoins(p); P.track('sell', { n }); sfx.coin(); toast(`Sold ${n} duplicates for <span class="gold">${fmt(p)}</span>`); openCard(c.i); rerender(); } }
+  else if (t.dataset.buy) { const c = DB.cards[+t.dataset.buy], p = C.buyPrice(c); if (st().coins < p) { toast('Not enough coins.', 'err'); return; } C.addCoins(-p); C.addCard(c); P.track('buy'); sfx.coin(); toast(`Bought ${esc(c.n)}`); achievements(); openCard(c.i); rerender(); }
+  else if (t.dataset.team) { const i = +t.dataset.team, tm = st().team; if (tm.includes(i)) st().team = tm.filter(x => x !== i); else { if (tm.length >= 3) tm.shift(); tm.push(i); } C.save(); openCard(i); if (location.hash.startsWith('#battle')) rerender(); }
+  else if (t.dataset.open) { openPack(t.dataset.open); }
+  else if (t.dataset.vault) { openVault(t.dataset.vault); }
+  else if (t.dataset.quick) { quickOpen(t.dataset.quick, 5); }
+  else if (t.dataset.go) { const im = t.querySelector('.pimg img,.vring img'); if (im) im.style.viewTransitionName = 'hero-pack'; location.hash = t.dataset.go; }
+});
+addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+
+/* ------------------------------------------------------------------ opening */
+const opening = $('#opening');
+let opener = null, openCtx = null, lastPaid = 'coins';
+function ensureOpener() {
+  if (opener) return opener;
+  opener = createOpener($('#openCanvas'), {
+    sfx: (n, a) => sfx[n]?.(a),
+    onReveal: k => showCaption(k),
+    onSwap: (k, big, r) => { $('#oCap').classList.remove('on'); sfx.whoosh(.35); if (big) { $('#oHint').textContent = 'Something special…'; }
+      if (r >= 4) { const o = $('#opening'); onomato(o, innerWidth * (.25 + Math.random() * .5), innerHeight * .28, r >= 6 ? 'Dragon' : r >= 5 ? 'Fairy' : 'Psychic', { big: r >= 5 }); } },
+    onFinish: () => finishOpening(),
+  });
+  return opener;
+}
+function showCaption(k) {
+  const c = openCtx.cards[k], cap = $('#oCap');
+  cap.innerHTML = `<div class="cnum">${k + 1} / ${openCtx.cards.length}</div><b>${esc(c.n)}</b><span>${rarityChip(c.r)} ${RARITY[c.r]} · <span class="coin"></span>${fmt(C.price(c))}${openCtx.fresh[k] ? ' · <em>NEW</em>' : ''}</span>`;
+  cap.classList.add('on'); cap.style.setProperty('--rc', RCOLOR[c.r]);
+  $('#oHint').textContent = k === openCtx.cards.length - 1 ? 'Tap for summary' : 'Tap / Space for next card';
+}
+function chargePack(code) {
+  const s = DB.setBy[code];
+  if (st().tokens > 0) { st().tokens--; C.save(); updateTop(); return 'token'; }
+  if (st().coins < s.price) { toast(`You need <span class="gold">${fmt(s.price)}</span> coins. Claim your daily reward, win battles or sell cards.`, 'err'); return null; }
+  C.addCoins(-s.price); return 'coins';
+}
+function grant(cards, meta = {}) {
+  const fresh = cards.map(c => C.addCard(c));
+  st().packs++; st().pulls.unshift(...cards.slice().reverse().map(c => ({ i: c.i, t: Date.now() }))); st().pulls = st().pulls.slice(0, 40);
+  C.snapshotValue(); C.save(true);
+  xp(10 + cards.reduce((a, c) => a + [0, 0, 1, 3, 8, 15, 30][c.r], 0));
+  P.track('pack', { cards, ...meta });
+  return fresh;
+}
+let vfx = null;
+function ensureVfx() { return vfx ||= createVfx($('#vfxCanvas'), { sfx: (n, a) => sfx[n]?.(a) }); }
+const FX_BY_HIT = { 4: 'electric', 5: 'candy', 6: 'legendary' };
+async function playFx(kind, art, upgrade) {
+  const cv = $('#vfxCanvas'); cv.hidden = false; $('#oHint').textContent = 'Tap to skip'; document.body.classList.add('vfxon');
+  try { await ensureVfx().play(kind, { art, upgrade }); } catch (e) { console.error(e); }
+  cv.hidden = true; document.body.classList.remove('vfxon');
+}
+function beginOpening(title) {
+  document.activeElement?.blur?.(); opening.hidden = false; document.body.classList.add('noscroll'); $('#openCanvas').focus(); $('#oCap').classList.remove('on'); $('#oSum').hidden = true;
+  $('#oTitle').textContent = title; $('#oHint').textContent = 'Opening…';
+}
+async function runOpening(s, cards, fresh, o) {
+  openCtx = { s, cards, fresh };
+  beginOpening(s.name);
+  if (o.fx && o.fx !== 'classic') await playFx(o.fx, o.fxArt, o.fxUpgrade);
+  if (opening.hidden) return; // closed during the effect
+  $('#oHint').textContent = 'Opening…';
+  try {
+    await ensureOpener().play({
+      packUrl: o.packUrl, logoUrl: o.logoUrl, setName: s.name, mystery: o.mystery, themeName: o.theme, startAt: o.fx && o.fx !== 'classic' ? T_ZOOMED : 0, // after a signature effect: straight to the tear, no second intro
+      cards: cards.map(c => ({ img: cardImg(c), hd: C.cardHD(c), r: c.r, n: c.n })),
+    });
+  } catch (e) { console.error(e); toast('Could not start the 3D opening — showing results instead.', 'err'); closeOpening(); showSummary(s, cards, fresh); }
+}
+async function openPack(code) {
+  const s = DB.setBy[code]; if (!s) return;
+  const paid = chargePack(code); if (!paid) return;
+  deferLv = !st().settings.fast;
+  const cards = C.rollPack(code), fresh = grant(cards);
+  lastPaid = paid; lastAgain = () => openPack(code);
+  if (st().settings.fast) { showSummary(s, cards, fresh); achievements(); return; }
+  const top = Math.max(...cards.map(c => c.r)), fx = st().settings.hitFx !== false ? FX_BY_HIT[top] : null, art = setImg(s, 'pack');
+  runOpening(s, cards, fresh, { fx: art ? fx : null, fxArt: art, fxUpgrade: art, packUrl: art, logoUrl: setImg(s, 'logo'), mystery: fx ? false : st().settings.mystery, theme: fx ? 'dark' : st().settings.studio });
+}
+async function openVault(code) {
+  const p = C.vaultBy[code]; if (!p) return;
+  if (!C.vaultLeft(code)) { toast('Sold out for today — restocks at midnight.', 'err'); return; }
+  if (st().coins < p.price) { toast(`You need <span class="gold">${fmt(p.price)}</span> coins for ${esc(p.name)}.`, 'err'); return; }
+  C.addCoins(-p.price); C.vaultBuy(code);
+  const s = { code, name: p.name, price: p.price, vault: true };
+  deferLv = !st().settings.fast;
+  const cards = C.rollVault(code), fresh = grant(cards, { vault: true, code });
+  lastPaid = 'coins'; lastAgain = () => openVault(code);
+  if (st().settings.fast) { showSummary(s, cards, fresh); achievements(); return; }
+  const art = C.vaultArt(p), up = C.vaultUpgrade(p);
+  runOpening(s, cards, fresh, { fx: p.fx, fxArt: art, fxUpgrade: up, packUrl: up || art, mystery: false, theme: 'dark' });
+}
+let lastAgain = null;
+function finishOpening() { const { s, cards, fresh } = openCtx; $('#oCap').classList.remove('on'); showSummary(s, cards, fresh, true); }
+function closeOpening() { deferLv = false; if (pendingLv) { const a = pendingLv; pendingLv = null; setTimeout(() => showLevelUp(...a), 350); } vfx?.stop(); opener?.stop(); $('#vfxCanvas').hidden = true; document.body.classList.remove('vfxon'); opening.hidden = true; document.body.classList.remove('noscroll'); $('#oSum').hidden = true; rerender(); achievements(); }
+const PRIZE_LABEL = ['COMMON', 'UNCOMMON', 'RARE', 'HOLO RARE', 'EPIC', 'MYTHIC', 'LEGENDARY'];
+function showSummary(s, cards, fresh, inOpening = false) {
+  const total = cards.reduce((a, c) => a + C.price(c), 0), refund = cards.reduce((a, c) => a + C.sellPrice(c), 0);
+  const html = `<div class="prizes">
+    <div class="pz-head"><button class="btn ghost sm" id="sumBack" type="button">← Go back</button><h2 class="pz-title">Checkout your prizes</h2>
+      <span class="pz-pts"><span class="coin"></span>${fmt(st().coins)} <small>points</small></span></div>
+    <div class="pz-sub">${esc(s.name)} · pack value <b class="gold">${fmt(total)}</b> ${lastPaid === 'token' ? '· free pack' : '· paid ' + fmt(s.price)}</div>
+    <div class="pz-grid">${cards.map((c, k) => `<div class="pz r${c.r}" style="--rc:${RCOLOR[c.r]};--d:${k * 45}ms">
+      <div class="pz-lab">${PRIZE_LABEL[c.r]}</div>
+      <div class="pz-img"><img src="${cardImg(c)}" alt="" onerror="this.parentNode.classList.add('broken')">${fresh[k] ? '<span class="newb">NEW</span>' : ''}</div>
+      <div class="pz-name">${esc(c.n)}</div><div class="pz-meta">${esc(DB.setBy[c.s]?.name || '')} · #${esc(c.no)}</div>
+      <div class="pz-grade">${rarityChip(c.r)} ${RARITY[c.r]}</div>
+      <div class="pz-val"><span class="coin"></span>${fmt(C.price(c))}</div></div>`).join('')}</div>
+    <div class="pz-bar"><button class="btn ghost" id="sumRefund" type="button"><span class="coin"></span>${fmt(refund)} Refund points</button>
+      <button class="btn purple" id="sumAgain" type="button">Play again · <span class="coin"></span>${fmt(s.price)}</button>
+      <button class="btn gold" id="sumDone" type="button">Continue to collection</button></div></div>`;
+  if (inOpening) { const el = $('#oSum'); el.innerHTML = html; el.hidden = false; }
+  else { const m = $('#modal'); m.hidden = false; m.innerHTML = `<div class="mcard wide prizewrap">${html}</div>`; document.body.classList.add('noscroll'); rerender(); achievements(); }
+  const again = lastAgain || (() => openPack(s.code));
+  $('#sumAgain').onclick = () => { if (inOpening) { $('#oSum').hidden = true; opener.stop(); } else closeModal(); again(); };
+  const done = () => { if (inOpening) closeOpening(); else closeModal(); };
+  $('#sumDone').onclick = done; $('#sumBack').onclick = done;
+  let armed = false;
+  $('#sumRefund').onclick = e => {
+    const b = e.currentTarget;
+    if (!armed) { armed = true; b.innerHTML = `Tap again to sell all ${cards.length} cards`; b.classList.add('danger'); return; }
+    let got = 0, nn = 0; for (const c of cards) if (C.removeCard(c)) { got += C.sellPrice(c); nn++; } P.track('sell', { n: nn });
+    C.addCoins(got); sfx.coin(); toast(`Refunded <span class="gold">+${fmt(got)}</span>`); b.disabled = true; b.innerHTML = 'Refunded ✓'; b.classList.remove('danger');
+    $$('.pz').forEach(x => x.classList.add('gone')); updateTop();
+  };
+}
+function quickOpen(code, n) {
+  lastPaid = 'coins'; lastAgain = null;
+  const s = DB.setBy[code], all = [], fresh = [];
+  for (let k = 0; k < n; k++) { if (!chargePack(code)) break; const cs = C.rollPack(code); all.push(...cs); fresh.push(...grant(cs)); }
+  if (!all.length) return;
+  const order = all.map((c, k) => ({ c, f: fresh[k] })).sort((a, b) => b.c.r - a.c.r || b.c.v - a.c.v);
+  sfx.burst(); if (order[0].c.r >= 4) setTimeout(() => sfx.rare(order[0].c.r - 3), 300);
+  showSummary({ ...s, price: s.price }, order.map(o => o.c), order.map(o => o.f));
+  $('#sumAgain').innerHTML = `Open ×${n} again`; $('#sumAgain').onclick = () => { closeModal(); quickOpen(code, n); };
+}
+$('#oSkip').onclick = () => opener?.revealAll();
+$('#oClose').onclick = () => closeOpening();
+$('#openCanvas').addEventListener('click', () => opener?.next());
+$('#vfxCanvas').addEventListener('click', () => vfx?.skip());
+addEventListener('keydown', e => { if (!opening.hidden && $('#oSum').hidden && (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight')) { e.preventDefault(); if (vfx?.active) vfx.skip(); else opener?.next(); } });
+
+/* 3D hover tilt for every card and pack tile */
+document.addEventListener('pointermove', e => {
+  const el = e.target.closest?.('.ctile,.ptile'); if (tiltEl && tiltEl !== el) { tiltEl.style.transform = ''; tiltEl = null; }
+  if (!el || el.closest('.opening')) return; tiltEl = el;
+  const r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+  el.style.transform = `perspective(700px) rotateY(${x * 16}deg) rotateX(${-y * 16}deg) translateY(-4px)`;
+  el.style.setProperty('--gx', (x + .5) * 100 + '%'); el.style.setProperty('--gy', (y + .5) * 100 + '%');
+});
+let tiltEl = null;
+
+/* ------------------------------------------------------------------ views */
+const VIEWS = {};
+let current = '';
+function rerender() { const h = location.hash.slice(1) || 'home'; const [name, arg] = h.split('/'); (VIEWS[name] || VIEWS.home)(arg, true); updateTop(); }
+/* smooth, context-aware transitions (View Transitions API; CSS fallback) */
+const ORDER = ['home', 'shop', 'binder', 'collection', 'market', 'battle', 'profile'];
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function transition(update, type) {
+  if (!document.startViewTransition || reduceMotion.matches) { update(); return null; }
+  const root = document.documentElement; root.dataset.vt = type;
+  const vt = document.startViewTransition(update); vt.ready?.catch(() => {}); vt.updateCallbackDone?.catch(() => {});
+  vt.finished.catch(() => {}).finally(() => { if (root.dataset.vt === type) delete root.dataset.vt; $$('[style*="view-transition-name"]').forEach(e => { if (!e.classList.contains('vt-keep')) e.style.viewTransitionName = ''; }); });
+  return vt;
+}
+function routeType(prev, next) {
+  const [pn, pa] = prev.split('/'), [nn, na] = next.split('/');
+  if (nn === 'pack') return 'in';
+  if (pn === 'pack') return (nn === 'shop' || nn === 'home') ? 'out' : 'in';
+  if (pn === nn) return na && !pa ? 'in' : !na && pa ? 'out' : 'swap';
+  const a = ORDER.indexOf(pn), b = ORDER.indexOf(nn);
+  return b > a ? 'down' : 'up';
+}
+function route() {
+  const h = location.hash.slice(1) || 'home', [name, arg] = h.split('/');
+  const changed = current !== h, prev = current || h;
+  const apply = () => {
+    if ((location.hash.slice(1) || 'home') !== h) return; // a newer navigation already happened — never render a stale view
+    if (name !== 'world') hideWorld();
+    $$('.rail a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + name && !a.classList.contains('rlogo')));
+    if (changed) view.scrollTop = 0; current = h;
+    (VIEWS[name] || VIEWS.home)(arg); updateTop();
+  };
+  if (!changed) { apply(); return; }
+  sfx.tick();
+  if (!(document.startViewTransition && !reduceMotion.matches && transition(apply, routeType(prev, h)))) { apply(); view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); clearTimeout(route.t); route.t = setTimeout(() => view.classList.remove('enter'), 700); }
+}
+addEventListener('hashchange', route);
+
+let lobbyIdx = 0;
+VIEWS.home = () => {
+  const d = C.dailyState(), sellable = DB.sets.filter(s => s.sellable && s.img.pack), featured = sellable.slice(-8).reverse();
+  lobbyIdx = (lobbyIdx + featured.length) % featured.length;
+  const hero = featured[lobbyIdx], val = C.collectionValue(), L = C.levelInfo();
+  const pulls = st().pulls.slice(0, 14).map(p => DB.cards[p.i]);
+  const best = st().stats.best != null ? DB.cards[st().stats.best] : null;
+  const pickArt = (code) => { const l = (DB.bySet[code] || []).filter(c => c.r >= 4); return l.length ? cardImg(l[0]) : ''; };
+  view.innerHTML = `
+  <a class="worldhero" href="#world"><div><div class="eyebrow">Open world · 7 areas</div><h2 class="display">Explore Veyra in 3D</h2><p>Walk Lumen Harbor, meet trainers, catch Echo shells as pets and duel with your cards.</p></div><span class="btn gold glow">Enter the world ▸</span></a>
+  <section class="wrap lobby">
+    <div class="side">
+      <div class="tile daily ${d.ready ? 'ready' : ''}">
+        <div class="chest">🎁</div><div class="eyebrow">Daily reward</div>
+        ${d.ready ? `<h3>Day ${d.streak}</h3><p><span class="gold">+${fmt(d.coins)}</span> coins + 1 free pack</p><button class="btn gold glow" id="claim" type="button">Claim</button>` : `<h3>Claimed</h3><p class="muted">Streak ${st().streak} day${st().streak === 1 ? '' : 's'} · back tomorrow</p>`}
+      </div>
+      <div class="tile"><div class="eyebrow">Trainer</div><h3>Level ${L.lv}</h3><div class="xpbar" style="height:12px"><i style="width:${(L.pct * 100).toFixed(1)}%"></i></div><p class="muted">${fmt(L.need - L.cur)} XP to next level · every 5 levels = free pack</p></div>
+    </div>
+    <div class="stage">
+      <div class="rays"></div><div class="ped"></div>
+      <div class="pack3d" data-open="${hero.code}" title="Open ${esc(hero.name)}"><img class="vt-keep" style="view-transition-name:lobby-pack" src="${setImg(hero, 'pack')}" alt="${esc(hero.name)} booster pack" data-open="${hero.code}"></div>
+      <div class="carousel"><button class="btn ghost" id="prevPack" type="button" aria-label="Previous pack">◀</button><button class="btn ghost" id="nextPack" type="button" aria-label="Next pack">▶</button></div>
+      <div class="sname vt-keep" style="view-transition-name:lobby-name"><div class="eyebrow">${esc(hero.series)} · ${hero.count} cards</div><h1 class="display grad">${esc(hero.name)}</h1></div>
+      <div class="row"><button class="btn big glow" data-open="${hero.code}" type="button">${st().tokens ? 'Open free pack' : `Open · <span class="coin"></span>${fmt(hero.price)}`}</button><button class="btn ghost big" data-quick="${hero.code}" type="button">×5</button></div>
+    </div>
+    <div class="side">
+      <div class="tile"><div class="eyebrow">Collection value</div><h3><span class="coin"></span>${fmt(val)}</h3>${st().history.length > 1 ? spark(st().history.map(h => h.v), 260, 44) : '<p class="muted">Open packs to start tracking.</p>'}</div>
+      <div class="tile"><div class="eyebrow">Best pull</div>${best ? `<div class="row" style="flex-wrap:nowrap"><div style="width:70px;flex:none">${cardTile(best)}</div><div><h3 class="small">${esc(best.n)}</h3><p class="muted">${RARITY[best.r]} · ${fmt(C.price(best))}</p></div></div>` : '<p class="muted">Nothing yet — rip your first pack.</p>'}</div>
+    </div>
+  </section>
+  <section class="wrap"><div class="modes">
+    <a class="mode" href="#shop" style="--mc:rgba(123,92,255,.9)"><span class="mbg" style="background-image:url('${setImg(featured[1] || hero, 'pack')}')"></span><b>Shop</b><small>${DB.sets.filter(s => s.sellable).length} booster sets</small></a>
+    <a class="mode" href="#binder" style="--mc:rgba(0,140,190,.9)"><span class="mbg" style="background-image:url('${pickArt(hero.code)}')"></span><b>Binder</b><small>${fmt(C.uniqueCount())} / ${fmt(DB.cards.length)} collected</small></a>
+    <a class="mode" href="#battle" style="--mc:rgba(210,50,60,.9)"><span class="mbg" style="background-image:url('${pickArt((featured[2] || hero).code)}')"></span><b>Battle</b><small>${st().battle.wins} wins · 8 trainers</small></a>
+    <a class="mode" href="#pack/PX-ASCEND" style="--mc:rgba(200,150,40,.95)"><span class="mbg" style="background-image:url('${C.vaultArt(C.VAULT[2])}')"></span><b>Vault</b><small>Premium packs · signature FX</small></a>
+    <a class="mode" href="#market" style="--mc:rgba(20,160,90,.9)"><span class="mbg" style="background-image:url('${pickArt((featured[3] || hero).code)}')"></span><b>Market</b><small>Prices move daily</small></a>
+  </div></section>
+  <section class="wrap"><div class="sech"><div><div class="eyebrow gold">The Vault</div><h2 class="display">Premium packs</h2></div><a class="btn sm ghost" href="#shop">See all</a></div>
+    <div class="vgrid">${C.VAULT.slice(0, 3).map(vaultTile).join('')}</div></section>
+  <section class="wrap"><div class="sech"><div><div class="eyebrow">Recent pulls</div><h2 class="display">Your latest hits</h2></div><a class="btn sm ghost" href="#collection">All cards</a></div>
+    ${pulls.length ? `<div class="strip">${pulls.map(c => cardTile(c)).join('')}</div>` : '<p class="empty">No pulls yet. Your first pack is free.</p>'}</section>`;
+  const cl = $('#claim'); if (cl) cl.onclick = () => { const r = C.claimDaily(); if (r) { sfx.coin(); toast(`Daily reward: <span class="gold">+${fmt(r.coins)}</span> and a free pack`); xp(20); VIEWS.home(); updateTop(); } };
+  $('#prevPack').onclick = () => { lobbyIdx--; sfx.whoosh(.2); transition(() => VIEWS.home(), 'prev') || 0; };
+  $('#nextPack').onclick = () => { lobbyIdx++; sfx.whoosh(.2); transition(() => VIEWS.home(), 'next') || 0; };
+};
+
+let shopFilter = { series: 'All', q: '' };
+VIEWS.shop = () => {
+  const series = ['All', ...new Set(DB.sets.filter(s => s.sellable).map(s => s.series))];
+  view.innerHTML = `<section class="wrap"><div class="sech"><div><div class="eyebrow">Shop</div><h2 class="display">Booster packs</h2></div>
+    <label class="search"><span class="sr">Search sets</span><input id="shopQ" placeholder="Search sets…" value="${esc(shopFilter.q)}"></label></div>
+    <div class="vault"><div class="vhead"><div><div class="eyebrow gold">The Vault</div><h3 class="display">Premium packs</h3></div><p class="muted">10 cards · 3 guaranteed hits · limited daily stock · signature openings</p></div>
+      <div class="vgrid">${C.VAULT.map(vaultTile).join('')}</div></div>
+    <div class="chipsrow">${series.map(s => `<button class="fchip ${s === shopFilter.series ? 'on' : ''}" data-ser="${esc(s)}" type="button">${esc(s)}</button>`).join('')}</div>
+    <div class="grid packs" id="shopGrid"></div></section>`;
+  const draw = () => {
+    const q = shopFilter.q.toLowerCase();
+    const list = DB.sets.filter(s => s.sellable && (shopFilter.series === 'All' || s.series === shopFilter.series) && (!q || s.name.toLowerCase().includes(q))).reverse();
+    $('#shopGrid').innerHTML = list.map(packTile).join('') || '<p class="empty">No sets match.</p>';
+  };
+  draw();
+  $('#shopQ').oninput = e => { shopFilter.q = e.target.value; draw(); };
+  $$('.fchip').forEach(b => b.onclick = () => { shopFilter.series = b.dataset.ser; VIEWS.shop(); });
+};
+
+let topIdx = 0;
+VIEWS.pack = (code, keep) => {
+  code = decodeURIComponent(code || ''); const v = C.vaultBy[code], s = DB.setBy[code];
+  if (!v && !s) { location.hash = '#shop'; return; }
+  if (!keep) topIdx = 0;
+  const pool = v ? DB.cards.filter(c => c.r >= 4 && DB.setBy[c.s]?.sellable && C.isMon(c) && v.types.includes(c.t)) : DB.bySet[code];
+  const top = pool.slice().sort((a, b) => b.v - a.v).slice(0, 40);
+  const tier = c => c.r === 6 ? ['TIER 1', '#ffd257'] : c.r === 5 ? ['TIER 2', '#ff9ecb'] : c.r === 4 ? ['TIER 3', '#c9a4ff'] : ['ROUND', '#e7c16a'];
+  const name = v ? v.name : s.name, img = v ? C.vaultArt(v) : setImg(s, 'pack'), price = v ? v.price : s.price;
+  const tags = v ? [...v.tags, ...v.types.map(t => t.toUpperCase())] : [s.series, `${s.count} CARDS`, `EV ${fmt(s.ev)}`];
+  const left = v ? C.vaultLeft(code) : 0, p = s ? C.setProgress(code) : null;
+  const odds = v ? v.odds : [[2, .6], [3, .22], [4, .105], [5, .05], [6, .025]];
+  view.innerHTML = `<section class="wrap"><a class="btn ghost sm" href="#shop">← Shop</a>
+  <div class="pdetail"><div class="pdcard">
+    <div class="pdtop">
+      <div class="pdimg">${img ? `<img src="${img}" alt="${esc(name)}" style="view-transition-name:hero-pack">` : `<div class="genpack"><span>${esc(name)}</span></div>`}</div>
+      <div class="pdinfo">
+        <div class="pdtags">${tags.map(t => `<span>${esc(t)}</span>`).join('')}<span class="grade">${v ? '10 CARDS' : '7 CARDS'}</span></div>
+        <h1 class="pdname">${esc(name)}</h1>
+        <div class="pdprice"><span class="coin big"></span>${fmt(price)} <small>pt</small>${v ? `<span class="muted"> · expected value ≈ ${fmt(C.vaultEV(code))}</span>` : ''}</div>
+        ${v ? `<div class="avail big"><span>AVAILABLE</span><span>LEFT <b>${left}</b>/${v.stock}</span></div><div class="ticks" style="--p:${left / v.stock}"></div>`
+            : `<div class="avail big"><span>COLLECTED</span><span><b>${p.have}</b>/${p.total}</span></div><div class="ticks" style="--p:${p.have / p.total}"></div>`}
+        <p class="muted">${v ? esc(v.blurb) : `Standard booster · 3 common, 2 uncommon, 1 bonus, 1 rare-or-better hit.`}</p>
+        <div class="odds">${odds.map(([r, q]) => `<span style="--rc:${RCOLOR[r]}"><b>${RSHORT[r]}</b> ${(q * 100).toFixed(q < .1 ? 1 : 0)}%</span>`).join('')}<small>${v ? 'per hit slot ×3' : 'hit slot'}</small></div>
+        <div class="row">${v ? `<button class="btn big gold glow" data-vault="${code}" type="button" ${left ? '' : 'disabled'}>${left ? `Open · <span class="coin"></span>${fmt(price)}` : 'Sold out today'}</button>`
+          : `<button class="btn big glow" data-open="${code}" type="button">${st().tokens ? 'Open free pack' : `Open · <span class="coin"></span>${fmt(price)}`}</button><button class="btn ghost big" data-quick="${code}" type="button">×5 quick</button><a class="btn ghost big" href="#binder/${encodeURIComponent(code)}">Binder</a>`}</div>
+      </div>
+    </div>
+    <div class="pdtopcards"><div class="sech"><div class="eyebrow">Top cards inside</div><div><button class="ibtn round" id="tcPrev" type="button" aria-label="Previous">‹</button><button class="ibtn round" id="tcNext" type="button" aria-label="Next">›</button></div></div>
+      <div class="tcrow" id="tcRow">${top.map(c => { const [tl, tc] = tier(c); return `<button class="tc" data-card="${c.i}" type="button"><span class="tcimg"><img loading="lazy" src="${cardImg(c)}" alt="${esc(c.n)}" onerror="this.parentNode.classList.add('broken')"></span><span class="tcl" style="color:${tc}">${tl}</span><small>${fmt(C.price(c))}</small></button>`; }).join('')}</div>
+    </div>
+  </div></div></section>`;
+  const row = $('#tcRow'), step = () => row.clientWidth * .8;
+  $('#tcPrev').onclick = () => row.scrollBy({ left: -step(), behavior: 'smooth' });
+  $('#tcNext').onclick = () => row.scrollBy({ left: step(), behavior: 'smooth' });
+};
+
+VIEWS.binder = (code) => {
+  const sets = DB.sets; code = code && DB.setBy[code] ? code : (Object.keys(st().owned).length ? DB.cards[+Object.keys(st().owned).slice(-1)[0]].s : sets[sets.length - 1].code);
+  const s = DB.setBy[code], p = C.setProgress(code), list = DB.bySet[code];
+  const done = p.have === p.total, claimed = st().claimed[code], reward = 500 + p.total * 6;
+  const groups = {}; sets.forEach(x => (groups[x.series] ||= []).push(x));
+  view.innerHTML = `<section class="wrap binder">
+    <aside class="setlist"><label class="search"><span class="sr">Filter sets</span><input id="bq" placeholder="Filter sets…"></label>
+      ${Object.entries(groups).map(([g, l]) => `<div class="sg"><div class="sgt">${esc(g)}</div>${l.slice().reverse().map(x => { const q = C.setProgress(x.code); return `<a href="#binder/${encodeURIComponent(x.code)}" class="${x.code === code ? 'on' : ''} ${q.have === q.total ? 'full' : ''}" data-n="${esc(x.name.toLowerCase())}"><span>${esc(x.name)}</span><small>${q.have}/${q.total}</small></a>`; }).join('')}</div>`).join('')}
+    </aside>
+    <div class="bmain">
+      <div class="bhead">${setImg(s, 'logo') ? `<img class="blogo" src="${setImg(s, 'logo')}" alt="${esc(s.name)} logo">` : ''}
+        <div><div class="eyebrow">${esc(s.series)}</div><h2 class="display">${esc(s.name)}</h2>
+        <div class="prog"><div style="width:${(p.have / p.total * 100).toFixed(1)}%"></div></div><p class="muted">${p.have} of ${p.total} collected · ${Math.round(p.have / p.total * 100)}%</p></div>
+        <div class="bacts">${s.sellable ? `<button class="btn" data-open="${s.code}" type="button">Open pack · <span class="coin"></span>${fmt(s.price)}</button>` : '<span class="muted">Promo set — find these on the Market</span>'}
+        ${done && !claimed ? `<button class="btn gold" id="claimSet" type="button">Claim set bonus +${fmt(reward)}</button>` : claimed ? '<span class="badge">Set complete ✓</span>' : `<span class="muted">Complete for +${fmt(reward)}</span>`}</div>
+      </div>
+      <div class="grid cards" id="bgrid"></div>
+    </div></section>`;
+  lazyGrid($('#bgrid'), list, c => cardTile(c, { binder: true }), 90);
+  $('#bq').oninput = e => { const q = e.target.value.toLowerCase(); $$('.setlist a').forEach(a => a.hidden = !a.dataset.n.includes(q)); };
+  const on = $('.setlist a.on'); if (on) on.scrollIntoView({ block: 'center' });
+  const cs = $('#claimSet'); if (cs) cs.onclick = () => { st().claimed[code] = Date.now(); C.addCoins(reward); xp(250); sfx.win(); toast(`Set complete! <span class="gold">+${fmt(reward)}</span>`); achievements(); VIEWS.binder(code); };
+};
+
+let colF = { q: '', r: 'all', t: 'all', sort: 'value' };
+VIEWS.collection = () => {
+  const owned = C.ownedCards();
+  view.innerHTML = `<section class="wrap"><div class="sech"><div><div class="eyebrow">Collection</div><h2 class="display">Your cards</h2>
+      <p class="muted">${fmt(C.uniqueCount())} unique · ${fmt(Object.values(st().owned).reduce((a, b) => a + b, 0))} total · worth <span class="gold">${fmt(C.collectionValue())}</span></p></div>
+      <button class="btn ghost sm" id="sellDupes" type="button">Sell all duplicates</button></div>
+    <div class="filters">
+      <label class="search"><span class="sr">Search cards</span><input id="cq" placeholder="Search name…" value="${esc(colF.q)}"></label>
+      <label><span class="sr">Rarity</span><select id="cr"><option value="all">All rarities</option>${RARITY.map((r, i) => `<option value="${i}" ${colF.r == i ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+      <label><span class="sr">Type</span><select id="ct"><option value="all">All types</option>${[...C.TYPES, 'Trainer', 'Energy'].map(t => `<option ${colF.t === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label><span class="sr">Sort</span><select id="cs">${[['value', 'Highest value'], ['rarity', 'Rarity'], ['new', 'Newest'], ['name', 'Name'], ['set', 'Set']].map(([v, l]) => `<option value="${v}" ${colF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div><div class="grid cards" id="cgrid"></div></section>`;
+  const draw = () => {
+    const q = colF.q.toLowerCase();
+    let l = owned.filter(c => (!q || c.n.toLowerCase().includes(q)) && (colF.r === 'all' || c.r == colF.r) && (colF.t === 'all' || c.t === colF.t));
+    const so = { value: (a, b) => C.price(b) - C.price(a), rarity: (a, b) => b.r - a.r || b.v - a.v, new: (a, b) => (st().first[b.i] || 0) - (st().first[a.i] || 0), name: (a, b) => a.n.localeCompare(b.n), set: (a, b) => DB.setBy[a.s].order - DB.setBy[b.s].order || a.i - b.i };
+    l.sort(so[colF.sort]); lazyGrid($('#cgrid'), l, c => cardTile(c));
+  };
+  draw();
+  $('#cq').oninput = e => { colF.q = e.target.value; draw(); };
+  $('#cr').onchange = e => { colF.r = e.target.value; draw(); };
+  $('#ct').onchange = e => { colF.t = e.target.value; draw(); };
+  $('#cs').onchange = e => { colF.sort = e.target.value; draw(); };
+  $('#sellDupes').onclick = () => {
+    let n = 0, coins = 0; for (const c of owned) { const k = st().owned[c.i] - 1; if (k > 0) { coins += C.sellPrice(c) * k; n += k; C.removeCard(c, k); } }
+    if (!n) { toast('No duplicates to sell.'); return; } C.addCoins(coins); P.track('sell', { n }); sfx.coin(); toast(`Sold ${n} duplicates for <span class="gold">${fmt(coins)}</span>`); VIEWS.collection();
+  };
+};
+
+VIEWS.market = () => {
+  const day = C.dayNum(), R = C.rng(day * 7919), pool = DB.cards, listings = [];
+  const want = [3, 3, 3, 4, 4, 4, 4, 5, 5, 6, 2, 2];
+  for (const r of want) { let c; for (let k = 0; k < 50; k++) { c = pool[Math.floor(R() * pool.length)]; if (c.r === r) break; } listings.push(c); }
+  const owned = C.ownedCards();
+  const movers = owned.map(c => ({ c, d: (C.price(c) - C.price(c, day - 1)) / C.price(c, day - 1) })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 8);
+  const hist = st().history;
+  view.innerHTML = `<section class="wrap"><div class="sech"><div><div class="eyebrow">Market</div><h2 class="display">Today's singles</h2><p class="muted">Listings refresh daily. Buy at +20%, sell at −10% of market.</p></div></div>
+    <div class="grid cards">${listings.map(c => `<div class="lcard">${cardTile(c)}<button class="btn sm" data-buy="${c.i}" type="button">Buy · ${fmt(C.buyPrice(c))}</button></div>`).join('')}</div></section>
+    <section class="wrap two">
+      <div class="panel"><div class="eyebrow">Portfolio</div><h3 class="display">Collection value</h3>
+        ${hist.length > 1 ? `<div class="bigchart">${spark(hist.map(h => h.v), 560, 140)}</div><p class="muted">${hist[0].d} → ${hist[hist.length - 1].d}</p>` : '<p class="muted">Your value is recorded each day you play.</p>'}
+        <p class="big"><span class="coin"></span>${fmt(C.collectionValue())}</p></div>
+      <div class="panel"><div class="eyebrow">Your movers</div><h3 class="display">Biggest price moves</h3>
+        ${movers.length ? `<table class="tbl"><tbody>${movers.map(m => `<tr data-card="${m.c.i}"><td>${esc(m.c.n)}<small>${esc(DB.setBy[m.c.s].name)}</small></td><td>${spark(C.priceHistory(m.c, 14), 80, 24)}</td><td class="num">${fmt(C.price(m.c))}</td><td class="num ${m.d >= 0 ? 'up' : 'down'}">${m.d >= 0 ? '+' : ''}${(m.d * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Own some cards to see how they move.</p>'}
+      </div></section>`;
+};
+
+/* battle */
+let B = null, bBusy = false;
+VIEWS.battle = (arg) => {
+  if (B && arg === 'fight') return drawBattle();
+  B = null;
+  const team = st().team.map(i => DB.cards[i]).filter(Boolean);
+  const mons = C.ownedCards().filter(C.isMon);
+  view.innerHTML = `<section class="wrap"><div class="sech"><div><div class="eyebrow">Battle</div><h2 class="display">Trainer ladder</h2>
+      <p class="muted">Pick 3 Pokémon. HP is the number on the card. Basic attacks charge ⚡ energy: ⚡2 fires the type's signature move (burn, paralysis, drain…), ⚡4 the Ultimate. Weakness ×1.5, resistance ×0.75, Guard blocks 55%.</p></div></div>
+    <div class="teamrow">${[0, 1, 2].map(k => team[k] ? `<div class="slot filled">${cardTile(team[k])}<small>${team[k].t} · HP ${team[k].hp} · ATK ${team[k].atk}</small></div>` : `<div class="slot"><span>Empty slot</span><small>Open a card and choose “Add to battle team”</small></div>`).join('')}
+      <div class="slot act"><button class="btn" id="autoTeam" type="button" ${mons.length ? '' : 'disabled'}>Auto-pick strongest</button><small>${mons.length} Pokémon owned</small></div></div>
+    <div class="ladder">${TRAINERS.map((t, i) => { const unlocked = i === 0 || st().battle.beaten[i - 1]; return `<div class="rung ${st().battle.beaten[i] ? 'beaten' : ''} ${unlocked ? '' : 'locked'}">
+      <div class="rn">${i + 1}</div><div class="ri"><b>${esc(t.name)}</b><small>${esc(t.title)} · up to ${RARITY[t.maxR]}</small></div>
+      <div class="rr"><span class="gold">+${t.reward}</span>${t.token ? ` · ${t.token} free pack${t.token > 1 ? 's' : ''}` : ''}</div>
+      <button class="btn sm" data-fight="${i}" type="button" ${unlocked && team.length === 3 ? '' : 'disabled'}>${st().battle.beaten[i] ? 'Rematch' : 'Fight'}</button></div>`; }).join('')}</div>
+    <p class="muted">Record: ${st().battle.wins} wins · ${st().battle.losses} losses</p></section>`;
+  $('#autoTeam').onclick = () => { st().team = bestTeam(mons).map(c => c.i); C.save(); VIEWS.battle(); };
+  $$('[data-fight]').forEach(b => b.onclick = () => startBattle(+b.dataset.fight));
+};
+// opts (world battles): { T: {name,title,lvl,reward}, enemy: [fighters], returnTo: '#world', onWin(), ladder: false }
+function startBattle(tier, opts = {}) {
+  if (st().team.length < 3) { const mons = C.ownedCards().filter(C.isMon); if (mons.length < 3) { toast('You need 3 Pokémon cards for a battle — open a few packs first.', 'err'); return; } st().team = bestTeam(mons).map(c => c.i); C.save(); toast('Auto-picked your 3 strongest cards as your team.'); }
+  const mine = st().team.map(i => fighter(DB.cards[i]));
+  B = { tier, opts, b: new Battle(mine, opts.enemy || enemyTeam(tier, Date.now() & 0xffff)), log: [] };
+  const go = () => { if (location.hash === '#battle/fight') VIEWS.battle('fight'); else location.hash = 'battle/fight'; };
+  if (document.body.classList.contains('game') && world && !opts.noIntro) {
+    const T = opts.T || TRAINERS[tier], lead = B.b.active('e');
+    let img = null; try { img = world.snapshot(); } catch (e) { /* no snapshot: plain splash */ }
+    world.setPaused(true); sfx.whoosh?.(.8);
+    panelBreak({ img, title: T.name, sub: `${lead.name} · ${lead.type}`, color: TYPE_COL[lead.type] || '#ff5a4e' }, go);
+  } else go();
+}
+const bT = () => B.opts?.T || TRAINERS[B.tier];
+window.__startBattle = startBattle;
+/* ---------- battle presentation: the cards themselves fight ---------- */
+let bSpeed = 1;
+const bw = ms => new Promise(r => setTimeout(r, ms / bSpeed));
+const anim = (el, kf, o) => el ? el.animate(kf, { ...o, duration: (o.duration || 400) / bSpeed }).finished.catch(() => {}) : Promise.resolve();
+const TCOL = t => TCOLOR[t] || '#ccc';
+function fighterHTML(f, side) {
+  return `<div class="bf ${side}" id="bf-${side}" style="--tc:${TCOL(f.type)}">
+    <div class="bf-card"><div class="bf-float"><img src="${C.cardHD(f.card) || cardImg(f.card)}" onerror="this.onerror=null;this.src='${cardImg(f.card)}'" alt="${esc(f.name)}"><span class="bf-flash"></span><span class="bf-shield"></span><span class="bf-aura"></span></div></div>
+    <div class="bf-plate">
+      <div class="bf-top"><b class="bf-name">${esc(f.name)}</b><span class="bf-type">${typeDot(f.type)}${f.type}</span><span class="bf-st"></span></div>
+      <div class="bf-hp"><i class="ghost"></i><i class="live"></i></div>
+      <div class="bf-bot"><span class="bf-hpt"></span><span class="bf-en">${Array.from({ length: ENERGY_MAX }, () => '<i></i>').join('')}</span></div>
+    </div></div>`;
+}
+function benchHTML(side) {
+  const t = B.b[side].team;
+  return t.map((f, i) => `<span class="bpip ${f.hp <= 0 ? 'down' : ''} ${i === B.b[side].act ? 'on' : ''}" title="${esc(f.name)}"><img src="${cardImg(f.card)}" alt=""></span>`).join('');
+}
+function drawBattle() {
+  const b = B.b, T = bT();
+  view.innerHTML = `<section class="arena2" id="arena">
+    <div class="bfield" id="bfield">
+      <div class="bhead e"><div><b>${esc(T.name)}</b><small>${esc(T.title)} · Lv ×${T.lvl}</small></div><div class="bench" id="bench-e">${benchHTML('e')}</div></div>
+      <div class="bhead p"><div class="bench" id="bench-p">${benchHTML('p')}</div><div><b>You</b><small id="bturn">Round ${b.turn}</small></div></div>
+      <div class="bslot e" id="slot-e">${fighterHTML(b.active('e'), 'e')}</div>
+      <div class="bslot p" id="slot-p">${fighterHTML(b.active('p'), 'p')}</div>
+      <div class="bvs">VS</div>
+      <div class="fxl" id="fxl"></div>
+    </div>
+    <div class="bhud">
+      <div class="blog2" id="blog"></div>
+      <div class="bctrl"><div class="moves2" id="moves"></div>
+        <div class="bmeta"><span class="adv" id="adv"></span><button class="btn ghost sm" id="bspd" type="button">Speed ×${bSpeed}</button><button class="btn ghost sm" id="bflee" type="button">Forfeit</button></div></div>
+    </div></section>`;
+  for (const s of ['p', 'e']) { $('#bf-' + s)._f = b.active(s); refreshFighter(s, true); }
+  refreshMoves(); logLine(`${esc(T.name)} wants to battle!`);
+  $('#bspd').onclick = () => { bSpeed = bSpeed === 1 ? 2 : 1; $('#bspd').textContent = `Speed ×${bSpeed}`; };
+  $('#bflee').onclick = () => { if (bBusy) return; B.b.over = 'lose'; st().battle.losses++; C.save(); showResult('lose'); };
+  anim($('#bf-e .bf-card'), [{ transform: 'translate(260px,-80px) rotate(20deg) scale(.6)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 700, easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+  anim($('#bf-p .bf-card'), [{ transform: 'translate(-260px,80px) rotate(-20deg) scale(.6)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 700, delay: 120, easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+}
+function refreshFighter(side, instant) {
+  const el = $('#bf-' + side); if (!el) return; const f = el._f || B.b.active(side);
+  if (el._hp == null) el._hp = f.hp;
+  const hp = Math.max(0, Math.round(el._hp)), pct = hp / f.maxHp * 100, live = el.querySelector('.live'), ghost = el.querySelector('.ghost');
+  if (instant) { live.style.transition = ghost.style.transition = 'none'; requestAnimationFrame(() => { live.style.transition = ghost.style.transition = ''; }); }
+  live.style.width = ghost.style.width = pct + '%'; live.classList.toggle('low', pct < 30); live.classList.toggle('mid', pct >= 30 && pct < 55);
+  el.querySelector('.bf-hpt').textContent = `${hp} / ${f.maxHp} HP`;
+  el.querySelectorAll('.bf-en i').forEach((x, i) => x.classList.toggle('on', i < f.energy));
+  const st2 = [f.status === 'burn' ? '<span class="stb burn">BRN</span>' : '', f.status === 'para' ? '<span class="stb para">PAR</span>' : '',
+    f.buff.atk < 1 ? '<span class="stb dn">ATK↓</span>' : '', f.buff.spd < 1 ? '<span class="stb dn">SPD↓</span>' : '', f.buff.def > 1 ? '<span class="stb up">DEF↑</span>' : ''].join('');
+  el.querySelector('.bf-st').innerHTML = st2;
+  el.classList.toggle('guarding', !!f.guard);
+  const bench = $('#bench-' + side); if (bench) bench.innerHTML = benchHTML(side);
+}
+function refreshMoves() {
+  const b = B.b, me = b.active('p'), foe = b.active('e'), sig = SIG[me.type] || SIG.Colorless, box = $('#moves'); if (!box) return;
+  const btn = (k, label, sub, cls = '') => `<button class="mv ${cls}" data-m="${k}" type="button" ${b.canUse(me, k) && !bBusy ? '' : 'disabled'} style="--tc:${TCOL(me.type)}"><b>${label}</b><small>${sub}</small></button>`;
+  box.innerHTML = btn('attack', 'Attack', `≈${estimate(me, foe, 'attack')} dmg · +1⚡`)
+    + btn('sig', sig.name, `≈${estimate(me, foe, 'sig')} dmg · ⚡${MOVES.sig.cost} · ${sig.note}`, 'sig')
+    + btn('ult', 'Ultimate', `≈${estimate(me, foe, 'ult')} dmg · ⚡${MOVES.ult.cost}`, 'ult')
+    + btn('guard', 'Guard', 'take −55% · +1⚡', 'guard')
+    + b.p.team.map((f, i) => i !== b.p.act && f.hp > 0 ? `<button class="mv sw" data-sw="${i}" type="button" ${bBusy ? 'disabled' : ''}><b>Switch</b><small>${esc(f.name)} · ${f.hp} HP</small></button>` : '').join('');
+  const m1 = mult(me.type, foe.type), m2 = mult(foe.type, me.type);
+  $('#adv').innerHTML = m1 > 1 ? '<span class="good">Your type is super effective</span>' : m2 > 1 ? '<span class="bad">You are weak to them — consider switching</span>' : m1 < 1 ? '<span class="bad">They resist your type</span>' : '';
+  $('#bturn') && ($('#bturn').textContent = `Round ${b.turn}`);
+  $$('#moves [data-m]').forEach(x => x.onclick = () => act({ kind: x.dataset.m }));
+  $$('#moves [data-sw]').forEach(x => x.onclick = () => act({ kind: 'switch', to: +x.dataset.sw }));
+}
+function logLine(html) {
+  const l = $('#blog'); if (!l) return; B.log.push(html);
+  const p = document.createElement('p'); p.innerHTML = html; l.append(p); while (l.children.length > 5) l.firstChild.remove();
+}
+function centerOf(el) { const r = el.getBoundingClientRect(), f = $('#bfield').getBoundingClientRect(); return { x: r.left + r.width / 2 - f.left, y: r.top + r.height / 2 - f.top, w: r.width, h: r.height }; }
+function fxAt(cls, x, y, html = '', style = '') { const d = document.createElement('div'); d.className = 'fx ' + cls; d.style.cssText = `left:${x}px;top:${y}px;${style}`; d.innerHTML = html; $('#fxl').append(d); return d; }
+function floatText(side, text, cls) {
+  const c = centerOf($('#bf-' + side + ' .bf-card')), d = fxAt('ftext ' + cls, c.x + (Math.random() - .5) * 40, c.y - c.h * .2, text);
+  anim(d, [{ transform: 'translate(-50%,-50%) scale(.4)', opacity: 0 }, { transform: 'translate(-50%,-90%) scale(1.25)', opacity: 1, offset: .2 }, { transform: 'translate(-50%,-190%) scale(1)', opacity: 0 }], { duration: 1100, easing: 'cubic-bezier(.2,.8,.2,1)' }).then(() => d.remove());
+}
+function shakeField(k = 1) { anim($('#bfield'), [0, 1, 2, 3, 4, 5].map(i => ({ transform: i === 5 ? 'none' : `translate(${(Math.random() - .5) * 18 * k}px,${(Math.random() - .5) * 12 * k}px)` })), { duration: 360 }); }
+async function projectile(from, to, type, big) {
+  const a = centerOf($('#bf-' + from + ' .bf-card')), b2 = centerOf($('#bf-' + to + ' .bf-card'));
+  const d = fxAt('proj t-' + type + (big ? ' big' : ''), a.x, a.y, '<i></i><i></i><i></i>', `--tc:${TCOL(type)}`);
+  const ang = Math.atan2(b2.y - a.y, b2.x - a.x) * 180 / Math.PI;
+  await anim(d, [{ transform: `translate(-50%,-50%) rotate(${ang}deg) scale(.3)`, opacity: 0 }, { transform: `translate(-50%,-50%) rotate(${ang}deg) scale(1)`, opacity: 1, offset: .15 },
+    { transform: `translate(calc(-50% + ${b2.x - a.x}px), calc(-50% + ${b2.y - a.y}px)) rotate(${ang}deg) scale(${big ? 1.6 : 1.1})`, opacity: 1 }], { duration: big ? 520 : 420, easing: 'cubic-bezier(.5,0,.8,.6)' });
+  d.remove();
+}
+function burst(side, type, big) {
+  const c = centerOf($('#bf-' + side + ' .bf-card')), d = fxAt('burst t-' + type + (big ? ' big' : ''), c.x, c.y, '', `--tc:${TCOL(type)}`);
+  anim(d, [{ transform: 'translate(-50%,-50%) scale(.2) rotate(0deg)', opacity: 1 }, { transform: `translate(-50%,-50%) scale(${big ? 2.6 : 1.7}) rotate(40deg)`, opacity: 0 }], { duration: big ? 800 : 520, easing: 'cubic-bezier(.1,.8,.2,1)' }).then(() => d.remove());
+  for (let i = 0; i < (big ? 22 : 12); i++) {
+    const s = fxAt('spark', c.x, c.y, '', `--tc:${TCOL(type)}`), a = Math.random() * 6.28, r = (big ? 160 : 100) * (.5 + Math.random());
+    anim(s, [{ transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(a) * r}px), calc(-50% + ${Math.sin(a) * r}px)) scale(.2)`, opacity: 0 }], { duration: 500 + Math.random() * 300, easing: 'cubic-bezier(.1,.8,.3,1)' }).then(() => s.remove());
+  }
+}
+async function strike(e) {
+  const s = e.side, o = s === 'p' ? 'e' : 'p', att = $('#bf-' + s + ' .bf-card'), def = $('#bf-' + o + ' .bf-card'), who = B.b.active(s);
+  const A = centerOf(att), D = centerOf(def), dx = D.x - A.x, dy = D.y - A.y, big = e.kind === 'ult', ranged = e.kind !== 'attack';
+  logLine(`${s === 'p' ? 'Your' : 'Their'} <b>${esc(who.name)}</b> used <b class="mvn" style="color:${TCOL(e.type)}">${esc(e.move)}</b>`);
+  if (ranged) {
+    // charge up: the card rises and glows in its type colour
+    const el = $('#bf-' + s); el.classList.add('charging'); if (big) { $('#arena').classList.add('dim'); sfx.charge(.9 / bSpeed); speedLines($('#bfield'), TCOL(e.type), 1300 / bSpeed); } else sfx.whoosh(.3);
+    await anim(att, [{ transform: 'none' }, { transform: `translate(${-dx * .06}px,${-dy * .06 - 24}px) rotate(${s === 'p' ? -8 : 8}deg) scale(${big ? 1.18 : 1.08})` }], { duration: big ? 900 : 480, easing: 'ease-out', fill: 'forwards' });
+    if (big) {
+      // ultimate: the card itself flies into the opponent
+      await anim(att, [{ transform: `translate(${-dx * .06}px,${-dy * .06 - 24}px) rotate(${s === 'p' ? -8 : 8}deg) scale(1.18)` }, { transform: `translate(${dx * .78}px,${dy * .78}px) rotate(${s === 'p' ? 16 : -16}deg) scale(1.25)` }], { duration: 300, easing: 'cubic-bezier(.6,0,.9,.5)', fill: 'forwards' });
+    } else { projectile(s, o, e.type, false); await bw(330); }
+  } else {
+    // basic attack: wind-up, dash, hit
+    sfx.whoosh(.2);
+    await anim(att, [{ transform: 'none' }, { transform: `translate(${-dx * .08}px,${-dy * .08}px) rotate(${s === 'p' ? -7 : 7}deg)` }], { duration: 260, easing: 'ease-out', fill: 'forwards' });
+    await anim(att, [{ transform: `translate(${-dx * .08}px,${-dy * .08}px) rotate(${s === 'p' ? -7 : 7}deg)` }, { transform: `translate(${dx * .62}px,${dy * .62}px) rotate(${s === 'p' ? 10 : -10}deg) scale(1.06)` }], { duration: 200, easing: 'cubic-bezier(.7,0,1,.6)', fill: 'forwards' });
+  }
+  // impact
+  sfx.hit(); burst(o, e.type, big || e.crit); if (big || e.crit || e.eff) shakeField(big ? 1.6 : 1);
+  if (big || e.crit) impactFrame($('#bfield'));
+  onomato($('#fxl'), D.x + (Math.random() - .5) * 60, D.y - D.h * .42, e.kind === 'attack' ? 'Fighting' : e.type, { big, crit: e.crit });
+  const defEl = $('#bf-' + o); defEl.classList.add('hit'); setTimeout(() => defEl.classList.remove('hit'), 260 / bSpeed);
+  const kx = dx / Math.hypot(dx, dy) * (big ? 60 : 34), ky = dy / Math.hypot(dx, dy) * (big ? 60 : 34);
+  anim(def, [{ transform: 'none' }, { transform: `translate(${kx}px,${ky}px) rotate(${s === 'p' ? 9 : -9}deg)`, offset: .25 }, { transform: 'none' }], { duration: 520, easing: 'ease-out' });
+  { const de = $('#bf-' + o); de._hp = Math.max(0, (de._hp ?? 0) - e.d); }
+  floatText(o, '−' + e.d, 'dmg' + (e.crit ? ' crit' : '') + (big ? ' big' : ''));
+  if (e.crit) setTimeout(() => floatText(o, 'CRITICAL!', 'lbl crit'), 120 / bSpeed);
+  if (e.eff) setTimeout(() => floatText(o, 'SUPER EFFECTIVE', 'lbl eff'), 220 / bSpeed);
+  else if (e.weak) setTimeout(() => floatText(o, 'resisted', 'lbl weak'), 220 / bSpeed);
+  if (e.guarded) setTimeout(() => floatText(o, 'guarded', 'lbl weak'), 300 / bSpeed);
+  refreshFighter(o);
+  // return home
+  anim(att, [{ transform: getComputedStyle(att).transform === 'none' ? 'none' : getComputedStyle(att).transform }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' }).then(() => att.getAnimations().forEach(a => a.cancel()));
+  $('#bf-' + s).classList.remove('charging'); $('#arena')?.classList.remove('dim');
+  refreshFighter(s);
+  await bw(big ? 700 : 520);
+}
+async function knockOut(side) {
+  const card = $('#bf-' + side + ' .bf-card'); sfx.ko();
+  logLine(`${side === 'p' ? 'Your' : 'Their'} <b>${esc($('#bf-' + side)?._f?.name || 'Pokémon')}</b> fainted!`);
+  await anim(card, [{ transform: 'none', opacity: 1, filter: 'none' }, { transform: 'translateY(-14px) rotate(-4deg)', offset: .2 }, { transform: `translateY(80px) rotate(${side === 'p' ? -24 : 24}deg) scale(.7)`, opacity: 0, filter: 'grayscale(1) brightness(.4)' }], { duration: 850, easing: 'cubic-bezier(.5,0,.8,.4)', fill: 'forwards' });
+}
+async function sendOut(side, idx, forced) {
+  const slot = $('#slot-' + side), old = $('#bf-' + side), f = B.b[side].team[idx];
+  if (old && !forced) await anim(old.querySelector('.bf-card'), [{ transform: 'none', opacity: 1 }, { transform: `translateX(${side === 'p' ? -220 : 220}px) rotate(${side === 'p' ? -18 : 18}deg) scale(.7)`, opacity: 0 }], { duration: 420, easing: 'ease-in', fill: 'forwards' });
+  slot.innerHTML = fighterHTML(f, side); $('#bf-' + side)._f = f; refreshFighter(side, true);
+  logLine(`${side === 'p' ? 'You' : esc(bT().name.split(' ').pop())} sent out <b>${esc(f.name)}</b>!`); sfx.whoosh(.4);
+  await anim($('#bf-' + side + ' .bf-card'), [{ transform: `translateX(${side === 'p' ? -260 : 260}px) rotateY(${side === 'p' ? -90 : 90}deg) scale(.7)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 620, easing: 'cubic-bezier(.2,.9,.3,1.15)' });
+}
+function showResult(r) {
+  const T = bT(), a = $('#arena'); if (!a) return; const back = B.opts?.returnTo;
+  const d = document.createElement('div'); d.className = 'bresult ' + r;
+  d.innerHTML = `<div class="brbox"><div class="eyebrow">${esc(T.name)}</div><h2 class="display">${r === 'win' ? 'Victory!' : 'Defeated'}</h2>
+    <p>${r === 'win' ? `<span class="gold">+${T.reward} coins</span>${T.token && B.firstWin ? ` · +${T.token} free pack${T.token > 1 ? 's' : ''}` : ''} · ${B.b.turn - 1} rounds` : 'Upgrade your team, use type advantages and try again.'}</p>
+    <div class="row" style="justify-content:center">${r === "win" && B.opts?.prize ? `<div class="bprize">${B.opts.prize}</div>` : ''}<button class="btn gold" data-go="${back || 'battle'}" type="button">${back ? 'Back to the World' : 'Back to ladder'}</button>${r === 'lose' ? `<button class="btn ghost" id="bRetry" type="button">Retry</button>` : ''}</div></div>`;
+  a.append(d); const rt = $('#bRetry'); if (rt) rt.onclick = () => startBattle(B.tier, B.opts);
+}
+async function act(a) {
+  if (bBusy || !B || B.b.over) return; bBusy = true; refreshMoves();
+  const b = B.b, ev = b.round(a);
+  for (const e of ev) {
+    if (!$('#arena')) break; // left the screen mid-round
+    const actor = e.side === 'p' ? 'You' : bT().name.split(' ').pop();
+    if (e.t === 'hit') await strike(e);
+    else if (e.t === 'ko') await knockOut(e.side);
+    else if (e.t === 'switch') await sendOut(e.side, e.to, e.forced);
+    else if (e.t === 'guard') { logLine(`${actor} ${e.side === 'p' ? 'raise' : 'raises'} a guard.`); refreshFighter(e.side); sfx.click(); await bw(350); }
+    else if (e.t === 'status') { logLine(`${e.side === 'p' ? 'Your' : 'Their'} Pokémon is ${e.st === 'burn' ? '<b style="color:#ff8a4c">burned</b>' : '<b style="color:#f2c230">paralyzed</b>'}!`); floatText(e.side, e.st === 'burn' ? 'BURNED' : 'PARALYZED', 'lbl ' + e.st); refreshFighter(e.side); await bw(450); }
+    else if (e.t === 'para') { logLine(`${e.side === 'p' ? 'Your' : 'Their'} Pokémon is paralyzed and can't move!`); floatText(e.side, 'can’t move', 'lbl para'); anim($('#bf-' + e.side + ' .bf-card'), [0, 1, 2, 3, 4].map(i => ({ transform: i === 4 ? 'none' : `translateX(${i % 2 ? 6 : -6}px)` })), { duration: 300 }); await bw(600); }
+    else if (e.t === 'burn') { const be = $('#bf-' + e.side); if (be) be._hp = Math.max(0, be._hp - e.d); floatText(e.side, '−' + e.d, 'dmg burn'); logLine(`Burn deals ${e.d} damage.`); $('#bf-' + e.side).classList.add('burning'); setTimeout(() => $('#bf-' + e.side)?.classList.remove('burning'), 600); refreshFighter(e.side); await bw(550); }
+    else if (e.t === 'cure') { refreshFighter(e.side); }
+    else if (e.t === 'heal') { const he = $('#bf-' + e.side); if (he) he._hp = Math.min(he._f.maxHp, he._hp + e.n); floatText(e.side, '+' + e.n, 'heal'); refreshFighter(e.side); await bw(300); }
+    else if (e.t === 'debuff' || e.t === 'buff') { floatText(e.side, e.stat + (e.t === 'buff' ? ' ↑' : ' ↓'), 'lbl ' + (e.t === 'buff' ? 'up' : 'dn')); refreshFighter(e.side); await bw(300); }
+    else if (e.t === 'end') {
+      const T = bT(), ladder = B.opts?.ladder !== false && !B.opts?.T;
+      P.track('battle', { win: e.result === 'win', tier: B.tier, types: [...new Set(B.b.p.team.map(f => f.type))] });
+      if (e.result === 'win') { B.firstWin = ladder && !st().battle.beaten[B.tier]; st().battle.wins++; C.addCoins(T.reward); if (T.token && B.firstWin) st().tokens += T.token; if (ladder) st().battle.beaten[B.tier] = Date.now(); sfx.win(); B.opts?.onWin?.(); }
+      else { st().battle.losses++; sfx.lose(); }
+      C.save(true); await bw(500); showResult(e.result);
+      const gain = e.result === 'win' ? (B.opts?.xp ?? 40 + B.tier * 15) : 10; setTimeout(() => xp(gain), 1800); // let the victory screen breathe first
+      achievements();
+    }
+  }
+  bBusy = false; if ($('#arena') && !b.over) { for (const s of ['p', 'e']) { const el = $('#bf-' + s); if (el) el._hp = el._f.hp; refreshFighter(s); } refreshMoves(); }
+}
+
+/* ------------------------------------------------------------------ story scenes (visual-novel style) */
+function playScene(lines, { title } = {}) {
+  return new Promise(res => {
+    const el = $('#scene'); let i = 0, typing = null;
+    const show = () => {
+      const [who, text] = lines[i], c = who === 'you' ? { name: st().name, role: P.item('title', P.ensure().look.title).name, look: P.ensure().look } : P.CAST[who];
+      el.innerHTML = `<div class="scbox ${who === 'you' ? 'me' : ''}" style="--i:${i}">${title && i === 0 ? `<div class="sctitle">${esc(title)}</div>` : ''}
+        <div class="scav">${P.avatarSVG(c.look, { size: 170 })}</div>
+        <div class="sctext"><div class="scname"><b>${esc(c.name)}</b><small>${esc(c.role)}</small></div><p id="scP"></p><div class="scnext">${i < lines.length - 1 ? 'Click to continue ▸' : 'Click to close ✓'}</div></div></div>`;
+      const pEl = $('#scP'); let k = 0; clearInterval(typing); sfx.tick();
+      typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16);
+      el.onclick = () => { if (typing) { clearInterval(typing); typing = null; pEl.textContent = text; return; } if (++i < lines.length) show(); else { el.hidden = true; el.onclick = null; removeEventListener('keydown', key); res(); } };
+    };
+    const key = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); el.onclick?.(); } };
+    addEventListener('keydown', key); el.hidden = false; show();
+  });
+}
+
+/* ------------------------------------------------------------------ Journey */
+const AREA = { harbor: 'Lumen Harbor', mistvale: 'Mistvale', sandreach: 'Sandreach', starfall: 'Starfall Observatory', voltspire: 'Voltspire', frostline: 'Frostline Peaks', rift: 'The Obsidian Rift' };
+function resetIn(ms) { const h = Math.floor(ms / 3.6e6), m = Math.floor(ms % 3.6e6 / 6e4); return h > 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`; }
+VIEWS.journey = () => {
+  const s = P.ensure(), done = P.storyDone(), ch = P.chapter(), ready = !done && P.chapterReady(ch), ch4 = ch.choice && !s.story.choice;
+  const all = P.challenges(), now = new Date(), midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const toMonday = new Date(midnight); toMonday.setDate(midnight.getDate() + ((8 - midnight.getDay()) % 7));
+  const chal = c => `<div class="chal ${c.done ? 'done' : ''} ${c.claimed ? 'claimed' : ''}"><div><b>${esc(c.text)}</b><div class="cbar"><i style="width:${c.cur / c.n * 100}%"></i></div><small>${c.cur}/${c.n} · <span class="gold">+${c.coins}</span> · ★${c.st}</small></div>
+    ${c.claimed ? '<span class="muted">✓</span>' : `<button class="btn sm ${c.done ? 'gold glow' : 'ghost'}" data-claim="${c.key}" type="button" ${c.done ? '' : 'disabled'}>Claim</button>`}</div>`;
+  const next = P.STAR_TRACK.find(i => s.stars < i.u.n);
+  view.innerHTML = `<section class="wrap journey">
+    <div class="jhero" style="--ac:${done ? '#5cf2d6' : ch.color}">
+      <div class="jtxt"><div class="eyebrow">${done ? 'Journey complete' : `Chapter ${ch.n} of ${P.CHAPTERS.length} · ${AREA[ch.area]}`}</div>
+        <h1 class="display">${done ? 'Echo Warden' : esc(ch.title)}</h1>
+        <p>${done ? 'Glyph guards the relay. The Rift is open for Ascension runs and Champion rematches.' : esc(ch.intro[0][1])}</p>
+        <div class="row"><button class="btn ghost" id="jReplay" type="button">▶ ${done ? 'Replay finale' : 'Story so far'}</button><a class="btn" href="#world">Explore ${AREA[done ? 'rift' : ch.area]}</a></div></div>
+      <div class="jcast">${[...new Set((done ? P.CHAPTERS[6] : ch).intro.map(l => l[0]))].slice(0, 3).map(w => `<div class="jc">${P.avatarSVG(P.CAST[w].look, { size: 120 })}<small>${esc(P.CAST[w].name)}</small></div>`).join('')}</div>
+    </div>
+    <div class="jgrid">
+      <div class="tile jobj"><div class="eyebrow">Objectives</div>
+        ${done ? '<p class="muted">All chapters complete. New story arcs will appear here.</p>' : ch.goals.map(g => { const cur = g.cur(), ok = cur >= g.need; return `<div class="obj ${ok ? 'ok' : ''}"><span class="ck">${ok ? '✓' : ''}</span><div><b>${esc(g.text)}</b><div class="cbar"><i style="width:${cur / g.need * 100}%"></i></div><small>${cur} / ${g.need}</small></div>${!ok && g.go ? `<a class="btn sm ghost" href="${g.go}">Go</a>` : ''}</div>`; }).join('')}
+        ${ch4 ? `<div class="choice"><p>Who do you trust with the relay?</p><div class="row"><button class="btn purple" data-choose="sable" type="button">Help Warden Sable read the glyphs</button><button class="btn" data-choose="vale" type="button">Help Dr. Vale shield the relay</button></div></div>` : ''}
+        ${done ? '' : `<button class="btn big ${ready ? 'gold glow' : 'ghost'}" id="jDone" type="button" ${ready ? '' : 'disabled'}>${ready ? `Complete chapter · +${fmt(ch.reward.coins)} coins · +${ch.reward.xp} XP` : 'Complete the objectives to continue'}</button>`}
+      </div>
+      <div class="tile jchal"><div class="sech"><div class="eyebrow">Daily challenges</div><small class="muted">resets in ${resetIn(midnight - now)}</small></div>${all.daily.map(chal).join('')}
+        <div class="sech" style="margin-top:14px"><div class="eyebrow">Weekly challenges</div><small class="muted">resets in ${resetIn(toMonday - now)}</small></div>${all.weekly.map(chal).join('')}
+        <div class="stars"><b>★ ${s.stars}</b> challenge stars${next ? ` · next unlock at ★${next.u.n}: <b>${esc(next.name)}</b>` : ' · all star rewards unlocked'}</div></div>
+    </div>
+    <div class="tile jline"><div class="eyebrow">Chapters</div><div class="tl">${P.CHAPTERS.map((c, i) => `<div class="tlc ${i < s.story.ch ? 'done' : i === s.story.ch ? 'now' : 'lock'}" style="--ac:${c.color}"><span>${c.n}</span><b>${i <= s.story.ch ? esc(c.title) : '???'}</b><small>${AREA[c.area]}</small></div>`).join('')}</div></div>
+  </section>`;
+  $('#jReplay').onclick = () => playScene(done ? P.CHAPTERS[6].outro : ch.intro, { title: done ? 'Finale' : `Chapter ${ch.n} — ${ch.title}` });
+  $$('[data-claim]').forEach(b => b.onclick = () => { const c = P.claimChallenge(b.dataset.claim); if (c) { sfx.coin(); toast(`Challenge complete: <b>${esc(c.text)}</b> <span class="gold">+${c.coins}</span> ★${c.st}`); xp(15 + c.st * 5); afterProgress(); VIEWS.journey(); } });
+  $$('[data-choose]').forEach(b => b.onclick = async () => { s.story.choice = b.dataset.choose; C.save(true);
+    await playScene(b.dataset.choose === 'sable' ? [['sable', 'Then read with me. The glyphs are not a warning. They are a list of names.'], ['vale', 'I hope you know what you are doing, Ranger.']] : [['vale', 'Thank you. We shield the relay first, and ask questions after.'], ['sable', 'You are building a wall around a memory, Doctor. Walls do not make it forget.']]);
+    afterProgress(); VIEWS.journey(); });
+  const jd = $('#jDone'); if (jd) jd.onclick = async () => { const c = P.completeChapter(); if (!c) return; sfx.win(); await playScene(c.outro, { title: `Chapter ${c.n} complete` }); xp(c.reward.xp);
+    toast(`Chapter ${c.n} complete · <span class="gold">+${fmt(c.reward.coins)}</span>${P.CHAPTERS[c.n] ? ` · ${AREA[P.CHAPTERS[c.n].area]} unlocked` : ''}`); afterProgress(); VIEWS.journey();
+    if (!P.storyDone()) setTimeout(() => playScene(P.chapter().intro, { title: `Chapter ${P.chapter().n} — ${P.chapter().title}` }), 600); };
+  if (!done && !s.story.seen['intro:' + ch.n]) { s.story.seen['intro:' + ch.n] = Date.now(); C.save(); setTimeout(() => playScene(ch.intro, { title: `Chapter ${ch.n} — ${ch.title}` }), 350); }
+};
+let lastReady = 0;
+function afterProgress() {
+  for (const it of P.newlyUnlocked()) toast(`New look unlocked: <b>${esc(it.name)}</b> <a href="#profile" class="gold">Trainer ▸</a>`, 'ach');
+  const n = P.readyCount(); if (n > lastReady) { toast(`<b>Journey:</b> ${n} reward${n > 1 ? 's' : ''} ready to claim <a href="#journey" class="gold">Open ▸</a>`); } lastReady = n; updateTop();
+}
+P.onProgress(() => setTimeout(afterProgress, 50));
+
+/* ------------------------------------------------------------------ World (3D Veyra) */
+let world = null, worldCh = -1;
+const AREA_REQ = { harbor: 0, mistvale: 1, sandreach: 2, starfall: 3, voltspire: 4, frostline: 5, rift: 6 };
+function worldConfirm(q, yes, no) {
+  return new Promise(res => { const m = $('#wModal'); m.hidden = false;
+    m.innerHTML = `<div class="wbox"><p>${esc(q)}</p><div class="row"><button class="btn gold" id="wYes" type="button">${esc(yes)}</button><button class="btn ghost" id="wNo" type="button">${esc(no)}</button></div></div>`;
+    const done = v => { m.hidden = true; m.innerHTML = ''; res(v); }; $('#wYes').onclick = () => done(true); $('#wNo').onclick = () => done(false); $('#wYes').focus(); });
+}
+function worldTravel() {
+  const q = QS.Q(), m = $('#wModal'), W = world; m.hidden = false;
+  const ids = Object.keys(W.regions), map = W.mapCanvas;
+  m.innerHTML = `<div class="wbox wmap"><div class="sech"><div><div class="eyebrow">Relay Ferry · fast travel</div><h3 class="display">Veyra</h3></div><button class="btn ghost sm" id="wClose" type="button">✕</button></div>
+    <div class="vmap">${map ? `<img src="${map.toDataURL()}" alt="Map of Veyra">` : ''}${ids.map(id => { const R = W.regions[id], ok = q.visited[id] && !QS.blockedAt(R.x, R.z), x = (R.x / 1150 + .5) * 100, y = (R.z / 1150 + .5) * 100;
+      return `<button class="vpin ${ok ? '' : 'locked'}" data-area="${id}" type="button" ${ok ? '' : 'disabled'} style="left:${x}%;top:${y}%"><i></i><b>${esc(W.areas[id].name)}</b></button>`; }).join('')}
+      ${(() => { const p = W.player?.group.position; return p ? `<span class="vme" style="left:${(p.x / 1150 + .5) * 100}%;top:${(p.z / 1150 + .5) * 100}%"></span>` : ''; })()}</div>
+    <p class="muted small">Ferry stops open when you first reach a town. Locked routes open as you earn Circuit Seals.</p></div>`;
+  $('#wClose').onclick = () => { m.hidden = true; };
+  $$('[data-area]').forEach(b => b.onclick = () => { m.hidden = true; sfx.whoosh(.5); W.travelTo(b.dataset.area); });
+}
+/* starter choice (story step) */
+function chooseStarter() {
+  return new Promise(res => {
+    const cards = QS.starterCards(), m = $('#wModal'); m.hidden = false;
+    m.innerHTML = `<div class="wbox starter"><div class="eyebrow">Dr. Vale's three blank-stock cards</div><h3 class="display">Choose your partner</h3>
+      <div class="stgrid">${cards.map(c => `<button class="stc" data-st="${c.i}" type="button" style="--c:${TYPEC[c.t] || '#fff'}"><img src="${cardImg(c)}" alt=""><b>${esc(c.n)}</b><small>${esc(c.t)} type</small></button>`).join('')}</div>
+      <p class="muted small">Your partner walks with you and leads your team. You can catch many more in the tall grass.</p></div>`;
+    $$('[data-st]').forEach(b => b.onclick = () => { const i = +b.dataset.st, c = DB.cards[i]; C.addCard(c); const S = st(); S.team = [i, ...(S.team || []).filter(x => x !== i)].slice(0, 3);
+      const pets = ensurePets(); pets.card = i; pets.none = false; C.save(true); m.hidden = true; m.innerHTML = ''; sfx.win?.(); toast(`<b>${esc(c.n)}</b> is your partner!`); res(i); });
+  });
+}
+/* objective HUD: chapter, current step, distance + arrow to the target */
+let lastGoal = null;
+function worldGoal(g) { lastGoal = g; renderQuestHud(); }
+function renderQuestHud() {
+  const el = $('#wQuest'); if (!el) return; const q = QS.Q(), ch = QS.chapterNow(), st2 = QS.stepNow(), g = lastGoal;
+  if (QS.done()) { el.innerHTML = `<div class="eyebrow">Story complete · ${q.seals.length} seals</div><b>Veyra remembers you.</b>`; return; }
+  const idx = ch.steps.indexOf(st2);
+  el.innerHTML = `<div class="eyebrow">Chapter ${q.ch + 1}/${QS.STORY.length} · ${esc(ch.title)}</div>
+    <div class="wgoal"><span class="warrow" style="transform:rotate(${g?.dist != null ? (-g.ang * 180 / Math.PI) : 0}deg);opacity:${g?.dist != null ? 1 : .3}">➤</span><b>${esc(st2?.text || '')}</b>${g?.dist != null ? `<small>${g.dist} m</small>` : ''}</div>
+    <div class="wsteps">${ch.steps.map((s2, i) => `<i class="${i < idx ? 'ok' : i === idx ? 'now' : ''}"></i>`).join('')}</div>
+    ${q.seals.length ? `<div class="wseals">${q.seals.map(n => `<span title="${esc(n)}">◆</span>`).join('')}</div>` : ''}`;
+}
+function sealToast(name, idx) {
+  const d = document.createElement('div'); d.className = 'cx-area'; d.style.setProperty('--c', '#ffd257');
+  d.innerHTML = `<div class="cx-panel"><span class="cx-kick">Circuit Seal earned</span><b>${esc(name)}</b><small>${QS.Q().seals.length} of 9 seals</small></div>`;
+  document.body.append(d); sfx.win?.(); setTimeout(() => d.classList.add('out'), 3200); setTimeout(() => d.remove(), 3900);
+}
+function wildBattle(spec) {
+  const types = spec.types, lv = C.levelInfo().lv, maxR = Math.min(6, 1 + Math.floor(lv / 3)), minR = Math.max(0, maxR - 2), area = AREAS[spec.area];
+  const pool = DB.cards.filter(c => C.isMon(c) && types.includes(c.t) && c.r >= minR && c.r <= maxR && DB.setBy[c.s]?.sellable);
+  const pickC = () => pool[Math.floor(Math.random() * pool.length)], lvl = .85 + lv * .012;
+  const lead = spec.card ? DB.cards[spec.card.i] : null;
+  const enemy = [lead || pickC(), pickC()].filter(Boolean).map(c => fighter(c, lvl)); if (!enemy.length) return;
+  const T = { name: `Wild ${types[0]} Echo`, title: area.name, lvl: +lvl.toFixed(2), reward: 25 };
+  startBattle(0, { T, enemy, returnTo: '#world', xp: 25, onWin() {
+    const c = lead || enemy[Math.floor(Math.random() * enemy.length)].card; const isNew = C.addCard(c); P.track('echo');
+    pendingEcho = true; const petMsg = `<br><small>It is now a stable card creature — pick it as your partner in <b>Menu → Partner</b>.</small>`;
+    B.opts.prize = `Echo stabilised — <b>${esc(c.n)}</b> ${rarityChip(c.r)} ${isNew ? '<em class="gold">NEW</em>' : ''} joins your collection${petMsg}`; } });
+}
+function partnerCard() { const tm = st().team.filter(i => st().owned[i]); return tm.length ? DB.cards[tm[0]] : bestTeam(C.ownedCards().filter(C.isMon))[0] || null; }
+function companionCard() { const p = ensurePets(); if (p.none) return null; const c = p.card != null && st().owned[p.card] ? DB.cards[p.card] : partnerCard(); return c && C.isMon(c) ? c : null; }
+function partnerInfo() { const c = companionCard(); return c ? { img: cardImg(c), type: c.t, name: c.n, i: c.i, f: c.f } : null; }
+let pendingEcho = false;
+function ensurePets() { const s = st(); s.pets ||= { owned: {}, active: null }; return s.pets; }
+// integrated / low-power GPUs (Intel UHD/Iris, mobile) start at a lower render scale
+const IS_APP = /PokeboxAndroid/.test(navigator.userAgent), TOUCH = IS_APP || matchMedia('(pointer: coarse)').matches;
+if (TOUCH) document.documentElement.classList.add('touch'); if (IS_APP) document.documentElement.classList.add('app', 'lowfx');
+const WEAK_GPU = (() => { try { const gl = document.createElement('canvas').getContext('webgl2'), d = gl?.getExtension('WEBGL_debug_renderer_info'); const r = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; return /Intel|UHD|Iris|HD Graphics|Mali|Adreno|PowerVR|Apple GPU/i.test(r); } catch { return false; } })();
+const gfx = () => { const g = st().settings; return { q: g.gfx || (IS_APP ? 'low' : 'medium'), auto: g.autoGfx !== false, fov: g.fov || 58, sens: g.sens || 1, inv: !!g.invertY, scale: g.rscale || (IS_APP ? .9 : WEAK_GPU ? .8 : 1) }; };
+let worldPartner = null, worldPet = null;
+function ensureWorld() {
+  if (world) return world;
+  world = createWorld($('#worldCanvas'), {
+    quality: () => gfx().q, renderScale: () => gfx().scale, comic: () => st().settings.comic !== false, style: () => st().settings.style || 'toon', setQuality: q => { st().settings.gfx = q; C.save(); if (!$('#gMenu').hidden) renderMenu(); },
+    shadows: () => st().settings.shadows !== false, fov: () => gfx().fov, sensitivity: () => gfx().sens, invertY: () => gfx().inv,
+    minimap: () => $('#wMini'), fps: n => { const f = $('#wFps'); if (f) f.textContent = n + ' fps'; },
+    loading: (on, name) => { const l = $('#wLoad'); l.hidden = !on; if (on) $('#wLoadT').textContent = name; },
+    partner: partnerInfo,
+    clock: ({ tod, state, night }) => { const el = $('#wClock'); if (!el) return; const hh = Math.floor(tod), mm = Math.floor((tod - hh) * 60 / 10) * 10;
+      const ic = { rain: '🌧', storm: '⛈', fog: '🌫', snow: '❄', dust: '🌪', cloudy: night ? '☁' : '⛅' }[state] || (night ? '🌙' : tod < 8 || tod > 18 ? '🌅' : '☀');
+      el.innerHTML = `<span>${ic}</span><b>${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}</b><small>${state}</small>`; },
+    echoCard: (type, R) => { const ch = QS.Q().ch, maxR = Math.min(5, 1 + Math.floor(ch / 2)), minR = Math.max(0, maxR - 2);
+      const pool = DB.cards.filter(c => C.isMon(c) && c.t === type && c.r >= minR && c.r <= maxR && DB.setBy[c.s]?.sellable); if (!pool.length) return null;
+      const c = pool[Math.floor(R() * pool.length)]; return { i: c.i, img: cardImg(c), n: c.n, f: c.f, t: c.t }; },
+    talk: (lines, o) => playScene(lines, o), confirm: worldConfirm, chooseStarter, goal: worldGoal,
+    onStep: st => { if (st) toast(`<b>New objective:</b> ${esc(st.text)}`); worldHud(); },
+    onChapter: (ch, idx) => { xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
+    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (html) p.innerHTML = html; },
+    onArea: (a) => { areaCard({ kicker: a.sub, name: a.name, sub: 'Wild Echoes · ' + a.echo.join(' / '), color: TYPE_COL[a.echo[0]] || '#ffd257' }); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
+  });
+  world.setAutoQuality(gfx().auto);
+  $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openMenu(); $('#wFs').onclick = toggleFullscreen;
+  if (TOUCH) { // virtual stick (left) + action buttons (right); camera = drag anywhere else, pinch = zoom
+    $('#wTouch').hidden = false; const st2 = $('#wStick'), knob = st2.querySelector('i'); let sid = null, c0 = null;
+    const setK = (dx, dy) => { const r = 52, l = Math.hypot(dx, dy), k = l > r ? r / l : 1; knob.style.transform = `translate(${dx * k}px,${dy * k}px)`; world.setStick(dx * k / r, dy * k / r); };
+    st2.onpointerdown = e => { sid = e.pointerId; st2.setPointerCapture(sid); const b = st2.getBoundingClientRect(); c0 = { x: b.left + b.width / 2, y: b.top + b.height / 2 }; setK(e.clientX - c0.x, e.clientY - c0.y); st2.classList.add('on'); };
+    st2.onpointermove = e => { if (e.pointerId === sid) setK(e.clientX - c0.x, e.clientY - c0.y); };
+    st2.onpointerup = st2.onpointercancel = e => { if (e.pointerId !== sid) return; sid = null; knob.style.transform = ''; world.setStick(0, 0); st2.classList.remove('on'); };
+    $$('#wTouch [data-k]').forEach(b => { const k = b.dataset.k; b.onpointerdown = e => { e.preventDefault(); b.classList.add('on'); world.key(k, true); navigator.vibrate?.(8); }; b.onpointerup = b.onpointercancel = b.onpointerleave = () => { if (b.classList.contains('on')) { b.classList.remove('on'); world.key(k, false); } }; });
+    const run = $('#wTouch [data-run]'); run.onclick = () => { run.classList.toggle('on'); world.setRun(run.classList.contains('on')); };
+  }
+  return world;
+}
+/* in-world HUD: trainer plate, current objective, pet card */
+function worldHud() {
+  const s = P.ensure(), L = C.levelInfo();
+  $('#wAv').innerHTML = P.avatarSVG(s.look, { size: 46 }); $('#wNameP').textContent = s.name; $('#wLv').textContent = L.lv; $('#wXp').style.width = (L.pct * 100).toFixed(1) + '%'; $('#wCoins').textContent = fmt(st().coins);
+  const ch = P.chapter(), done = P.storyDone();
+  if (QS) { renderQuestHud(); } else $('#wQuest').innerHTML = done ? `<div class="eyebrow">Journey complete</div><b>Veyra is stable — for now.</b>` : `<div class="eyebrow">Chapter ${ch.n} · ${esc(ch.title)}</div>${ch.goals.map(g => { const c = g.cur(), ok = c >= g.need; return `<div class="wq ${ok ? 'ok' : ''}"><i>${ok ? '✓' : ''}</i><span>${esc(g.text)}</span><small>${Math.min(c, g.need)}/${g.need}</small></div>`; }).join('')}${P.chapterReady() ? '<a class="wqgo" href="#journey">Chapter ready — open Journey ▸</a>' : ''}`;
+  const cc = companionCard(), pe = $('#wPet'); pe.hidden = !cc;
+  if (cc) { pe.innerHTML = `<img class="pimg" src="${cardImg(cc)}" alt=""><div><b>${esc(cc.n)}</b><small>${esc(cc.t)} · partner card</small></div><button class="wb sm" type="button" id="wPetBtn">Partner</button>`; $('#wPetBtn').onclick = () => openMenu('pets'); }
+}
+const TYPEC = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
+function hideWorld() { const w = $('#worldWrap'); document.body.classList.remove('game'); if (!w.hidden) { w.hidden = true; world?.stop(); $('#wModal').hidden = true; } }
+VIEWS.world = () => {
+  view.innerHTML = ''; const w = $('#worldWrap'), s = P.ensure(); w.hidden = false; document.body.classList.add('game'); const W = ensureWorld();
+  const pets = ensurePets();
+  if (!W.ready && !W._entering) { W._entering = true; W.enter('here', {}).finally(() => { W._entering = false; worldHud(); }); W._look = JSON.stringify(s.look); }
+  else if (W.ready && JSON.stringify(s.look) !== W._look) { W.refreshLook(); W._look = JSON.stringify(s.look); }
+  else if ((companionCard()?.i ?? null) !== worldPartner) W.refreshPartner();
+  worldPartner = companionCard()?.i ?? null;
+  if (pendingEcho) { pendingEcho = false; setTimeout(() => W.echoWon?.(), 700); }
+  W.setPaused(false); W.start(); $('#worldCanvas').focus(); window.__world = W; worldHud();
+  if (!s.story.seen.worldIntro) { s.story.seen.worldIntro = Date.now(); C.save(); setTimeout(() => toast('Welcome to Veyra! <b>WASD</b> move · <b>Shift</b> run · <b>E</b> interact · <b>Esc</b> menu.'), 600); }
+};
+
+/* ------------------------------------------------------------------ Game menu (Esc) — pause, pets, settings, controls, fullscreen */
+let menuTab = 'resume';
+function toggleFullscreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {}); }
+function openMenu(tab) {
+  const m = $('#gMenu'); menuTab = tab || (document.body.classList.contains('game') ? 'resume' : 'settings');
+  world?.setPaused(document.body.classList.contains('game')); m.hidden = false; renderMenu(); sfx.click();
+}
+function closeMenu() { const m = $('#gMenu'); if (m.hidden) return; m.hidden = true; if (document.body.classList.contains('game')) { world?.setPaused(false); $('#worldCanvas').focus(); } }
+function renderMenu() {
+  const m = $('#gMenu'), inWorld = document.body.classList.contains('game'), g = gfx(), S2 = st().settings, pets = ensurePets();
+  const tabs = [['resume', inWorld ? 'Resume' : 'Close'], ...(inWorld ? [['map', 'Map'], ['pets', 'Partner']] : []), ['settings', 'Settings'], ['controls', 'Controls'], ['fs', document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'], ['quit', inWorld ? 'Leave world' : 'Lobby']];
+  let body = '';
+  if (menuTab === 'pets') {
+    const cur = companionCard(), q = (pets.q || '').toLowerCase();
+    const mons = C.ownedCards().filter(C.isMon), team = new Set(st().team);
+    const list = mons.filter(c => !q || c.n.toLowerCase().includes(q) || c.t.toLowerCase().includes(q)).sort((a, b) => (team.has(b.i) - team.has(a.i)) || power(b) - power(a)).slice(0, 48);
+    body = `<h3 class="display">Partner <small>${mons.length} Pokémon cards</small></h3><p class="muted">The Pokémon on the card you pick steps out and walks with you — cut out of the card art like a sticker. Beat wild Echoes to add more cards.</p>
+      <input class="psearch lg" id="petQ" type="search" placeholder="Search name or type…" value="${esc(pets.q || '')}">
+      <div class="petgrid cards">${list.map(c => `<button class="petc ${cur?.i === c.i ? 'on' : ''}" data-pcard="${c.i}" type="button" style="--c:${TYPEC[c.t] || '#fff'}"><img src="${cardImg(c)}" alt="" loading="lazy"><b>${esc(c.n)}</b><small>${esc(c.t)}${team.has(c.i) ? ' · team' : ''}</small></button>`).join('') || '<p class="muted">No Pokémon cards yet — open packs first.</p>'}</div>
+      <button class="btn ghost sm" id="petNone" type="button">${pets.none ? 'Walk with my partner again' : 'Walk alone'}</button>`;
+  } else if (menuTab === 'settings') {
+    body = `<h3 class="display">Settings</h3>
+      <div class="setrow"><span>Graphics quality</span><div class="seg">${['low', 'medium', 'high'].map(q => `<button type="button" class="${g.q === q ? 'on' : ''}" data-gfx="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div></div>
+      <p class="muted small">Low: no post-effects or shadows (weak laptops). Medium: shadows, bloom, anti-aliasing. High: + ambient occlusion, 2K shadows, sharper resolution.</p>
+      <label class="setrow"><span>Render scale <b id="mScaleV">${Math.round(g.scale * 100)}%</b> <small class="muted">${WEAK_GPU ? '(integrated graphics detected)' : ''}</small></span><input type="range" id="mScale" min="50" max="100" step="5" value="${Math.round(g.scale * 100)}"></label>
+      <label class="setrow"><span>Auto-lower quality when the frame rate drops</span><input type="checkbox" id="mAuto" ${g.auto ? 'checked' : ''}></label>
+      <label class="setrow"><span>Graphic-novel style (ink, cel bands, hatching)</span><input type="checkbox" id="mComic" ${S2.comic !== false ? 'checked' : ''}></label>
+      <label class="setrow"><span>Real-time shadows</span><input type="checkbox" id="mShadow" ${S2.shadows !== false ? 'checked' : ''}></label>
+      <label class="setrow"><span>Field of view <b id="mFovV">${g.fov}°</b></span><input type="range" id="mFov" min="45" max="85" value="${g.fov}"></label>
+      <label class="setrow"><span>Camera sensitivity <b id="mSensV">${g.sens.toFixed(1)}×</b></span><input type="range" id="mSens" min="3" max="25" value="${Math.round(g.sens * 10)}"></label>
+      <label class="setrow"><span>Invert camera Y</span><input type="checkbox" id="mInv" ${g.inv ? 'checked' : ''}></label>
+      <label class="setrow"><span>Sound effects</span><input type="checkbox" id="mSnd" ${S2.sound ? 'checked' : ''}></label>
+      <label class="setrow"><span>Show FPS counter</span><input type="checkbox" id="mFpsC" ${S2.wfps ? 'checked' : ''}></label>
+      <div class="setrow"><span>Game version <b>${esc(window.__pbxVersion || '—')}</b></span><button class="btn ghost sm" id="mUpd" type="button">Check for updates</button></div>`;
+  } else if (menuTab === 'controls') {
+    body = `<h3 class="display">Controls</h3><div class="keys">${[['W A S D / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump'], ['Q / Ctrl', 'Dodge roll'], ['E / Enter', 'Talk, read, battle'], ['Mouse drag', 'Turn camera'], ['Mouse wheel', 'Zoom'], ['Left click ground', 'Walk there'], ['M / Tab', 'Map & travel'], ['F', 'Fullscreen'], ['Esc', 'Menu / pause'], ['F8', 'Performance meter']].map(([k, v]) => `<div><kbd>${k}</kbd><span>${v}</span></div>`).join('')}</div>`;
+  } else {
+    const s = P.ensure(), L = C.levelInfo();
+    body = `<h3 class="display">${inWorld ? 'Paused' : 'Menu'}</h3><div class="mcard">${P.avatarSVG(s.look, { size: 84 })}<div><b>${esc(s.name)}</b><small>Level ${L.lv} · ${fmt(st().coins)} coins · ★${s.stars}</small><small>${inWorld ? esc(AREAS[world?.area]?.name || '') : ''}</small></div></div>
+      <div class="mquick"><a class="btn ghost" href="#journey">📜 Journey</a><a class="btn ghost" href="#shop">🛍 Shop</a><a class="btn ghost" href="#battle">⚔ Battle</a><a class="btn ghost" href="#profile">👤 Trainer</a></div>`;
+  }
+  m.innerHTML = `<div class="gm"><nav>${tabs.map(([k, v]) => `<button type="button" class="gtab ${menuTab === k ? 'on' : ''}" data-mt="${k}">${v}</button>`).join('')}<small class="muted">Esc to ${inWorld ? 'resume' : 'close'}</small></nav><section>${body}</section></div>`;
+  $$('#gMenu [data-mt]').forEach(b => b.onclick = () => {
+    const k = b.dataset.mt; sfx.click();
+    if (k === 'resume') return closeMenu();
+    if (k === 'fs') { toggleFullscreen(); setTimeout(renderMenu, 250); return; }
+    if (k === 'map') { closeMenu(); return worldTravel(); }
+    if (k === 'quit') { closeMenu(); location.hash = '#home'; return; }
+    menuTab = k; renderMenu();
+  });
+  $$('#gMenu a').forEach(a => a.addEventListener('click', () => closeMenu()));
+  $$('#gMenu [data-pcard]').forEach(b => b.onclick = () => { pets.card = +b.dataset.pcard; pets.none = false; C.save(); sfx.click(); world?.refreshPet(); worldPartner = companionCard()?.i ?? null; worldHud(); renderMenu(); });
+  const pn = $('#petNone'); if (pn) pn.onclick = () => { pets.none = !pets.none; C.save(); world?.refreshPet(); worldPartner = companionCard()?.i ?? null; worldHud(); renderMenu(); };
+  const pq = $('#petQ'); if (pq) { pq.oninput = () => { pets.q = pq.value; clearTimeout(pq._t); pq._t = setTimeout(() => { renderMenu(); const n = $('#petQ'); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }, 250); }; pq.onkeydown = e => e.stopPropagation(); }
+  $$('#gMenu [data-gfx]').forEach(b => b.onclick = () => { S2.gfx = b.dataset.gfx; C.save(); world?.setQuality(); renderMenu(); });
+  const on = (id, fn) => { const el = $(id); if (el) el.oninput = el.onchange = () => { fn(el); C.save(); }; };
+  const sc = $('#mScale'); if (sc) { sc.oninput = () => { $('#mScaleV').textContent = sc.value + '%'; }; sc.onchange = () => { S2.rscale = +sc.value / 100; C.save(); world?.setQuality(); }; }
+  on('#mAuto', el => { S2.autoGfx = el.checked; world?.setAutoQuality(el.checked); });
+  on('#mComic', el => { S2.comic = el.checked; world?.setQuality(); });
+  on('#mShadow', el => { S2.shadows = el.checked; world?.setQuality(); });
+  on('#mFov', el => { S2.fov = +el.value; $('#mFovV').textContent = el.value + '°'; });
+  on('#mSens', el => { S2.sens = +el.value / 10; $('#mSensV').textContent = (+el.value / 10).toFixed(1) + '×'; });
+  on('#mInv', el => { S2.invertY = el.checked; });
+  on('#mSnd', el => { S2.sound = el.checked; setSound(el.checked); });
+  on('#mFpsC', el => { S2.wfps = el.checked; $('#wFps').hidden = !el.checked; });
+  const mu = $('#mUpd'); if (mu) mu.onclick = () => { closeMenu(); manualCheck(m => toast(m)); };
+}
+window.__androidBack = () => { dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' })); };
+addEventListener('keydown', e => {
+  const inWorld = document.body.classList.contains('game');
+  if (e.key === 'Escape') {
+    if (!$('#gMenu').hidden) { e.preventDefault(); closeMenu(); return; }
+    if (!$('#modal').hidden || !$('#scene').hidden || !$('#opening').hidden || !$('#lvup').hidden) return;
+    if (inWorld && !$('#wModal').hidden) { $('#wModal').hidden = true; return; }
+    e.preventDefault(); openMenu();
+  }
+  if (inWorld && e.code === 'KeyJ' && $('#gMenu').hidden && !e.target.closest?.('input,textarea')) location.hash = '#journey';
+  if (inWorld && e.code === 'KeyF' && !e.ctrlKey && !e.target.closest?.('input,textarea') && $('#gMenu').hidden) toggleFullscreen();
+});
+document.addEventListener('fullscreenchange', () => { world?.resize(); if (!$('#gMenu').hidden) renderMenu(); });
+
+/* ------------------------------------------------------------------ Trainer look editor */
+let lookSlot = 'hair';
+function trainerCardHTML() {
+  const s = P.ensure(), L = C.levelInfo(), fr = P.item('frame', s.look.frame), ti = P.item('title', s.look.title);
+  return `<div class="tcard" style="--fr:${fr.bg}"><div class="tcin">
+    <div class="tcav">${P.avatarSVG(s.look, { size: 190 })}</div>
+    <div class="tcinfo"><div class="eyebrow">${esc(ti.name)}</div><input class="tcname" id="tName" maxlength="16" value="${esc(s.name)}" aria-label="Trainer name">
+      <div class="tclv"><span class="lvl">${L.lv}</span><div class="xpbar"><i style="width:${(L.pct * 100).toFixed(1)}%"></i></div></div>
+      <div class="tcst"><div><b>${s.packs}</b><small>packs</small></div><div><b>${s.battle.wins}</b><small>wins</small></div><div><b>${fmt(C.uniqueCount())}</b><small>cards</small></div><div><b>★${s.stars}</b><small>stars</small></div><div><b>${Math.min(s.story.ch, 7)}/7</b><small>chapters</small></div></div></div>
+  </div></div>`;
+}
+function lookEditorHTML() {
+  const s = P.ensure(), items = P.ITEMS.filter(i => i.slot === lookSlot);
+  const prev = it => { if (lookSlot === 'frame') return `<span class="fsw" style="background:${it.bg}"></span>`; if (lookSlot === 'title') return `<span class="tsw">${esc(it.name)}</span>`;
+    return P.avatarSVG({ ...s.look, [lookSlot]: it.id }, { size: 74, bg: false }); };
+  return `<div class="ledit"><div class="ltabs">${P.SLOTS.map(sl => `<button class="fchip ${sl.id === lookSlot ? 'on' : ''}" data-slot="${sl.id}" type="button">${sl.name}</button>`).join('')}</div>
+    <div class="lgrid">${items.map(it => { const un = P.isUnlocked(it), on = s.look[lookSlot] === it.id;
+      return `<button class="litem ${on ? 'on' : ''} ${un ? '' : 'locked'}" data-look="${it.id}" type="button" ${un ? '' : 'aria-disabled="true"'} title="${esc(un ? it.name : '🔒 ' + P.unlockReason(it.u))}">
+        <span class="lprev">${prev(it)}</span><b>${esc(it.name)}</b>${un ? '' : `<small>🔒 ${esc(P.unlockReason(it.u))}</small>`}</button>`; }).join('')}</div></div>`;
+}
+function bindLook() {
+  $$('[data-slot]').forEach(b => b.onclick = () => { lookSlot = b.dataset.slot; sfx.click(); $('#lookBox').innerHTML = lookEditorHTML(); bindLook(); });
+  $$('[data-look]').forEach(b => b.onclick = () => { const it = P.item(lookSlot, b.dataset.look); if (!P.isUnlocked(it)) { toast('🔒 ' + esc(P.unlockReason(it.u)), 'err'); return; }
+    P.ensure().look[lookSlot] = it.id; C.save(); sfx.click(); preview3d()?.set({ ...P.ensure().look }, { cheer: true }); $('#tcBox').innerHTML = trainerCardHTML(); $('#lookBox').innerHTML = lookEditorHTML(); bindLook(); bindName(); updateTop(); });
+}
+let prev3d = null;
+function preview3d() { const box = $('#t3d'); if (!box) return null; // one renderer for the whole session, its canvas is re-parented
+  if (!prev3d) { const c = document.createElement('canvas'); c.setAttribute('aria-label', '3D preview of your trainer'); prev3d = createPreview(c); prev3d.canvas = c; }
+  if (prev3d.canvas.parentNode !== box) box.prepend(prev3d.canvas); prev3d.attach(prev3d.canvas); return prev3d; }
+function bindName() { const n = $('#tName'); if (n) n.onchange = () => { P.ensure().name = n.value.trim().slice(0, 16) || 'Ranger'; C.save(); }; }
+
+VIEWS.profile = () => {
+  const s = st(), best = s.stats.best != null ? DB.cards[s.stats.best] : null;
+  P.newlyUnlocked();
+  view.innerHTML = `<section class="wrap"><div class="sech"><div><div class="eyebrow">Trainer</div><h2 class="display">Your look</h2></div><p class="muted">Unlock more with levels, Journey chapters, challenge stars, the battle ladder and binder sets.</p></div>
+    <div class="tprof"><div class="tcol"><div id="tcBox">${trainerCardHTML()}</div><div class="t3d" id="t3d"><small>How you look in the 3D world · drag to turn</small></div></div><div id="lookBox">${lookEditorHTML()}</div></div></section>
+  <section class="wrap"><div class="tiles"><div class="tile"><div class="eyebrow">Coins earned</div><h3>${fmt(s.stats.earned)}</h3></div><div class="tile"><div class="eyebrow">Coins spent</div><h3>${fmt(s.stats.spent)}</h3></div>
+    <div class="tile"><div class="eyebrow">Packs opened</div><h3>${s.packs}</h3></div><div class="tile"><div class="eyebrow">Best pull</div><h3 class="small">${best ? `<a href="#" data-card="${best.i}">${esc(best.n)}</a>` : '—'}</h3></div></div></section>
+  <section class="wrap"><div class="eyebrow">Achievements</div><div class="achs">${C.ACH.map(a => `<div class="ach ${s.ach[a.id] ? 'got' : ''}"><b>${esc(a.name)}</b><small>${esc(a.desc)}</small><span class="gold">+${fmt(a.reward)}</span></div>`).join('')}</div></section>
+  <section class="wrap"><div class="eyebrow">Card quality</div>
+    <div class="hdbox"><b>${DB.hd ? 'HD cards: ON' : 'HD cards: not installed'}</b><span class="muted">${DB.hd ? 'Upscaled images are used in the 3D opening and card viewer.' : 'Run <b>tools\\upscale_cards.bat</b> once to create sharp 2×/4× versions of all cards (uses your graphics card).'}</span></div></section>
+  <section class="wrap"><div class="eyebrow">Settings</div><div class="settings">
+    <label><input type="checkbox" id="setSound" ${s.settings.sound ? 'checked' : ''}> Sound effects</label>
+    <label><input type="checkbox" id="setMystery" ${s.settings.mystery ? 'checked' : ''}> White mystery pack intro (from the reference animation)</label>
+    <label><input type="checkbox" id="setFast" ${s.settings.fast ? 'checked' : ''}> Skip the 3D animation (instant results)</label>
+    <label><input type="checkbox" id="setFps" ${s.settings.fps ? 'checked' : ''}> Show performance meter (FPS + graphics card) — shortcut F8</label>
+    <label><input type="checkbox" id="setShadows" ${s.settings.shadows !== false ? 'checked' : ''}> 3D world: real-time shadows (turn off on weak graphics cards)</label>
+    <label><input type="checkbox" id="setHitFx" ${s.settings.hitFx !== false ? 'checked' : ''}> Signature openings for big hits (Ultra Rare → thunder, Illustration → candy rain, Secret → ascension)</label>
+    <label>Opening studio <select id="setStudio"><option value="studio" ${s.settings.studio === 'studio' ? 'selected' : ''}>Pink studio (GIF)</option><option value="dark" ${s.settings.studio === 'dark' ? 'selected' : ''}>Dark Pokebox</option></select></label>
+  </div>
+  <div class="row"><button class="btn ghost" id="exp" type="button">Export save</button><label class="btn ghost" for="imp">Import save</label><input type="file" id="imp" accept=".json,application/json" hidden>
+  <button class="btn danger" id="reset" type="button">Reset progress</button></div><p class="muted" id="resetMsg"></p></section>`;
+  bindLook(); bindName(); preview3d()?.set({ ...P.ensure().look });
+  $('#setSound').onchange = e => { s.settings.sound = e.target.checked; setSound(e.target.checked); C.save(); };
+  $('#setMystery').onchange = e => { s.settings.mystery = e.target.checked; C.save(); };
+  $('#setFast').onchange = e => { s.settings.fast = e.target.checked; C.save(); };
+  $('#setFps').onchange = e => { s.settings.fps = e.target.checked; C.save(); window.__perfHud?.(e.target.checked); };
+  $('#setShadows').onchange = e => { s.settings.shadows = e.target.checked; C.save(); toast('Applies the next time the game starts.'); };
+  $('#setHitFx').onchange = e => { s.settings.hitFx = e.target.checked; C.save(); };
+  $('#setStudio').onchange = e => { s.settings.studio = e.target.value; C.save(); };
+  $('#exp').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([C.exportSave()], { type: 'application/json' })); a.download = `pokebox-save-${C.today()}.json`; a.click(); };
+  $('#imp').onchange = async e => { try { C.importSave(await e.target.files[0].text()); toast('Save imported.'); route(); } catch (err) { toast(esc(err.message), 'err'); } };
+  let armed = false; $('#reset').onclick = () => { if (!armed) { armed = true; $('#reset').textContent = 'Click again to erase everything'; $('#resetMsg').textContent = 'This deletes your coins, cards and progress.'; return; } C.resetSave(); toast('Progress reset.'); route(); };
+};
+
+/* ------------------------------------------------------------------ ambient background */
+startSpace($('#bgfx'), () => !opening.hidden || !$('#worldWrap').hidden);
+
+/* F3 = performance overlay (fps, frame time, GPU) — for diagnosing lag on a given machine */
+(function perfHud() {
+  let el = null, on = false, n = 0, acc = 0, worst = 0, last = 0;
+  const gpu = (() => { try { const g = document.createElement('canvas').getContext('webgl'), d = g.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown'; } catch { return 'no WebGL'; } })();
+  function tick(now) { if (!on) return; requestAnimationFrame(tick); const dt = now - last; last = now; if (dt < 500) { acc += dt; n++; worst = Math.max(worst, dt); }
+    if (acc > 500) { el.textContent = `${Math.round(1000 * n / acc)} fps · avg ${(acc / n).toFixed(1)} ms · worst ${worst.toFixed(0)} ms · ${devicePixelRatio}x · ${innerWidth}×${innerHeight}\n${gpu}`; n = 0; acc = 0; worst = 0; } }
+  const toggle = (force) => { on = force ?? !on;
+    if (on) { el ||= Object.assign(document.createElement('pre'), { className: 'perfhud' }); document.body.append(el); last = performance.now(); requestAnimationFrame(tick); } else el?.remove(); };
+  // F8 or the ` key (F3 is taken by the browser's Find), or Profile → Settings
+  addEventListener('keydown', e => { if (e.key === 'F8' || e.key === '`' || (e.ctrlKey && e.shiftKey && e.code === 'KeyF')) { e.preventDefault(); toggle(); st().settings.fps = on; C.save(); } });
+  window.__perfHud = toggle; setTimeout(() => { if (st().settings.fps) toggle(true); }, 500);
+})();
+
+$('#wMap').onclick = () => worldTravel();
+/* hover ticks + hud buttons */
+document.addEventListener('pointerover', e => { const b = e.target.closest?.('.btn,.rail a,.fchip,.mode'); if (b && b !== document.__lastHover) { document.__lastHover = b; sfx.tick?.(); } });
+$('#sndBtn').onclick = () => { st().settings.sound = !st().settings.sound; setSound(st().settings.sound); $('#sndBtn').classList.toggle('off', !st().settings.sound); C.save(); };
+$('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => {}); };
+
+/* ------------------------------------------------------------------ boot */
+(async () => {
+  const bar = $('#spBar'), msg = $('#spMsg'); let fake = 0; const ft = setInterval(() => { fake = Math.min(85, fake + 7); bar.style.width = fake + '%'; }, 120);
+  try { await C.loadDB(); }
+  catch (e) { clearInterval(ft); msg.innerHTML = 'Could not load the card database.<br>Start the game with <b>Pokebox.exe</b> (or start.bat).'; return; }
+  msg.textContent = 'Checking HD cards…'; await C.detectHD();
+  clearInterval(ft); bar.style.width = '100%'; msg.textContent = `${fmt(DB.cards.length)} cards · ${DB.sets.length} sets${DB.hd ? ' · HD' : ''}`;
+  setSound(st().settings.sound); $('#sndBtn').classList.toggle('off', !st().settings.sound);
+  C.snapshotValue(); P.ensure(); P.newlyUnlocked(); lastReady = P.readyCount(); route(); achievements();
+  const start = () => { $('#splash').classList.add('out'); sfx.burst(); const d = C.dailyState(); if (d.ready) setTimeout(() => toast('🎁 Your daily reward is ready in the Lobby.'), 700); if (!P.ensure().story.done[1] && !location.hash.startsWith('#journey')) setTimeout(() => toast('📜 Your Journey in Veyra begins — <a href="#journey" class="gold">open Journey ▸</a>'), 1600); };
+  const qp = new URLSearchParams(location.search);
+  if (qp.has('nosplash') || qp.has('launch') || IS_APP) start(); // Pokebox.exe and the Android app open straight into the game
+  else { const b = $('#spStart'); b.hidden = false; b.focus(); b.onclick = start; addEventListener('keydown', function k(e) { if (!$('#splash').classList.contains('out')) { removeEventListener('keydown', k); start(); } }); }
+  window.__ready = true;
+  setTimeout(autoCheck, 3500); // new version on GitHub? ask the player (never during the first seconds)
+  if (!IS_APP) setInterval(() => fetch('/__ping').catch(() => {}), 20000);
+  // flush the save when the window closes or the phone app goes to the background (Android may kill it there)
+  const flush = () => { try { const p = world?.player?.group.position; if (p) P.ensure().world.pos = { v2: 1, x: p.x, z: p.z }; } catch {} C.save(true); };
+  window.__pbxFlush = flush;
+  addEventListener('pagehide', flush); document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+  setInterval(flush, 30000);   // keeps the local server alive while the window is open
+})();
+
+/* liquid glass: specular highlight follows the pointer */
+addEventListener('pointermove', e => { const t = e.target.closest?.('.ibtn,.res,.wb,.btn.ghost,.gtab,.mv,.lg'); if (!t) return; const r = t.getBoundingClientRect();
+  t.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(0) + '%'); t.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(0) + '%'); }, { passive: true });

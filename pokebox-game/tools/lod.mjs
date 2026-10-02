@@ -1,0 +1,10 @@
+import { NodeIO } from '@gltf-transform/core'; import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
+import { weld, simplify, prune, dedup, meshopt } from '@gltf-transform/functions';
+await MeshoptDecoder.ready; await MeshoptEncoder.ready; await MeshoptSimplifier.ready;
+const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
+const d = await io.read(process.argv[2]);
+const keep = /Tree|Pine|Bush|Palm|Rock_Medium/;
+for (const n of d.getRoot().listScenes()[0].listChildren()) if (!keep.test(n.getName())) n.dispose();
+await d.transform(prune(), weld({ tolerance: .002 }), simplify({ simplifier: MeshoptSimplifier, ratio: .05, error: .3, lockBorder: false }), dedup(), prune(), meshopt({ encoder: MeshoptEncoder }));
+await io.write(process.argv[3], d);

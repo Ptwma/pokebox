@@ -1,0 +1,12 @@
+{
+  "version": "2.1.0",
+  "launcher": "2.1",
+  "minApk": 3,
+  "repo": "Ptwma/pokebox",
+  "notes": [
+    "Automatic updates from GitHub (asks before installing)",
+    "Pokebox.exe opens the game directly",
+    "Story fix: capturing a wild Echo now advances the quest",
+    "Route barricades match where the road is really closed"
+  ]
+}

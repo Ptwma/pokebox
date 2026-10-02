@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>sticker lab</title>
+<style>body{background:#556;margin:0;display:flex;flex-wrap:wrap;gap:6px;padding:6px;font:12px sans-serif;color:#fff}div{width:180px;text-align:center}img,canvas{max-width:180px;max-height:130px}</style></head><body>
+<script type="module">
+import { sticker } from '../js/cutout.js';
+const names = new URLSearchParams(location.search).get('c').split(',');
+const t0 = performance.now(); let n = 0;
+for (const f of names) {
+  const d = document.createElement('div'); document.body.append(d);
+  const t = performance.now(); const r = await sticker({ f, n: f }, '../../pokemon-card-scraper/pokemon_cards/images/' + encodeURIComponent(f));
+  if (r.ok) { const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(r.bitmap, 0, 0); d.append(c); n++; }
+  else { const i = new Image(); i.src = '../../pokemon-card-scraper/pokemon_cards/images/' + encodeURIComponent(f); i.style.opacity = .35; d.append(i); }
+  d.append(Object.assign(document.createElement('p'), { textContent: f.slice(0, 18) + ' ' + Math.round(performance.now() - t) + 'ms' }));
+}
+window.__done = { n, ms: Math.round(performance.now() - t0) };
+</script></body></html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pokebox — Pack Opening</title>
+<link rel="stylesheet" href="css/fonts.css">
+<style>
+  [hidden]{display:none!important}
+  :root{--ink:#2b1f2a;--cream:#f7ebc3;--ui:"Barlow Condensed","Arial Narrow",sans-serif;--display:"Anton",Impact,"Arial Narrow",sans-serif}
+  html,body{margin:0;height:100%;background:#c9b8bf;overflow:hidden;font-family:var(--ui)}
+  canvas{display:block;width:100vw;height:100vh;touch-action:none}
+  #info{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translate(-50%,16px);opacity:0;transition:opacity .5s,transform .5s;
+    display:flex;align-items:center;gap:18px;background:rgba(20,14,20,.55);backdrop-filter:blur(14px);color:#fff;border:1px solid rgba(255,255,255,.18);
+    border-radius:999px;padding:8px 8px 8px 22px;pointer-events:none;white-space:nowrap}
+  #info.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  #info b{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.02em;text-transform:uppercase;display:block;line-height:1.1}
+  #info small{opacity:.7;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+  button{font-family:var(--display);text-transform:uppercase;font-size:14px;letter-spacing:.03em;border:0;border-radius:999px;padding:12px 20px;cursor:pointer}
+  #again{background:var(--cream);color:#111}
+  #replay{background:rgba(255,255,255,.14);color:#fff}
+  button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  #loading,#error{position:fixed;inset:0;display:grid;place-items:center;color:var(--ink);font-size:18px;letter-spacing:.2em;text-transform:uppercase}
+  #error{letter-spacing:0;text-transform:none;padding:24px;text-align:center;color:#6b1020}
+  .hint{position:fixed;top:14px;right:18px;color:rgba(40,25,40,.55);font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  @media (max-width:560px){#info{gap:10px;padding-left:16px}#info b{font-size:16px}button{padding:10px 14px;font-size:12px}}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="loading">Loading pack…</div>
+<div id="error" hidden></div>
+<div class="hint">Space = open another · R = replay</div>
+<div id="info" aria-live="polite">
+  <div><b id="cardName"></b><small id="cardMeta"></small></div>
+  <button id="replay" type="button">Replay</button>
+  <button id="again" type="button">Open another</button>
+</div>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+<script type="module" src="js/opening.js"></script>
+</body>
+</html>

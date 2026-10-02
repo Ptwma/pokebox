@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.pokebox.game'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.pokebox.game'
+        minSdk 26
+        targetSdk 34
+        versionCode 3          // bump on every release so the APK installs over the old one (saves are kept)
+        versionName '2.0'      // 2.0 = open world (Veyra), field battles, quests
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.debug }
+    }
+    // the activity lives in ..\src-java (short path: the Claude file bridge can't reach deeper folders)
+    sourceSets { main { java.srcDirs = ['../src-java'] } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    // card images / models / wasm are already compressed: store them as-is (faster build, same size, faster loading)
+    androidResources { noCompress 'jpg', 'jpeg', 'webp', 'png', 'glb', 'wasm', 'onnx', 'woff2', 'gif' }
+    packaging { jniLibs { useLegacyPackaging false } }
+}
+dependencies { implementation 'androidx.webkit:webkit:1.11.0' }

@@ -1,0 +1,19 @@
+# never in git: card scans (copyright + size), builds, local machine files
+pokemon-card-scraper/
+ptcg-assets-main/
+MyAssets/
+pokebox/
+GIF.gif
+*.apk
+*.exe
+*.exe.old
+dist/
+pokebox-android/app/src/main/assets/www/
+pokebox-android/app/build/
+pokebox-android/.gradle/
+pokebox-android/build/
+pokebox-android/local.properties
+pokebox-android/app/src/main/java/
+*.pbxnew
+.DS_Store
+Thumbs.db

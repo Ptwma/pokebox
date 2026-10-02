@@ -1,0 +1,8 @@
+<!doctype html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@300;500;600;700&display=swap"></head><body>
+<script type="module">
+import { PREMIUM, drawPack } from '../js/packart.js';
+await document.fonts.load('900 80px Anton'); await document.fonts.load('700 30px "Barlow Condensed"'); await document.fonts.load('300 30px "Barlow Condensed"');
+const ids = [...new Set(PREMIUM.flatMap(p => [p.art, p.upgrade].filter(Boolean)))];
+window.OUT = {}; for (const id of ids) window.OUT[id] = drawPack(id, document.createElement('canvas')).toDataURL('image/webp', .93);
+window.DONE = true;
+</script></body></html>

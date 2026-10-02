@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Pokebox VFX lab</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui}canvas{width:100vw;height:100vh;display:block}
+.ui{position:fixed;left:12px;bottom:12px;display:flex;gap:8px}.ui button{background:#222;color:#fff;border:1px solid #555;padding:8px 14px;border-radius:8px;cursor:pointer}</style></head>
+<body><canvas id="c"></canvas><div class="ui" id="ui"><button data-k="electric">Electric</button><button data-k="candy">Candy</button><button data-k="legendary">Legendary</button></div>
+<script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
+<script type="module">
+import { createVfx } from './js/vfx.js'; import { sfx } from './js/audio.js';
+const ART = { electric: ['thunder'], candy: ['sugar'], legendary: ['ascension', 'obsidian'] };
+const v = createVfx(document.getElementById('c'), { sfx: (n, a) => sfx[n]?.(a) });
+const q = new URLSearchParams(location.search), a = u => u && 'assets/premium/' + u + '.webp';
+const go = (k, freeze) => v.play(k, { art: a(ART[k][0]), upgrade: a(ART[k][1]), freeze });
+document.getElementById('ui').onclick = e => { const k = e.target.dataset.k; if (k) go(k); };
+window.vfx = v; window.go = go;
+if (q.get('kind')) { if (q.has('t')) document.getElementById('ui').style.display = 'none'; await go(q.get('kind'), q.has('t') ? +q.get('t') : null); }
+window.__ready = true;
+</script></body></html>

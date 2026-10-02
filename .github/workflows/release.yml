@@ -1,0 +1,67 @@
+# Publishes a new Pokebox version whenever pokebox-game/version.json gets a new "version".
+# Output = a GitHub Release v<version> with:
+#   pokebox-game-<version>.zip  the game files (what the PC launcher and the Android app download)
+#   Pokebox.exe                 the PC launcher, built from pokebox-game/tools/launcher
+#   latest.json                 version, notes, sizes and SHA-256 checksums (what the apps check)
+# The Android project is also compiled on every push so Java errors show up here.
+name: release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: v
+        run: |
+          VER=$(jq -r .version pokebox-game/version.json)
+          LAUNCHER=$(jq -r .launcher pokebox-game/version.json)
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"; echo "launcher=$LAUNCHER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" >/dev/null 2>&1; then echo "exists=1" >> "$GITHUB_OUTPUT"; echo "v$VER already released — nothing to do"; fi
+        env: { GH_TOKEN: "${{ github.token }}" }
+      - uses: actions/setup-go@v5
+        if: steps.v.outputs.exists != '1'
+        with: { go-version: '1.24' }
+      - name: Build Pokebox.exe
+        if: steps.v.outputs.exists != '1'
+        working-directory: pokebox-game/tools/launcher
+        run: GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H windowsgui -X main.Version=${{ steps.v.outputs.launcher }}" -o ../../../dist/Pokebox.exe .
+      - name: Package game + latest.json
+        if: steps.v.outputs.exists != '1'
+        run: |
+          VER=${{ steps.v.outputs.ver }}; ZIP=pokebox-game-$VER.zip
+          mkdir -p dist
+          (cd pokebox-game && zip -qr -X ../dist/$ZIP . -x 'tools/*' 'design/*' '*.exe')
+          sha() { sha256sum "$1" | cut -d' ' -f1; }; size() { stat -c %s "$1"; }
+          jq -n --arg v "$VER" --arg l "${{ steps.v.outputs.launcher }}" --argjson minApk "$(jq .minApk pokebox-game/version.json)" \
+                --argjson notes "$(jq .notes pokebox-game/version.json)" \
+                --arg zn "$ZIP" --argjson zs "$(size dist/$ZIP)" --arg zh "$(sha dist/$ZIP)" \
+                --argjson es "$(size dist/Pokebox.exe)" --arg eh "$(sha dist/Pokebox.exe)" \
+                '{version:$v, launcher:$l, minApk:$minApk, notes:$notes, zip:{name:$zn,size:$zs,sha256:$zh}, exe:{name:"Pokebox.exe",size:$es,sha256:$eh}}' > dist/latest.json
+          cat dist/latest.json
+      - name: Publish release
+        if: steps.v.outputs.exists != '1'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          VER=${{ steps.v.outputs.ver }}
+          jq -r '.notes | map("- " + .) | join("\n")' pokebox-game/version.json > notes.md
+          printf '\n\n**PC:** download `Pokebox.exe` + the zip only for a fresh install — existing installs update from inside the game.\n**Android:** the app updates itself; a new APK is only needed when the release says so.\n' >> notes.md
+          gh release create "v$VER" dist/* --title "Pokebox $VER" --notes-file notes.md --latest
+
+  android-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Compile the Android app (no game assets, compile check only)
+        working-directory: pokebox-android
+        run: |
+          chmod +x gradlew
+          mkdir -p app/src/main/assets/www/pokebox-game && cp ../pokebox-game/version.json app/src/main/assets/www/pokebox-game/
+          ./gradlew assembleDebug --no-daemon --warning-mode=summary

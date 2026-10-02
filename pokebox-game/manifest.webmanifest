@@ -1,0 +1,2 @@
+{ "name": "Pokebox", "short_name": "Pokebox", "start_url": "index.html", "display": "standalone", "background_color": "#07060a", "theme_color": "#07060a",
+  "icons": [{ "src": "assets/icon.png", "sizes": "512x512", "type": "image/png" }] }

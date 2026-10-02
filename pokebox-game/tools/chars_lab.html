@@ -1,0 +1,26 @@
+<!doctype html><html><body style="margin:0;background:#88a"><canvas id="c" style="width:1600px;height:640px"></canvas>
+<script type="importmap">{ "imports": { "three": "../vendor/three/build/three.module.js", "three/addons/": "../vendor/three/addons/" } }</script>
+<script type="module">
+import * as THREE from 'three'; import { prepare, makeRigged, makePet } from '../js/chars.js';
+const r=new THREE.WebGLRenderer({canvas:c,antialias:true}); r.setSize(1600,640,false); r.outputColorSpace=THREE.SRGBColorSpace; r.toneMapping=THREE.ACESFilmicToneMapping; r.setClearColor('#8fb0d8');
+const s=new THREE.Scene(), cam=new THREE.PerspectiveCamera(28,1600/640,.1,100); cam.position.set(0,2.6,17); cam.lookAt(0,1.2,0);
+s.add(new THREE.HemisphereLight('#fff','#556',2)); const d=new THREE.DirectionalLight('#fff',2.2); d.position.set(3,5,4); s.add(d);
+const Q=new URLSearchParams(location.search), A=Q.get('a')||'Idle';
+const looks=[
+ {body:'m',top:'tee',topColor:'tc2',hairColor:'hc3',skin:'sk0',hat:'cap'},
+ {body:'f',top:'hoodie',topColor:'tc5',hairColor:'hc3',skin:'sk3',acc:'goggles'},
+ {body:'f',top:'labcoat',topColor:'tc6',hairColor:'hc4',skin:'sk1',acc:'glasses'},
+ {body:'f',top:'robe',topColor:'tc9',hairColor:'hc0',skin:'sk4',acc:'monocle'},
+ {body:'m',top:'bomber',topColor:'tc7',hairColor:'hc8',skin:'sk2'},
+ {body:'m',top:'scarf',topColor:'tc8',hairColor:'hc4',skin:'sk1',hat:'beanie'},
+ {body:'m',top:'ranger',topColor:'tc4',hairColor:'hc0',skin:'sk4',hat:'wide'},
+ {body:'f',top:'jacket',topColor:'tc6',hairColor:'hc9',skin:'sk2',hat:'crown',acc:'earring'},
+ {body:'m',top:'hoodie',topColor:'tc1',hairColor:'hc5',skin:'sk2',hat:'phones'},
+ {body:'f',top:'tee',topColor:'tc3',hairColor:'hc6',skin:'sk0',hat:'beret'},
+];
+const pets=['Panda','Penguin','Cactus','Bee','Demon','Ghost'];
+await prepare(looks, pets);
+looks.forEach((l,i)=>{ const ch=makeRigged(l); ch.group.position.x=(i-4.5)*1.55; ch.group.rotation.y=Q.get('back')?Math.PI:.25; s.add(ch.group); ch.play(A,0); ch.update(+(Q.get('t')||.5)); });
+pets.forEach((k,i)=>{ const p=makePet(k,{echo:i%2?'#3d9fff':null}); p.group.position.set((i-2.5)*1.6,0,3); s.add(p.group); p.update(.4); });
+r.render(s,cam); window.done=1;
+</script></body></html>

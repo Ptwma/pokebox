@@ -1,0 +1,4 @@
+u2netp.onnx — U^2-Net (small) salient object detection model
+Xuebin Qin et al., "U^2-Net: Going Deeper with Nested U-Structure for Salient Object Detection" (2020)
+Source: https://github.com/xuebinqin/U-2-Net  (Apache License 2.0), ONNX export distributed by rembg (MIT).
+Used at runtime to cut the Pokemon out of card artwork for the "sticker" companions.

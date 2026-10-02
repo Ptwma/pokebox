@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Pokebox</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/game.css">
+<link rel="stylesheet" href="css/comic-ui.css">
+</head>
+<body>
+<canvas id="bgfx" aria-hidden="true"></canvas>
+
+<!-- splash -->
+<div id="splash" class="splash">
+  <div class="sp-orb"><i></i></div>
+  <div class="sp-logo">POKEBOX</div>
+  <div class="sp-sub">Collector · Market · Battle</div>
+  <div class="sp-bar"><span id="spBar"></span></div>
+  <div class="sp-msg" id="spMsg">Loading card database…</div>
+  <button class="btn big glow" id="spStart" type="button" hidden>Press to start</button>
+</div>
+
+<div class="shell">
+  <nav class="rail" aria-label="Main">
+    <a class="rlogo" href="#home" aria-label="Home"><span class="orb"></span></a>
+    <a href="#home" data-tip="Lobby"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Lobby</span></a>
+    <a href="#journey" data-tip="Journey" class="rj"><svg viewBox="0 0 24 24"><path d="M4 20l5-14 4 8 3-5 4 11zM9 6l2-3"/></svg><span>Journey</span><i class="rbadge" id="jBadge" hidden></i></a>
+    <a href="#world" data-tip="World"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span>World</span></a>
+    <a href="#shop" data-tip="Shop"><svg viewBox="0 0 24 24"><path d="M6 2h12l1 5H5zM4 8h16l-1.2 12.2a2 2 0 0 1-2 1.8H7.2a2 2 0 0 1-2-1.8zM9 11v3m6-3v3"/></svg><span>Shop</span></a>
+    <a href="#binder" data-tip="Binder"><svg viewBox="0 0 24 24"><path d="M5 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5zM9 3v18M12 8h4M12 12h4"/></svg><span>Binder</span></a>
+    <a href="#collection" data-tip="Cards"><svg viewBox="0 0 24 24"><path d="M8 3h11v15H8zM5 6v15h11"/></svg><span>Cards</span></a>
+    <a href="#market" data-tip="Market"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-9M15 7h5v5"/></svg><span>Market</span></a>
+    <a href="#battle" data-tip="Battle"><svg viewBox="0 0 24 24"><path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5L3 13v3h3l6.5-6.5"/></svg><span>Battle</span></a>
+    <a href="#profile" data-tip="Profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>Trainer</span></a>
+  </nav>
+  <header class="hud">
+    <a class="trainer" href="#profile"><span class="hudav" id="hudAv"></span><span class="lvl" id="hudLv">1</span><span class="tinfo"><b>Trainer</b><span class="xpbar"><i id="hudXp"></i></span><small id="hudXpT">0 / 40 XP</small></span></a>
+    <div class="hudR">
+      <span class="res" title="Unique cards"><svg viewBox="0 0 24 24"><path d="M8 3h11v15H8zM5 6v15h11"/></svg><b id="uniq">0</b></span>
+      <span class="res tok" id="tokenPill" title="Free packs" hidden><svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 0 4v5h18v-5a2 2 0 0 0 0-4V3H3zM9 3v18" /></svg><b id="tokens">0</b></span>
+      <span class="res coins" title="Coins"><span class="coin big"></span><b id="coins">0</b></span>
+      <button class="ibtn" id="sndBtn" type="button" aria-label="Toggle sound"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></button>
+      <button class="ibtn" id="fsBtn" type="button" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    </div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+  <section id="worldWrap" class="worldwrap" hidden>
+    <canvas id="worldCanvas" tabindex="0" aria-label="Veyra 3D world"></canvas>
+    <div class="wtl">
+      <a class="wme" href="#profile" title="Trainer"><span class="wav" id="wAv"></span><span class="wmi"><b id="wNameP">Ranger</b><span class="wlv"><span class="lvl" id="wLv">1</span><span class="xpbar"><i id="wXp"></i></span></span><span class="wcoin"><span class="coin"></span><b id="wCoins">0</b></span></span></a>
+      <div class="warea"><div class="eyebrow" id="wSub"></div><h2 class="display" id="wName"></h2></div>
+      <div class="wquest" id="wQuest"></div>
+    </div>
+    <div class="wtr">
+      <div class="wmini"><canvas id="wMini" width="360" height="360" aria-label="Minimap"></canvas><span class="wfps" id="wFps" hidden></span></div><div class="wclock lg" id="wClock"></div>
+      <div class="wbtns"><button class="wb" id="wMap" type="button" title="Map (M)">🗺<kbd>M</kbd></button><a class="wb" href="#journey" title="Journey">📜<kbd>J</kbd></a><button class="wb" id="wFs" type="button" title="Fullscreen (F)">⛶<kbd>F</kbd></button><button class="wb" id="wMenuBtn" type="button" title="Menu (Esc)">☰<kbd>Esc</kbd></button></div>
+    </div>
+    <div class="wpet" id="wPet" hidden></div>
+    <div class="wprompt" id="wPrompt" hidden></div>
+    <div class="whelp"><span><kbd>WASD</kbd> move</span><span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Q</kbd> roll</span><span><kbd>E</kbd> interact</span><span><kbd>M</kbd> map</span><span><kbd>Esc</kbd> menu</span></div>
+    <div class="wtouch" id="wTouch" hidden>
+      <div class="wstick" id="wStick"><i></i></div>
+      <div class="wtbtns"><button class="tb lg run" data-run type="button">RUN</button><button class="tb lg" data-k="KeyQ" type="button" aria-label="Roll">⟲</button><button class="tb lg" data-k="Space" type="button" aria-label="Jump">⤒</button><button class="tb lg big" data-k="KeyE" type="button" aria-label="Interact">E</button></div>
+    </div>
+    <div class="wload" id="wLoad" hidden><div class="wspin"></div><b id="wLoadT"></b><small>Building the area…</small></div>
+    <div class="wmodal" id="wModal" hidden></div>
+  </section>
+</div>
+
+<div id="modal" class="modal" hidden></div>
+
+<div id="opening" class="opening" hidden>
+  <canvas id="openCanvas" tabindex="-1" aria-label="Pack opening — press Space or tap for the next card"></canvas>
+  <canvas id="vfxCanvas" hidden aria-label="Signature opening effect — tap to skip"></canvas>
+  <div class="otop"><span class="otitle" id="oTitle"></span><span class="ohint" id="oHint"></span>
+    <span><button class="btn ghost sm" id="oSkip" type="button">Skip to results</button> <button class="btn ghost sm" id="oClose" type="button" aria-label="Close">✕</button></span></div>
+  <div class="ocap" id="oCap" aria-live="polite"></div>
+  <div class="osum" id="oSum" hidden></div>
+</div>
+<div id="lvup" class="lvup" hidden></div>
+<div id="scene" class="scene" hidden></div>
+<div id="gMenu" class="gmenu" hidden></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

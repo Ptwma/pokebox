@@ -1,0 +1,13 @@
+Pokebox graphic-novel renderer (js/comic.js)
+
+Shading ideas (sharpened cel thresholds "ToonSharpen", light-aligned rim light, hatching thresholds
+driven by the diffuse term, zero ambient in shadow / deep blacks, inverted lines in shadow) are adapted from:
+
+  "Dark Comic Master" shader (URP 2021) by Andicraft
+  Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)
+  https://creativecommons.org/licenses/by/4.0/
+
+Changes: re-implemented from scratch in GLSL for three.js r170 (material patch on MeshStandardMaterial),
+world/object-anchored procedural hatching instead of a hatch texture, noise-broken terminator and shadow edges,
+plus a custom depth/colour edge-detection and grading pass. No original source code is shipped.
+The full licence text is in the original package (License.txt).

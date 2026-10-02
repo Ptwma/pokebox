@@ -1,0 +1,5 @@
+3D models in assets/world, assets/chars/men, assets/chars/women and assets/pets are by Quaternius (https://quaternius.com)
+— Stylized Nature MegaKit, Ultimate Stylized Nature, Pirate Kit, Medieval Village MegaKit, Sci-Fi Essentials Kit,
+Modular SciFi MegaKit, Ultimate Modular Men/Women, Cute Animated Monsters — all licensed CC0 1.0 Universal (Public Domain).
+https://creativecommons.org/publicdomain/zero/1.0/  ·  Support the author: https://www.patreon.com/quaternius
+Optimised for Pokebox (textures resized to 512px WebP, meshopt compression, animations trimmed).
