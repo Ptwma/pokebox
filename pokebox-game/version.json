@@ -1,9 +1,11 @@
 {
-  "version": "3.5.0",
+  "version": "3.5.1",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Wind glider: jump, then press jump again in the air to glide over valleys (press again to drop) — on phones use the jump button twice"
+    "Journey now shows the real story: current chapter, every step with checkmarks, seals and the 10-chapter timeline (the old parallel 'Static in the Harbor' story is gone)",
+    "Story scenes and area banners only appear in the world — no more dialogue popping up over the shop, cards or ranking",
+    "Fixed a red pulsing frame around dialogue text"
   ]
 }

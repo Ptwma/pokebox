@@ -598,7 +598,8 @@ body.vfxon .opening .otop #oSkip{display:none}
 .scbox.me .sctext{margin-left:0;margin-right:-10px}
 .scname{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}.scname b{font-family:var(--display);font-weight:400;font-size:24px;letter-spacing:.03em;color:var(--gold)}.scname small{color:var(--muted)}
 .sctext p{margin:0;font-size:19px;line-height:1.45;min-height:3em;color:#f1ecff}
-.scnext{text-align:right;color:var(--muted);font-size:13px;margin-top:8px;animation:pulse 1.4s infinite}
+.scnext{text-align:right;color:var(--muted);font-size:13px;margin-top:8px;animation:scBlink 1.4s ease-in-out infinite}
+@keyframes scBlink{50%{opacity:.35}}
 
 /* ================= JOURNEY ================= */
 .jhero{position:relative;display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:end;padding:28px;border-radius:28px;overflow:hidden;

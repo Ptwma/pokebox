@@ -779,42 +779,35 @@ VIEWS.ranking = () => {
   </section>`;
 };
 
-VIEWS.journey = () => {
-  const s = P.ensure(), done = P.storyDone(), ch = P.chapter(), ready = !done && P.chapterReady(ch), ch4 = ch.choice && !s.story.choice;
+VIEWS.journey = () => {  // one story: the Veyra quest line (quests.js) — chapters, steps, seals — plus daily/weekly challenges
+  const s = P.ensure(), q = QS.Q(), N = QS.STORY.length, done = q.ch >= N, ch = QS.STORY[Math.min(q.ch, N - 1)], step = QS.stepNow();
+  const REG = { harbor: 'Lumen Harbor', mistvale: 'Mistvale', starfall: 'Starfall', frostline: 'Frostline', voltspire: 'Voltspire', sandreach: 'Sandreach', rift: 'The Obsidian Rift' };
   const all = P.challenges(), now = new Date(), midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   const toMonday = new Date(midnight); toMonday.setDate(midnight.getDate() + ((8 - midnight.getDay()) % 7));
   const chal = c => `<div class="chal ${c.done ? 'done' : ''} ${c.claimed ? 'claimed' : ''}"><div><b>${esc(c.text)}</b><div class="cbar"><i style="width:${c.cur / c.n * 100}%"></i></div><small>${c.cur}/${c.n} · <span class="gold">+${c.coins}</span> · ★${c.st}</small></div>
     ${c.claimed ? '<span class="muted">✓</span>' : `<button class="btn sm ${c.done ? 'gold glow' : 'ghost'}" data-claim="${c.key}" type="button" ${c.done ? '' : 'disabled'}>Claim</button>`}</div>`;
   const next = P.STAR_TRACK.find(i => s.stars < i.u.n);
+  const speakers = [...new Set(ch.steps.flatMap(x => (x.lines || []).map(l => l[0])))].filter(w => P.CAST[w]).slice(0, 3);
   view.innerHTML = `<section class="wrap journey">
     <div class="jhero" style="--ac:${done ? '#5cf2d6' : ch.color}">
-      <div class="jtxt"><div class="eyebrow">${done ? 'Journey complete' : `Chapter ${ch.n} of ${P.CHAPTERS.length} · ${AREA[ch.area]}`}</div>
+      <div class="jtxt"><div class="eyebrow">${done ? 'Journey complete' : `Chapter ${q.ch + 1} of ${N} · ${REG[ch.region] || ''}`}</div>
         <h1 class="display">${done ? 'Echo Warden' : esc(ch.title)}</h1>
-        <p>${done ? 'Glyph guards the relay. The Rift is open for Ascension runs and Champion rematches.' : esc(ch.intro[0][1])}</p>
-        <div class="row"><button class="btn ghost" id="jReplay" type="button">▶ ${done ? 'Replay finale' : 'Story so far'}</button><a class="btn" href="#world">Explore ${AREA[done ? 'rift' : ch.area]}</a></div></div>
-      <div class="jcast">${[...new Set((done ? P.CHAPTERS[6] : ch).intro.map(l => l[0]))].slice(0, 3).map(w => `<div class="jc">${P.avatarSVG(P.CAST[w].look, { size: 120 })}<small>${esc(P.CAST[w].name)}</small></div>`).join('')}</div>
+        <p>${done ? 'Veyra is safe — for now. The Rift stays open for rematches.' : `<b>Now:</b> ${esc(step?.text || '')}`}</p>
+        <div class="row"><a class="btn gold glow" href="#world">▶ Go to objective</a><span class="jseals">${Array.from({ length: 9 }, (_, i) => `<i class="${i < q.seals.length ? 'on' : ''}" title="${esc(q.seals[i] || 'Seal')}">◆</i>`).join('')}</span></div></div>
+      <div class="jcast">${speakers.map(w => `<div class="jc">${P.avatarSVG(P.CAST[w].look, { size: 120 })}<small>${esc(P.CAST[w].name)}</small></div>`).join('')}</div>
     </div>
     <div class="jgrid">
-      <div class="tile jobj"><div class="eyebrow">Objectives</div>
-        ${done ? '<p class="muted">All chapters complete. New story arcs will appear here.</p>' : ch.goals.map(g => { const cur = g.cur(), ok = cur >= g.need; return `<div class="obj ${ok ? 'ok' : ''}"><span class="ck">${ok ? '✓' : ''}</span><div><b>${esc(g.text)}</b><div class="cbar"><i style="width:${cur / g.need * 100}%"></i></div><small>${cur} / ${g.need}</small></div>${!ok && g.go ? `<a class="btn sm ghost" href="${g.go}">Go</a>` : ''}</div>`; }).join('')}
-        ${ch4 ? `<div class="choice"><p>Who do you trust with the relay?</p><div class="row"><button class="btn purple" data-choose="sable" type="button">Help Warden Sable read the glyphs</button><button class="btn" data-choose="vale" type="button">Help Dr. Vale shield the relay</button></div></div>` : ''}
-        ${done ? '' : `<button class="btn big ${ready ? 'gold glow' : 'ghost'}" id="jDone" type="button" ${ready ? '' : 'disabled'}>${ready ? `Complete chapter · +${fmt(ch.reward.coins)} coins · +${ch.reward.xp} XP` : 'Complete the objectives to continue'}</button>`}
+      <div class="tile jobj"><div class="eyebrow">This chapter</div>
+        ${done ? '<p class="muted">All chapters complete.</p>' : ch.steps.map((x, i) => { const ok = i < q.step, cur = i === q.step; return `<div class="obj ${ok ? 'ok' : ''} ${cur ? 'cur' : ''}"><span class="ck">${ok ? '✓' : cur ? '▶' : ''}</span><div><b>${esc(x.text)}</b></div></div>`; }).join('')}
+        ${done ? '' : `<small class="muted">Reward: <span class="gold">+${fmt(ch.reward.coins)} coins · +${ch.reward.xp} XP</span>${ch.reward.seal ? ` · ${esc(ch.reward.seal)}` : ''}</small>`}
       </div>
       <div class="tile jchal"><div class="sech"><div class="eyebrow">Daily challenges</div><small class="muted">resets in ${resetIn(midnight - now)}</small></div>${all.daily.map(chal).join('')}
         <div class="sech" style="margin-top:14px"><div class="eyebrow">Weekly challenges</div><small class="muted">resets in ${resetIn(toMonday - now)}</small></div>${all.weekly.map(chal).join('')}
         <div class="stars"><b>★ ${s.stars}</b> challenge stars${next ? ` · next unlock at ★${next.u.n}: <b>${esc(next.name)}</b>` : ' · all star rewards unlocked'}</div></div>
     </div>
-    <div class="tile jline"><div class="eyebrow">Chapters</div><div class="tl">${P.CHAPTERS.map((c, i) => `<div class="tlc ${i < s.story.ch ? 'done' : i === s.story.ch ? 'now' : 'lock'}" style="--ac:${c.color}"><span>${c.n}</span><b>${i <= s.story.ch ? esc(c.title) : '???'}</b><small>${AREA[c.area]}</small></div>`).join('')}</div></div>
+    <div class="tile jline"><div class="eyebrow">Chapters</div><div class="tl">${QS.STORY.map((c, i) => `<div class="tlc ${i < q.ch ? 'done' : i === q.ch ? 'now' : 'lock'}" style="--ac:${c.color}"><span>${i + 1}</span><b>${i <= q.ch ? esc(c.title) : '???'}</b><small>${REG[c.region] || ''}</small></div>`).join('')}</div></div>
   </section>`;
-  $('#jReplay').onclick = () => playScene(done ? P.CHAPTERS[6].outro : ch.intro, { title: done ? 'Finale' : `Chapter ${ch.n} — ${ch.title}` });
   $$('[data-claim]').forEach(b => b.onclick = () => { const c = P.claimChallenge(b.dataset.claim); if (c) { sfx.coin(); toast(`Challenge complete: <b>${esc(c.text)}</b> <span class="gold">+${c.coins}</span> ★${c.st}`); xp(15 + c.st * 5); afterProgress(); VIEWS.journey(); } });
-  $$('[data-choose]').forEach(b => b.onclick = async () => { s.story.choice = b.dataset.choose; C.save(true);
-    await playScene(b.dataset.choose === 'sable' ? [['sable', 'Then read with me. The glyphs are not a warning. They are a list of names.'], ['vale', 'I hope you know what you are doing, Ranger.']] : [['vale', 'Thank you. We shield the relay first, and ask questions after.'], ['sable', 'You are building a wall around a memory, Doctor. Walls do not make it forget.']]);
-    afterProgress(); VIEWS.journey(); });
-  const jd = $('#jDone'); if (jd) jd.onclick = async () => { const c = P.completeChapter(); if (!c) return; sfx.win(); await playScene(c.outro, { title: `Chapter ${c.n} complete` }); xp(c.reward.xp);
-    toast(`Chapter ${c.n} complete · <span class="gold">+${fmt(c.reward.coins)}</span>${P.CHAPTERS[c.n] ? ` · ${AREA[P.CHAPTERS[c.n].area]} unlocked` : ''}`); afterProgress(); VIEWS.journey();
-    if (!P.storyDone()) setTimeout(() => playScene(P.chapter().intro, { title: `Chapter ${P.chapter().n} — ${P.chapter().title}` }), 600); };
-  if (!done && !s.story.seen['intro:' + ch.n]) { s.story.seen['intro:' + ch.n] = Date.now(); C.save(); setTimeout(() => playScene(ch.intro, { title: `Chapter ${ch.n} — ${ch.title}` }), 350); }
 };
 let lastReady = 0;
 function afterProgress() {
@@ -913,7 +906,7 @@ function ensureWorld() {
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
       if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
-    onArea: (a) => { const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
+    onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title')) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
   $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;
@@ -968,6 +961,7 @@ const LAT_APPS = [
   { k: 'settings', ic: '⚙️', t: 'Settings', s: 'Graphics · sound · controls' },
 ];
 function openLattice() {
+  if (document.body.classList.contains('cine-on') || !$('#scene').hidden) return; // finish the scene first
   const L = $('#lattice'), s = P.ensure(), Lv = C.levelInfo(), inWorld = document.body.classList.contains('game');
   world?.setPaused(inWorld); L.hidden = false; sfx.click();
   const q = QS?.Q(), stp = QS?.stepNow(), ch = QS?.chapterNow(), cc = companionCard(), team = (st().team || []).filter(i => st().owned[i]).slice(0, 3);

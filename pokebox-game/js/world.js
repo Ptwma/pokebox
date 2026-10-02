@@ -989,7 +989,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     hooks.onChapter?.(ch, chIdx); refreshNPCs(); setTimeout(runStoryAuto, 600);
   }
   async function runStoryAuto() { // steps that play by themselves
-    if (paused || document.body.classList.contains('at-title')) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
+    if (paused || document.body.classList.contains('at-title') || ((location.hash.slice(1) || 'world').split('/')[0] !== 'world')) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
     if (storyBusy || mode !== 'explore') return; const st = QS.stepNow(); if (!st) return;
     if (st.kind === 'scene') { storyBusy = true; await cineTalk(st.lines, { title: QS.chapterNow().title }); storyBusy = false; storyEvent('scene', {}); }
     else if (st.kind === 'starter') { storyBusy = true; const i = await hooks.chooseStarter?.(); storyBusy = false; if (i != null) { storyEvent('starter', { i }); spawnCompanions(); } }

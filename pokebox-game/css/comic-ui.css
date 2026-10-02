@@ -192,8 +192,8 @@ body.game:has(.fb-ui) .wtouch,body.game:has(.fb-ui) .wprompt,body.game:has(.fb-u
 .vpin{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:none;color:#fff;cursor:pointer;font:700 13px var(--ui);text-shadow:0 1px 4px #000}
 .vpin i{width:16px;height:16px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(0,0,0,.45),0 0 14px var(--gold)}.vpin.locked{opacity:.45;cursor:default}.vpin.locked i{background:#777;box-shadow:0 0 0 3px rgba(0,0,0,.45)}
 .vpin:not(.locked):hover i{transform:scale(1.25)}
-.vme{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #ff5a4e;animation:pulse 1.2s infinite}
-@keyframes pulse{50%{box-shadow:0 0 0 7px rgba(255,90,78,.3)}}
+.vme{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #ff5a4e;animation:capPulse 1.2s infinite}
+@keyframes capPulse{50%{box-shadow:0 0 0 7px rgba(255,90,78,.3)}}
 
 /* ---------- updater dialog (js/updater.js) */
 .upd{position:fixed;inset:0;z-index:400;display:grid;place-items:center;background:rgba(0,0,0,.62);animation:fadein .25s}
