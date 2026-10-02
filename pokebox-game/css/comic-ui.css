@@ -138,7 +138,7 @@ html.touch .ctile:hover .cimg::after{opacity:inherit}
   .rail a:not(.rlogo){width:52px;height:44px;flex:none}.rail a span{display:none}.rail .rlogo{display:none}
   #view{padding-bottom:0}
   .hud{padding:0 12px}.hud .tinfo small{display:none}.res{height:34px;padding:0 10px;font-size:15px}.ibtn{width:34px;height:34px}
-  .wtl{left:10px;top:8px;gap:6px;max-width:44vw}.wtl .wme{transform:scale(.8);transform-origin:left top}.warea .display{font-size:24px}.wquest{display:none}
+  .wtl{left:10px;top:8px;gap:6px;max-width:44vw}.wtl .wme{transform:scale(.8);transform-origin:left top}.warea .display{font-size:24px}
   .wtr{right:10px;top:8px;gap:6px}.wmini,.wmini canvas{width:104px;height:104px}.wb{width:40px;height:40px;font-size:15px}.wb kbd{display:none}
   .wclock{padding:3px 8px;margin-top:4px}.wclock small{display:none}
   .wpet{bottom:auto;top:8px;right:132px;padding:4px 8px}.wpet small{display:none}
@@ -200,3 +200,26 @@ body.game:has(.fb-ui) .wtouch,body.game:has(.fb-ui) .wprompt,body.game:has(.fb-u
 .updbox{width:min(520px,92vw);padding:22px 24px;border-radius:20px;background:rgba(14,12,22,.97);border:3px solid var(--ink,#1b1530);box-shadow:8px 8px 0 rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.12);color:#fff}
 .updbox h3{margin:4px 0 10px}.updbox ul{margin:0 0 12px;padding-left:20px;line-height:1.45}.updbox .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .updbar{height:12px;border-radius:8px;background:rgba(255,255,255,.12);overflow:hidden;margin:10px 0}.updbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffd257,#ff9a3c);transition:width .3s}
+
+/* ================================================================== phones & tablets (v2.4): objective always visible, notch-safe, controls sized to the screen */
+:root{--sl:env(safe-area-inset-left,0px);--sr:env(safe-area-inset-right,0px);--st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px)}
+html.touch .wtl{left:calc(10px + var(--sl));top:calc(8px + var(--st))}
+html.touch .wtr{right:calc(10px + var(--sr));top:calc(8px + var(--st))}
+html.touch .wstick{left:calc(max(18px, 3vw) + var(--sl));bottom:calc(max(16px, 4vh) + var(--sb));width:clamp(120px, 30vh, 190px);height:clamp(120px, 30vh, 190px)}
+html.touch .wtbtns{right:calc(max(16px, 3vw) + var(--sr));bottom:calc(max(14px, 3.5vh) + var(--sb));grid-template-columns:repeat(2, clamp(52px, 15vh, 76px));grid-template-rows:repeat(2, clamp(52px, 15vh, 76px));gap:clamp(8px, 2.4vh, 14px)}
+html.touch .tb{width:100%;height:100%}
+@media (max-width:900px), (max-height:520px){
+  .wquest{max-width:min(46vw, 330px);padding:6px 10px;gap:3px;font-size:12px;border-radius:12px}
+  .wquest .eyebrow{font-size:9px;letter-spacing:.12em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wquest .wgoal b{font-size:13px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .wquest .wsteps,.wquest .wseals{display:none}
+  .wmini,.wmini canvas{width:clamp(96px, 26vh, 130px);height:clamp(96px, 26vh, 130px)}
+  .wbtns .wb{width:clamp(36px, 10vh, 46px);height:clamp(36px, 10vh, 46px);font-size:16px}
+  .wb kbd{display:none}
+  .wpet{display:none}
+}
+/* portrait phones (browser): ask to rotate — the world is built for landscape */
+.rotate-hint{display:none}
+@media (orientation:portrait) and (max-width:600px){ body.game .rotate-hint{display:grid;position:fixed;inset:0;z-index:300;place-content:center;justify-items:center;gap:12px;background:#0b0916;color:#fff;font:700 18px var(--ui);text-align:center;padding:24px}
+  body.game .rotate-hint b{font:400 34px var(--display)} body.game .rotate-hint i{font-size:56px;font-style:normal;animation:rot 1.6s ease-in-out infinite} }
+@keyframes rot{50%{transform:rotate(-90deg)}}

@@ -1,13 +1,12 @@
 {
-  "version": "2.3.0",
+  "version": "2.4.0",
   "launcher": "2.1",
-  "minApk": 3,
+  "minApk": 4,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "New look: anime-style shading (crisp light/shadow edge, colourful violet shadows, rim light on characters), deeper skies, lighter haze",
-    "Genshin-style camera: closer, chest height, follows behind you while running, no longer clips through houses",
-    "Characters: trainer proportions (bigger heads), warmer skin, glossier hair",
-    "Every town now has a Relay Center, Warden towns have a Trial Hall; benches and flowerbeds along the streets",
-    "Softer, denser grass and toon trees instead of autumn/dead trees in the green areas"
+    "Android: Pokebox.apk is now built automatically for every release \u2014 download it straight to your phone",
+    "Android: card pictures download the first time you see them, are shrunk to phone size and then work offline",
+    "Phones: the current objective stays visible, buttons and joystick scale to your screen, notch-safe layout",
+    "Same signing key for every APK from now on, so new versions install over the old one (saves kept)"
   ]
 }

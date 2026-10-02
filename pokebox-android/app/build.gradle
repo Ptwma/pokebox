@@ -6,11 +6,17 @@ android {
         applicationId 'com.pokebox.game'
         minSdk 26
         targetSdk 34
-        versionCode 3          // bump on every release so the APK installs over the old one (saves are kept)
-        versionName '2.0'      // 2.0 = open world (Veyra), field battles, quests
+        versionCode 4          // bump on every release so the APK installs over the old one (saves are kept)
+        versionName '2.4'      // 2.0 = open world (Veyra), field battles, quests
+    }
+    // one fixed key for every build (GitHub Actions and build-apk.bat), so a new APK always installs over the old one.
+    // It is public on purpose (fan project, updates only ever come from this repository's releases).
+    signingConfigs {
+        pokebox { storeFile file('../pokebox-release.jks'); storePassword 'pokebox-fan'; keyAlias 'pokebox'; keyPassword 'pokebox-fan' }
     }
     buildTypes {
-        release { minifyEnabled false; signingConfig signingConfigs.debug }
+        release { minifyEnabled false; signingConfig signingConfigs.pokebox }
+        debug { signingConfig signingConfigs.pokebox }
     }
     // the activity lives in ..\src-java (short path: the Claude file bridge can't reach deeper folders)
     sourceSets { main { java.srcDirs = ['../src-java'] } }
