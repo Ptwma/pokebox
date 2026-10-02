@@ -1,13 +1,9 @@
 {
-  "version": "3.4.0",
+  "version": "3.5.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Veyra is 1.5x bigger in every direction (2.25x the land): wider valleys, longer routes, fewer walls of mountains — much more open",
-    "120 landmarks and treasure chests spread over the bigger island",
-    "The wild lands between towns have their own names (Tidegrass Meadows, Mistmoor, Signal Highlands, Glassdune Wastes…)",
-    "No more grass growing on snowy peaks",
-    "Your saved position from the old map is reset to Lumen Harbor once (the map changed size)"
+    "Wind glider: jump, then press jump again in the air to glide over valleys (press again to drop) — on phones use the jump button twice"
   ]
 }

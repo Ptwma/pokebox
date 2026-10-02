@@ -161,7 +161,7 @@ export function createWorld(canvas, hooks = {}) {
   const worldRoot = new THREE.Group(), terrainRoot = new THREE.Group(), actorsRoot = new THREE.Group(); scene.add(worldRoot, terrainRoot, actorsRoot);
   const towns = {}, npcs = [], wilds = [], allItems = [], allVillagers = [];
   const keys = {}, cam = { yaw: Math.PI, pitch: .26, dist: 5.6, tYaw: Math.PI, tDist: 5.6, idle: 0 }; // Genshin-like: close, chest height, low pitch
-  let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null, cineCam = null;
+  let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null, cineCam = null, glideOn = false, glider = null;
   const perf = { n: 0, s: 0 };
   function applyQuality() {
     quality = hooks.quality?.() || quality;
@@ -775,7 +775,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     s.world.pos = { v2: 1, v3: K, x, z }; envCycle(0, true); hooks.loading?.(false);
     setTimeout(runStoryAuto, 400);
   }
-  function refreshLook() { if (!player) return; prepare([P.ensure().look]).then(() => { const p = player.group.position.clone(), r = player.group.rotation.y; scene.remove(player.group); player = makeRigged(P.ensure().look); player.group.position.copy(p); player.group.rotation.y = r; player.vel = new THREE.Vector3(); scene.add(player.group); }); }
+  function refreshLook() { if (!player) return; prepare([P.ensure().look]).then(() => { const p = player.group.position.clone(), r = player.group.rotation.y; scene.remove(player.group); glider = null; player = makeRigged(P.ensure().look); player.group.position.copy(p); player.group.rotation.y = r; player.vel = new THREE.Vector3(); scene.add(player.group); }); }
 
   /* ---------- region / route detection, visual blending, time of day, weather */
   let lastRegion = null, lastRoute = null, regT = 0;
@@ -863,7 +863,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   const down = e => {
     if (!running || paused || mode !== 'explore' || e.target.closest?.('input,textarea,select')) return; keys[e.code] = true;
     if (['KeyE', 'Enter'].includes(e.code) && near && !busy) { e.preventDefault(); interact(near); }
-    if (e.code === 'Space' && onGround && !busy) { e.preventDefault(); vy = 6.2; onGround = false; }
+    if (e.code === 'Space' && !busy) { e.preventDefault(); if (onGround) { vy = 6.2; onGround = false; glideOn = false; } else if (player && player.group.position.y - Math.max(H(player.group.position.x, player.group.position.z), -.45) > 1.2) { glideOn = !glideOn; if (glideOn) hooks.sfx?.('whoosh'); } }
     if ((e.code === 'KeyQ' || e.code === 'ControlLeft') && rollT <= 0 && !busy && player) { rollT = .7; player.play('Roll', .1, { once: true, speed: 1.4 }); }
     if (e.code === 'KeyM' || e.code === 'Tab') { e.preventDefault(); hooks.travel?.(); }
   };
@@ -1044,7 +1044,8 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       if (!busy) { if (keys.KeyW || keys.ArrowUp) mv.add(fwd); if (keys.KeyS || keys.ArrowDown) mv.sub(fwd); if (keys.KeyD || keys.ArrowRight) mv.add(right); if (keys.KeyA || keys.ArrowLeft) mv.sub(right); }
       if (stick.lengthSq() > .01 && !busy) { mv.addScaledVector(fwd, -stick.y); mv.addScaledVector(right, stick.x); }
       if (mv.lengthSq()) target = null; else if (target) { mv.set(target.x - pp.x, 0, target.z - pp.z); if (mv.length() < .3) { target = null; mv.set(0, 0, 0); } }
-      rollT -= dt; const speed = rollT > 0 ? 10 : (keys.ShiftLeft || keys.ShiftRight || touchRun || stick.length() > .95 ? 8.5 : 4.4);
+      rollT -= dt; let speed = rollT > 0 ? 10 : (keys.ShiftLeft || keys.ShiftRight || touchRun || stick.length() > .95 ? 8.5 : 4.4);
+      const gliding = glideOn && !onGround; if (gliding) { speed = 10.5; if (!mv.lengthSq()) mv.set(Math.sin(player.group.rotation.y), 0, Math.cos(player.group.rotation.y)); }
       if (rollT > 0 && !mv.lengthSq()) mv.set(Math.sin(player.group.rotation.y), 0, Math.cos(player.group.rotation.y));
       if (mv.lengthSq()) { mv.normalize(); const a = Math.atan2(mv.x, mv.z); let d = a - player.group.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); player.group.rotation.y += d * Math.min(1, dt * 12); }
       player.vel.lerp(mv.multiplyScalar(speed), Math.min(1, dt * (onGround ? 10 : 3)));
@@ -1057,7 +1058,13 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       blockMsgT -= dt;
       collide(pp);
       const gy = Math.max(H(pp.x, pp.z), -.45);
-      vy -= 18 * dt; pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; }
+      vy -= 18 * dt; if (gliding) vy = Math.max(vy, -1.9); pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; glideOn = false; }
+      // wind glider (press jump again in the air): a toon wing above the player while gliding
+      if (!glider && player) { glider = new THREE.Group(); const wm = new THREE.MeshStandardMaterial({ color: '#4fb3ff', roughness: .7, side: THREE.DoubleSide });
+        const wing = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, .5), new THREE.Vector3(-1.9, -.25, -.4), new THREE.Vector3(0, .05, -.7), new THREE.Vector3(0, 0, .5), new THREE.Vector3(0, .05, -.7), new THREE.Vector3(1.9, -.25, -.4)]), wm);
+        wing.geometry.computeVertexNormals(); const bar = new THREE.Mesh(new THREE.CylinderGeometry(.02, .02, 3.6, 5), new THREE.MeshStandardMaterial({ color: '#2e3440' })); bar.rotation.z = Math.PI / 2; bar.position.set(0, -.15, -.35);
+        glider.add(wing, bar); glider.position.y = 2.55; glider.visible = false; player.group.add(glider); applyComic(glider); }
+      if (glider) { glider.visible = glideOn && !onGround; if (glider.visible) glider.rotation.z = Math.sin(t * 2) * .05; }
       player.locomote(onGround ? player.vel.length() : 0);
     }
     player.update(dt);
