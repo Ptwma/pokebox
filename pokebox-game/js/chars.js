@@ -33,18 +33,17 @@ export function loadGLB(path) {
   return cache.get(path);
 }
 const ready = new Map(); // path -> gltf (resolved)
-/* job animations made in Blender (tools/blender_jobs_anim.py): rotation tracks only, so they fit both body rigs */
-let jobClips = null, jobP = null;
-function loadJobs() {
-  return jobP ||= loader.loadAsync(DIR + 'chars/anime/jobs.glb').then(g => {
-    jobClips = g.animations.map(c => { c.tracks = c.tracks.filter(t => t.name.endsWith('.quaternion')); return c; });
-  }).catch(e => console.warn('[chars] job animations', e));
+/* people animations: Quaternius Universal Animation Library 1+2 (CC0, 84 clips), packed to rotations + pelvis motion */
+let ualClips = null, ualP = null;
+function loadUAL() {
+  return ualP ||= Promise.all(['chars/anime/ual1.glb', 'chars/anime/ual2.glb'].map(f => loader.loadAsync(DIR + f).then(g => g.animations).catch(e => { console.warn('[chars] UAL', f, e); return []; })))
+    .then(a => { ualClips = a.flat(); });
 }
 export async function prepare(looks = [], pets = []) {
-  loadJobs();
+  loadUAL();
   const paths = [...new Set([...looks.map(modelFor), ...pets.map(p => 'pets/' + p)])];
   const res = await Promise.all(paths.map(loadGLB)); paths.forEach((p, i) => res[i] && ready.set(p, res[i]));
-  await loadJobs();
+  await loadUAL();
   return res.every(Boolean);
 }
 export const isReady = path => ready.has(path);
@@ -93,7 +92,9 @@ function accessory(id) {
 }
 
 /* ---------- animation aliases (old KayKit names -> Quaternius names) */
-const ALIAS = { Cheer: 'Wave', PickUp: 'Interact', Spellcast_Shoot: 'Interact', Walking_A: 'Walk', Running_A: 'Run', Unarmed_Idle: 'Idle', Hit_A: 'HitRecieve' };
+const ALIAS = { Cheer: 'Wave', PickUp: 'Interact', Spellcast_Shoot: 'Interact', Walking_A: 'Walk', Running_A: 'Run', Unarmed_Idle: 'Idle', Hit_A: 'HitRecieve',
+  // Universal Animation Library names (people are built on that skeleton)
+  Idle: 'Idle_Loop', Walk: 'Walk_Loop', Run: 'Jog_Fwd_Loop', Sprint: 'Sprint_Loop', Wave: 'Yes', Idle_Neutral: 'Idle_Loop', HitRecieve: 'Hit_Chest', Death: 'Death01', Punch_Right: 'Punch_Cross' };
 const tmpV = new THREE.Vector3(), tmpS = new THREE.Vector3();
 
 function rigActor(obj, clips, { height }) {
@@ -203,15 +204,16 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   }
   applyComic(obj); // no ink hull: the black outline around characters is gone
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .2, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
-  const R = rigActor(obj, ANIME(path) && jobClips ? gltf.animations.concat(jobClips) : gltf.animations, { height });
+  const R = rigActor(obj, ANIME(path) && ualClips ? ualClips : gltf.animations, { height });
   function locomote(speed) {
     if (R.busy()) return;
     if (speed < .35) R.play('Idle', .3);
     else if (speed < 6.4) { R.play('Walk', .22); R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 3.4, .7, 1.6)); }
+    else if (speed > 9.5 && R.has('Sprint')) { R.play('Sprint', .25); R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 10, .85, 1.3)); }
     else { R.play('Run', .2); R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 7.8, .85, 1.35)); }
   }
   R.play('Idle', 0); R.mixer.update(Math.random() * 2);
-  let hand = null; obj.traverse(o => { if (!hand && o.isBone && /^Wrist\.R$/.test(o.name)) hand = o; });
+  let hand = null; obj.traverse(o => { if (!hand && o.isBone && /^(Wrist\.R|hand_r)$/.test(o.name)) hand = o; });
   return { group: g, model: path, mixer: R.mixer, play: R.play, locomote, busy: R.busy, update: dt => R.mixer.update(dt), parts: { head: head || g, hand }, rigged: true };
 }
 

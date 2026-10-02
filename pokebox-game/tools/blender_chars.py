@@ -1,4 +1,4 @@
-# Pokebox people — Blender text 'char_lib'. build(arm, kind, top, tag, cols, bd) + bind() (joins, decimates to ~5k tris) + export()
+# Pokebox people — Blender text 'char_lib' (+ 'gen2_lib'): built on the Quaternius Universal Animation Library skeleton
 
 import bpy, bmesh, math
 from mathutils import Vector, Matrix
@@ -57,8 +57,12 @@ def join(obs, name):
     return obs[0]
 
 
+UALMAP = {'UpperLeg.L': 'thigh_l', 'LowerLeg.L': 'calf_l', 'UpperArm.L': 'upperarm_l', 'LowerArm.L': 'lowerarm_l', 'Wrist.L': 'hand_l', 'Wrist.R': 'hand_r',
+          'Hips': 'pelvis', 'Chest': 'spine_03', 'Abdomen': 'spine_01', 'Neck': 'neck_01', 'Head': 'Head', 'Foot.L': 'foot_l', 'Foot.R': 'foot_r'}
+def BN(arm, n):
+    return n if n in arm.data.bones else UALMAP.get(n, n)
 def J(arm, n, tail=False):
-    b = arm.data.bones[n]; return arm.matrix_world @ (b.tail_local if tail else b.head_local)
+    b = arm.data.bones[BN(arm, n)]; return arm.matrix_world @ (b.tail_local if tail else b.head_local)
 
 def build(arm, kind='m', top='tee', tag='G', cols=None, bd=None):
     """anime trainer on a Quaternius armature. kind m/f; top tee|long|hoodie|jacket|vest|coat|skirt"""
@@ -279,7 +283,7 @@ def bind(arm, objs):
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
     for o in rig:
         for g in list(o.vertex_groups): o.vertex_groups.remove(g)
-        g = o.vertex_groups.new(name=o['bone']); g.add([v.index for v in o.data.vertices], 1.0, 'REPLACE')
+        g = o.vertex_groups.new(name=BN(arm, o['bone'])); g.add([v.index for v in o.data.vertices], 1.0, 'REPLACE')
         bake_loc(o)
     # one mesh: every material becomes a single draw call
     main = autos[0]
@@ -309,3 +313,29 @@ def export(arm, objs, path):
     bpy.context.view_layer.objects.active = arm
     bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_format='GLB', export_animations=True, export_animation_mode='NLA_TRACKS',
         export_apply=False, export_yup=True, export_skins=True, export_morph=False, export_texcoords=False, export_normals=True, export_materials='EXPORT')
+
+
+# ---- gen2_lib
+
+import bpy, os
+OUT = r"E:\GAME-APP DEV\POKEMON\pokebox-game\assets\chars\anime"
+def gen2(kind, top, name, cols=None, bd=None):
+    ns = {}; exec(bpy.data.texts['char_lib'].as_string(), ns)
+    sc = bpy.data.scenes['Gen']; bpy.context.window.scene = sc
+    for o in list(sc.objects): bpy.data.objects.remove(o, do_unlink=True)
+    src = bpy.data.objects['UAL_F' if kind == 'f' else 'UAL_M']
+    arm = src.copy(); arm.data = src.data.copy(); arm.animation_data_clear(); sc.collection.objects.link(arm); arm.name = 'Rig'
+    arm.data.pose_position = 'REST'
+    objs = ns['build'](arm, kind, top, 'G', cols, bd)
+    ns['bind'](arm, objs)
+    for s2 in bpy.data.scenes:
+        for vl in s2.view_layers:
+            for o in s2.objects:
+                try: o.select_set(False, view_layer=vl)
+                except Exception: pass
+    arm.select_set(True)
+    for o in objs: o.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    p = os.path.join(OUT, name + '.glb')
+    bpy.ops.export_scene.gltf(filepath=p, use_selection=True, export_format='GLB', export_animations=False, export_skins=True, export_morph=False, export_texcoords=False, export_normals=True, export_materials='EXPORT')
+    return name, sum(len(o.data.polygons) for o in objs), os.path.getsize(p)

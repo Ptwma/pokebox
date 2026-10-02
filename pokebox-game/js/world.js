@@ -27,28 +27,30 @@ function villagerLook(R, top) { return { body: R() < .5 ? 'm' : 'f', skin: 'sk' 
 const ARCH = {
   fisher:     { model: 'm_dock', h: 1.02, hat: ['cap', 'wide', 'none'], job: 'fish', names: ['Fisher Hal', 'Old Bram', 'Fisher Nico'], lines: ['Tide brings the Water Echoes in at dawn. Bring a strong card.', 'Thirty years on this dock and I never saw the sea glow like last week.'] },
   docker:     { model: 'm_dock', h: 1.06, hat: ['cap', 'beanie'], job: 'hammer', names: ['Dockhand Tor', 'Crewman Ivo'], lines: ['Crates of blank Lattice cards, every morning. Somebody is buying a lot of them.', 'Mind the planks, Ranger. I just nailed that one.'] },
-  elder_m:    { model: 'm_elder', h: .94, hair: ['hc4', 'hc4', 'hc0'], acc: ['none', 'glasses'], job: 'chat', names: ['Grandpa Odo', 'Elder Fen', 'Mr. Pell'], lines: ['In my day the cards stayed in the binder. Now they walk around!', 'Sit down a minute, youngster. The Echoes are not going anywhere.'] },
-  elder_f:    { model: 'f_elder', h: .9, hair: ['hc4', 'hc4', 'hc2'], acc: ['none', 'glasses'], job: 'chat', names: ['Granny Mae', 'Mrs. Ilsa', 'Aunt Rosa'], lines: ['My grandson wants to be a Ranger too. Keep an eye out for him, will you?', 'The Relay Center nurse makes the best tea in town.'] },
+  elder_m:    { model: 'm_elder', h: .94, hair: ['hc4', 'hc4', 'hc0'], acc: ['none', 'glasses'], job: 'sit', names: ['Grandpa Odo', 'Elder Fen', 'Mr. Pell'], lines: ['In my day the cards stayed in the binder. Now they walk around!', 'Sit down a minute, youngster. The Echoes are not going anywhere.'] },
+  elder_f:    { model: 'f_elder', h: .9, hair: ['hc4', 'hc4', 'hc2'], acc: ['none', 'glasses'], job: 'sit', names: ['Granny Mae', 'Mrs. Ilsa', 'Aunt Rosa'], lines: ['My grandson wants to be a Ranger too. Keep an eye out for him, will you?', 'The Relay Center nurse makes the best tea in town.'] },
   merchant:   { model: 'm_heavy', h: .97, hat: ['none', 'cap'], job: 'sell', names: ['Trader Gus', 'Merchant Abe'], lines: ['Fresh berries! Sealed packs! Everything a Ranger needs!', 'For you, a special price. Well, the normal price, but with a smile.'] },
   merchant_f: { model: 'f_heavy', h: .95, job: 'sell', names: ['Trader Lina', 'Madame Oda'], lines: ['Glass from the dunes, polished by hand. Look how it catches the light!', 'Buy two, the third is still full price. I am not a charity.'] },
   scholar:    { model: 'm_scholar', h: 1.0, acc: ['glasses', 'none'], job: 'read', names: ['Archivist Rel', 'Researcher Amos'], lines: ['This glyph appears in every relay log since the first transfer. Fascinating.', 'Please keep your voice down. The signal is very faint tonight.'] },
   worker_f:   { model: 'f_worker', h: .98, hat: ['none', 'beanie'], job: 'sweep', names: ['Caretaker Jo', 'Sweeper Nell'], lines: ['Sand everywhere, every day. The wind never gives up and neither do I.', 'The plaza does not clean itself, Ranger.'] },
   gardener:   { model: 'f_elder', h: .9, hair: ['hc4', 'hc1'], hat: ['wide', 'none'], job: 'garden', names: ['Gardener Viv', 'Mrs. Holt'], lines: ['Grass Echoes love my flowerbeds. I let them stay, they keep the bugs away.', 'Water in the morning, never at noon. Remember that.'] },
-  smith:      { model: 'm_athlete', h: 1.06, job: 'hammer', names: ['Smith Barro', 'Mechanic Volk'], lines: ['Pylon brackets, forty a day. My arms are made of steel by now.', 'If your gear breaks, bring it here. If your heart breaks, the bar is next door.'] },
+  smith:      { model: 'm_athlete', h: 1.06, job: 'chop', names: ['Smith Barro', 'Mechanic Volk'], lines: ['Pylon brackets, forty a day. My arms are made of steel by now.', 'If your gear breaks, bring it here. If your heart breaks, the bar is next door.'] },
   athlete:    { model: 'm_athlete', h: 1.06, walker: 1.7, names: ['Runner Kip', 'Ace Dario'], lines: ['Morning run around the whole town. Echoes cannot keep up with me!', 'Train every day and your partner trains with you.'] },
   athlete_f:  { model: 'f_athlete', h: 1.0, walker: 1.7, names: ['Runner Saya', 'Ace Mira-Lyn'], lines: ['Race you to the Relay Center! ...No? Fine.', 'My partner card and I run five kilometres every morning.'] },
   bearded:    { model: 'm_beard', h: 1.02, walker: 1.2, hat: ['none', 'beanie', 'cap'], names: ['Courier Ozan', 'Mr. Brann'], lines: ['Delivering cards all over Veyra. The roads are safer since the Rangers came.', 'Nice weather for a walk. For a battle too, I suppose.'] },
   kid_m:      { model: 'kid_m', h: .64, walker: 2.3, kid: true, hat: ['cap', 'none'], names: ['Timmy', 'Leo', 'Pip'], lines: ['When I grow up I will have ALL the cards. All of them!', 'Did you see that? A wild Echo! Over there! ...It ran away.'] },
   kid_f:      { model: 'kid_f', h: .6, walker: 2.3, kid: true, names: ['Lily', 'Mina', 'Rae'], lines: ['My big sister is a Ranger. She is way stronger than you.', 'Can I see your partner? Please please please?'] },
 };
-const JOBS = { // loop: Blender job animation; work/rest seconds give natural pauses; prop in the right hand
-  fish: { prop: 'rod', loop: 'Job_Fish', work: [14, 30], rest: [3, 6] },
-  hammer: { prop: 'hammer', loop: 'Job_Hammer', work: [5, 10], rest: [2, 5], speed: .9 },
-  sweep: { prop: 'broom', loop: 'Job_Sweep', work: [6, 12], rest: [2, 4], speed: .9 },
-  read: { prop: 'book', loop: 'Job_Read', work: [20, 40], rest: [3, 6] },
-  sell: { loop: 'Job_Talk', work: [4, 8], rest: [4, 8], alt: 'Wave' },
-  chat: { loop: 'Job_Talk', work: [5, 10], rest: [2, 5] },
-  garden: { prop: 'can', loop: 'Job_Water', work: [6, 12], rest: [3, 6] },
+const JOBS = { // loop: Universal Animation Library clip; work/rest seconds give natural pauses; prop in the right hand
+  fish: { prop: 'rod', loop: 'Idle_Lantern_Loop', work: [14, 30], rest: [3, 6], alt: 'Idle_Rail_Call' },
+  hammer: { prop: 'hammer', loop: 'Fixing_Kneeling', work: [6, 12], rest: [2, 5] },
+  chop: { prop: 'hammer', loop: 'TreeChopping_Loop', work: [5, 10], rest: [2, 5] },
+  sweep: { prop: 'broom', loop: 'Farm_Harvest', work: [6, 12], rest: [2, 4] },
+  read: { prop: 'book', loop: 'Idle_Lantern_Loop', work: [20, 40], rest: [3, 6], alt: 'Idle_FoldArms_Loop' },
+  sell: { loop: 'Idle_Talking_Loop', work: [4, 8], rest: [4, 8], alt: 'Yes' },
+  chat: { loop: 'Idle_Talking_Loop', work: [5, 10], rest: [2, 5], alt: 'Idle_FoldArms_Loop' },
+  sit: { loop: 'Sitting_Talking_Loop', idle: 'Sitting_Idle_Loop', work: [6, 12], rest: [4, 8], bench: true },
+  garden: { prop: 'can', loop: 'Farm_Watering', work: [6, 12], rest: [3, 6] },
 };
 function archLook(a, R) {
   const A = ARCH[a], pick = (arr, d) => arr ? arr[R() * arr.length | 0] : d;
@@ -285,6 +287,7 @@ export function createWorld(canvas, hooks = {}) {
     const ch = makeRigged(archLook(a, R)); if (!ch) return null;
     put(ch.group, x, z); ch.group.rotation.y = face; ch.update(0);
     const J = JOBS[A.job]; if (J?.prop) attachProp(ch, J.prop);
+    if (J?.bench && has('TT_Bench')) { kit('TT_Bench', x - Math.sin(face) * .25, z - Math.cos(face) * .25, { rot: face }); ch.play(J.idle, 0); }
     const v = { ch, pts: [[x, z]], i: 0, wait: 0, speed: 0, job: A.job, face, jt: R() * 3, name: A.names[seed % A.names.length], line: A.lines[seed % A.lines.length], x, z };
     villagers.push(v); block(x, z, .45); return v;
   }
@@ -1108,9 +1111,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         const J = JOBS[v.job];
         if (dPl < 3.4) faceSmooth(v.ch, pp.x, pp.z, dt, 3); else faceSmooth(v.ch, g.x + Math.sin(v.face), g.z + Math.cos(v.face), dt, 1.5);
         v.jt -= dt;
-        if (dPl < 3.4) { if (!v.paused) { v.paused = true; v.ch.play('Idle', .4); } }   // stops working to talk to you
+        if (dPl < 3.4) { if (!v.paused) { v.paused = true; v.ch.play(J?.idle || 'Idle', .4); } }   // stops working to talk to you
         else if (v.jt <= 0 && J) { v.working = !v.working; v.paused = false; const [a, b] = v.working ? J.work : J.rest; v.jt = a + Math.random() * (b - a);
-          if (v.working) v.ch.play(J.loop, .5, { speed: (J.speed || 1) * (.9 + Math.random() * .2) }); else if (J.alt && Math.random() < .5) v.ch.play(J.alt, .4, { once: true }); else v.ch.play('Idle', .5); }
+          if (v.working) v.ch.play(J.loop, .5, { speed: (J.speed || 1) * (.9 + Math.random() * .2) }); else if (J.alt && Math.random() < .5) v.ch.play(J.alt, .4, { once: true }); else v.ch.play(J.idle || 'Idle', .5); }
         else if (v.paused && dPl >= 3.4) { v.paused = false; v.jt = 0; v.working = false; }
         if (dPl < 40) v.ch.update(dt); continue;
       }

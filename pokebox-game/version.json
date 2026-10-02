@@ -1,11 +1,12 @@
 {
-  "version": "3.5.1",
+  "version": "3.6.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Journey now shows the real story: current chapter, every step with checkmarks, seals and the 10-chapter timeline (the old parallel 'Static in the Harbor' story is gone)",
-    "Story scenes and area banners only appear in the world — no more dialogue popping up over the shop, cards or ranking",
-    "Fixed a red pulsing frame around dialogue text"
+    "All 23 townsfolk rebuilt on a new skeleton with 84 motion-captured-style animations (free CC0 Universal Animation Library)",
+    "Elders now sit on benches and chat, gardeners water plants, woodcutters chop, smiths kneel and repair, fishers lean on the rail",
+    "Smoother walk, jog and a real sprint for the player; new hit, knock-out and wave reactions",
+    "Character and animation files are now half the size (10.6 MB → 5.1 MB) (faster loading, especially on phones)"
   ]
 }
