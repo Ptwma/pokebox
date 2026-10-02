@@ -17,7 +17,7 @@
 <div id="splash" class="splash">
   <div class="sp-orb"><i></i></div>
   <div class="sp-logo">POKEBOX</div>
-  <div class="sp-sub">Collector · Market · Battle</div>
+  <div class="sp-sub">An Echo Ranger adventure</div>
   <div class="sp-bar"><span id="spBar"></span></div>
   <div class="sp-msg" id="spMsg">Loading card database…</div>
   <button class="btn big glow" id="spStart" type="button" hidden>Press to start</button>
@@ -26,9 +26,9 @@
 <div class="shell">
   <nav class="rail" aria-label="Main">
     <a class="rlogo" href="#home" aria-label="Home"><span class="orb"></span></a>
-    <a href="#home" data-tip="Lobby"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Lobby</span></a>
+    <a href="#world" data-tip="Veyra"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span>Veyra</span></a>
+    <a href="#home" data-tip="Lattice"><svg viewBox="0 0 24 24"><rect x="5" y="2.5" width="14" height="19" rx="3"/><path d="M9 7h6M9 11h6M9 15h3"/></svg><span>Lattice</span></a>
     <a href="#journey" data-tip="Journey" class="rj"><svg viewBox="0 0 24 24"><path d="M4 20l5-14 4 8 3-5 4 11zM9 6l2-3"/></svg><span>Journey</span><i class="rbadge" id="jBadge" hidden></i></a>
-    <a href="#world" data-tip="World"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span>World</span></a>
     <a href="#shop" data-tip="Shop"><svg viewBox="0 0 24 24"><path d="M6 2h12l1 5H5zM4 8h16l-1.2 12.2a2 2 0 0 1-2 1.8H7.2a2 2 0 0 1-2-1.8zM9 11v3m6-3v3"/></svg><span>Shop</span></a>
     <a href="#binder" data-tip="Binder"><svg viewBox="0 0 24 24"><path d="M5 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5zM9 3v18M12 8h4M12 12h4"/></svg><span>Binder</span></a>
     <a href="#collection" data-tip="Cards"><svg viewBox="0 0 24 24"><path d="M8 3h11v15H8zM5 6v15h11"/></svg><span>Cards</span></a>
@@ -37,6 +37,7 @@
     <a href="#profile" data-tip="Profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>Trainer</span></a>
   </nav>
   <header class="hud">
+    <a class="backw" id="backWorld" href="#world" title="Back to Veyra (the world)"><span>◀</span> Veyra</a>
     <a class="trainer" href="#profile"><span class="hudav" id="hudAv"></span><span class="lvl" id="hudLv">1</span><span class="tinfo"><b>Trainer</b><span class="xpbar"><i id="hudXp"></i></span><small id="hudXpT">0 / 40 XP</small></span></a>
     <div class="hudR">
       <span class="res" title="Unique cards"><svg viewBox="0 0 24 24"><path d="M8 3h11v15H8zM5 6v15h11"/></svg><b id="uniq">0</b></span>
@@ -56,7 +57,7 @@
     </div>
     <div class="wtr">
       <div class="wmini"><canvas id="wMini" width="360" height="360" aria-label="Minimap"></canvas><span class="wfps" id="wFps" hidden></span></div><div class="wclock lg" id="wClock"></div>
-      <div class="wbtns"><button class="wb" id="wMap" type="button" title="Map (M)">🗺<kbd>M</kbd></button><a class="wb" href="#journey" title="Journey">📜<kbd>J</kbd></a><button class="wb" id="wFs" type="button" title="Fullscreen (F)">⛶<kbd>F</kbd></button><button class="wb" id="wMenuBtn" type="button" title="Menu (Esc)">☰<kbd>Esc</kbd></button></div>
+      <div class="wbtns"><button class="wb" id="wMap" type="button" title="Map (M)">🗺<kbd>M</kbd></button><a class="wb" href="#journey" title="Journey">📜<kbd>J</kbd></a><button class="wb" id="wFs" type="button" title="Fullscreen (F)">⛶<kbd>F</kbd></button><button class="wb" id="wMenuBtn" type="button" title="Lattice device (Esc)">☰<kbd>Esc</kbd></button></div>
     </div>
     <div class="wpet" id="wPet" hidden></div>
     <div class="wprompt" id="wPrompt" hidden></div>
@@ -83,6 +84,7 @@
 <div id="lvup" class="lvup" hidden></div>
 <div id="scene" class="scene" hidden></div>
 <div id="gMenu" class="gmenu" hidden></div>
+<div id="lattice" class="lattice" hidden></div>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div class="rotate-hint" aria-hidden="true"><i>📱</i><b>Turn your phone</b><span>Veyra is best explored in landscape.</span></div>
 

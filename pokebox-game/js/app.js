@@ -319,18 +319,20 @@ function routeType(prev, next) {
   return b > a ? 'down' : 'up';
 }
 function route() {
-  const h = location.hash.slice(1) || 'home', [name, arg] = h.split('/');
+  const h = location.hash.slice(1) || 'world', [name, arg] = h.split('/');
   const changed = current !== h, prev = current || h;
   const apply = () => {
-    if ((location.hash.slice(1) || 'home') !== h) return; // a newer navigation already happened — never render a stale view
-    if (name !== 'world') hideWorld();
+    if ((location.hash.slice(1) || 'world') !== h) return; // a newer navigation already happened — never render a stale view
+    if (name !== 'world') { hideWorld(); closeLattice(); }
+    $('#backWorld')?.classList.toggle('on', name !== 'world');
     $$('.rail a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + name && !a.classList.contains('rlogo')));
     if (changed) view.scrollTop = 0; current = h;
     (VIEWS[name] || VIEWS.home)(arg); updateTop();
   };
   if (!changed) { apply(); return; }
   sfx.tick();
-  if (!(document.startViewTransition && !reduceMotion.matches && transition(apply, routeType(prev, h)))) { apply(); view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); clearTimeout(route.t); route.t = setTimeout(() => view.classList.remove('enter'), 700); }
+  const vt = name !== 'world' && !prev.startsWith('world'); // never snapshot the 3D canvas (slow GPUs freeze on it)
+  if (!(vt && document.startViewTransition && !reduceMotion.matches && transition(apply, routeType(prev, h)))) { apply(); view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); clearTimeout(route.t); route.t = setTimeout(() => view.classList.remove('enter'), 700); }
 }
 addEventListener('hashchange', route);
 
@@ -343,7 +345,7 @@ VIEWS.home = () => {
   const best = st().stats.best != null ? DB.cards[st().stats.best] : null;
   const pickArt = (code) => { const l = (DB.bySet[code] || []).filter(c => c.r >= 4); return l.length ? cardImg(l[0]) : ''; };
   view.innerHTML = `
-  <a class="worldhero" href="#world"><div><div class="eyebrow">Open world · 7 areas</div><h2 class="display">Explore Veyra in 3D</h2><p>Walk Lumen Harbor, meet trainers, catch Echo shells as pets and duel with your cards.</p></div><span class="btn gold glow">Enter the world ▸</span></a>
+  <a class="worldhero" href="#world"><div><div class="eyebrow">Open world · 7 areas</div><h2 class="display">Explore Veyra in 3D</h2><p>Walk Lumen Harbor, meet trainers, catch Echo shells as pets and duel with your cards.</p></div><span class="btn gold glow">Back to Veyra ▸</span></a>
   <section class="wrap lobby">
     <div class="side">
       <div class="tile daily ${d.ready ? 'ready' : ''}">
@@ -880,7 +882,7 @@ function ensureWorld() {
     onArea: (a) => { areaCard({ kicker: a.sub, name: a.name, sub: 'Wild Echoes · ' + a.echo.join(' / '), color: TYPE_COL[a.echo[0]] || '#ffd257' }); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
-  $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openMenu(); $('#wFs').onclick = toggleFullscreen;
+  $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;
   if (TOUCH) { // virtual stick (left) + action buttons (right); camera = drag anywhere else, pinch = zoom
     $('#wTouch').hidden = false; const st2 = $('#wStick'), knob = st2.querySelector('i'); let sid = null, c0 = null;
     const setK = (dx, dy) => { const r = 52, l = Math.hypot(dx, dy), k = l > r ? r / l : 1; knob.style.transform = `translate(${dx * k}px,${dy * k}px)`; world.setStick(dx * k / r, dy * k / r); };
@@ -914,6 +916,51 @@ VIEWS.world = () => {
   W.setPaused(false); W.start(); $('#worldCanvas').focus(); window.__world = W; worldHud();
   if (!s.story.seen.worldIntro) { s.story.seen.worldIntro = Date.now(); C.save(); setTimeout(() => toast('Welcome to Veyra! <b>WASD</b> move · <b>Shift</b> run · <b>E</b> interact · <b>Esc</b> menu.'), 600); }
 };
+
+
+/* ------------------------------------------------------------------ Lattice device: the Ranger's card device, the hub between Veyra and the card game */
+const LAT_APPS = [
+  { k: 'resume', ic: '🌍', t: 'Veyra', s: 'Back to the world' },
+  { k: '#journey', ic: '📜', t: 'Journey', s: 'Story & challenges' },
+  { k: '#collection', ic: '🃏', t: 'Echo Cards', s: 'Every card you hold' },
+  { k: '#binder', ic: '📒', t: 'Binder', s: 'Complete the sets' },
+  { k: '#battle', ic: '⚔️', t: 'Team & Sim', s: 'Your 3 partners · training' },
+  { k: '#shop', ic: '🎁', t: 'Supply Drops', s: 'Open card packs' },
+  { k: '#market', ic: '📈', t: 'Market', s: 'Card values & selling' },
+  { k: 'map', ic: '🗺️', t: 'Map & Travel', s: 'Relay Ferry' },
+  { k: '#profile', ic: '🧢', t: 'Trainer', s: 'Look, titles, stats' },
+  { k: 'settings', ic: '⚙️', t: 'Settings', s: 'Graphics · sound · controls' },
+];
+function openLattice() {
+  const L = $('#lattice'), s = P.ensure(), Lv = C.levelInfo(), inWorld = document.body.classList.contains('game');
+  world?.setPaused(inWorld); L.hidden = false; sfx.click();
+  const q = QS?.Q(), stp = QS?.stepNow(), ch = QS?.chapterNow(), cc = companionCard(), team = (st().team || []).filter(i => st().owned[i]).slice(0, 3);
+  L.innerHTML = `<div class="latbox" role="dialog" aria-label="Lattice device">
+    <aside class="latme">
+      <div class="lathead"><span class="latlogo">◆</span><div><b>LATTICE</b><small>Ranger device · Echo storage</small></div></div>
+      <div class="latcard">${P.avatarSVG(s.look, { size: 92 })}<div><b>${esc(s.name)}</b><small>Level ${Lv.lv} · ${fmt(st().coins)} coins</small>
+        <span class="xpbar"><i style="width:${(Lv.pct * 100).toFixed(1)}%"></i></span><span class="latseals">${q ? Array.from({ length: 9 }, (_, i) => `<i class="${i < q.seals.length ? 'on' : ''}">◆</i>`).join('') : ''}</span></div></div>
+      ${stp ? `<div class="latobj"><small>Chapter ${q.ch + 1} · ${esc(ch.title)}</small><b>${esc(stp.text)}</b></div>` : ''}
+      <div class="latteam"><small>Team</small><div>${team.map(i => `<img src="${cardImg(DB.cards[i])}" alt="${esc(DB.cards[i].n)}" title="${esc(DB.cards[i].n)}">`).join('') || '<em>No partners yet</em>'}</div>${cc ? `<small>Walking with <b>${esc(cc.n)}</b></small>` : ''}</div>
+    </aside>
+    <section class="latapps">${LAT_APPS.map(a => `<button class="latapp" type="button" data-lat="${a.k}"><span>${a.ic}</span><b>${a.t}</b><small>${a.s}</small></button>`).join('')}</section>
+    <button class="latx" type="button" aria-label="Close">✕</button>
+  </div>`;
+  L.querySelector('.latx').onclick = closeLattice;
+  L.onclick = e => { if (e.target === L) closeLattice(); };
+  $$('#lattice [data-lat]').forEach(b => b.onclick = () => {
+    const k = b.dataset.lat; sfx.click();
+    if (k === 'resume') { closeLattice(); if (location.hash !== '#world') location.hash = '#world'; return; }
+    if (k === 'map') { closeLattice(); if (location.hash !== '#world') location.hash = '#world'; setTimeout(worldTravel, 50); return; }
+    if (k === 'settings') { closeLattice(true); openMenu('settings'); return; }
+    closeLattice(true); location.hash = k;
+  });
+}
+function closeLattice(keepPaused) {
+  const L = $('#lattice'); if (!L || L.hidden) return; L.hidden = true; L.innerHTML = '';
+  if (!keepPaused && document.body.classList.contains('game')) { world?.setPaused(false); $('#worldCanvas')?.focus(); }
+}
+window.__openLattice = openLattice;
 
 /* ------------------------------------------------------------------ Game menu (Esc) — pause, pets, settings, controls, fullscreen */
 let menuTab = 'resume';
@@ -987,9 +1034,10 @@ addEventListener('keydown', e => {
   const inWorld = document.body.classList.contains('game');
   if (e.key === 'Escape') {
     if (!$('#gMenu').hidden) { e.preventDefault(); closeMenu(); return; }
+    if (!$('#lattice').hidden) { e.preventDefault(); closeLattice(); return; }
     if (!$('#modal').hidden || !$('#scene').hidden || !$('#opening').hidden || !$('#lvup').hidden) return;
     if (inWorld && !$('#wModal').hidden) { $('#wModal').hidden = true; return; }
-    e.preventDefault(); openMenu();
+    e.preventDefault(); if (inWorld) openLattice(); else if (location.hash !== '#world') location.hash = '#world'; else openMenu();
   }
   if (inWorld && e.code === 'KeyJ' && $('#gMenu').hidden && !e.target.closest?.('input,textarea')) location.hash = '#journey';
   if (inWorld && e.code === 'KeyF' && !e.ctrlKey && !e.target.closest?.('input,textarea') && $('#gMenu').hidden) toggleFullscreen();

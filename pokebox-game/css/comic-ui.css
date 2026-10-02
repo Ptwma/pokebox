@@ -223,3 +223,36 @@ html.touch .tb{width:100%;height:100%}
 @media (orientation:portrait) and (max-width:600px){ body.game .rotate-hint{display:grid;position:fixed;inset:0;z-index:300;place-content:center;justify-items:center;gap:12px;background:#0b0916;color:#fff;font:700 18px var(--ui);text-align:center;padding:24px}
   body.game .rotate-hint b{font:400 34px var(--display)} body.game .rotate-hint i{font-size:56px;font-style:normal;animation:rot 1.6s ease-in-out infinite} }
 @keyframes rot{50%{transform:rotate(-90deg)}}
+
+/* ================================================================== Lattice device (hub between Veyra and the card game) */
+.lattice{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:calc(12px + var(--st)) calc(12px + var(--sr)) calc(12px + var(--sb)) calc(12px + var(--sl));
+  background:radial-gradient(120% 90% at 20% 10%,rgba(92,242,214,.16),transparent 55%),radial-gradient(120% 90% at 90% 90%,rgba(201,164,255,.18),transparent 55%),rgba(6,5,14,.72);
+  -webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2);animation:vtFadeIn .18s}
+.latbox{position:relative;display:grid;grid-template-columns:minmax(230px,300px) 1fr;gap:18px;width:min(1080px,100%);max-height:100%;padding:20px;border-radius:28px;
+  background:linear-gradient(160deg,rgba(32,26,58,.94),rgba(12,10,24,.96));box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),inset 0 1px 0 rgba(255,255,255,.18),0 40px 90px -30px #000;animation:pop .26s both;overflow:auto}
+.latbox::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(92,242,214,.5),transparent) top/100% 2px no-repeat}
+.latme{display:flex;flex-direction:column;gap:12px;min-width:0}
+.lathead{display:flex;align-items:center;gap:10px}.lathead b{font:400 28px var(--display);letter-spacing:.08em;display:block;line-height:1}.lathead small{opacity:.65;font-size:12px}
+.latlogo{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#5cf2d6,#7b6bff);color:#0b0916;font-size:20px;box-shadow:0 0 22px rgba(92,242,214,.45)}
+.latcard{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;padding:12px;border-radius:18px;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.latcard b{font:700 20px var(--ui);display:block}.latcard small{opacity:.75;font-size:13px}.latcard .xpbar{display:block;margin:6px 0}
+.latseals{display:flex;gap:3px;font-size:13px}.latseals i{font-style:normal;color:rgba(255,255,255,.18)}.latseals i.on{color:var(--gold);text-shadow:0 0 8px rgba(255,210,87,.7)}
+.latobj{padding:10px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(255,210,87,.16),rgba(255,210,87,.04));box-shadow:inset 0 0 0 1px rgba(255,210,87,.25)}
+.latobj small{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}.latobj b{font:700 15px var(--ui)}
+.latteam small{font-size:12px;opacity:.7}.latteam div{display:flex;gap:8px;margin:6px 0}.latteam img{width:58px;border-radius:6px;box-shadow:0 6px 14px -6px #000}.latteam em{opacity:.6;font-size:13px}
+.latapps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;align-content:start}
+.latapp{display:grid;justify-items:start;gap:2px;padding:14px;border:0;border-radius:18px;text-align:left;color:#fff;cursor:pointer;
+  background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02));box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);transition:transform .14s,box-shadow .14s,background .14s}
+.latapp span{font-size:30px;line-height:1;margin-bottom:6px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.4))}.latapp b{font:700 17px var(--ui)}.latapp small{font-size:12px;opacity:.65}
+.latapp:hover,.latapp:focus-visible{transform:translateY(-3px);background:linear-gradient(160deg,rgba(92,242,214,.18),rgba(123,107,255,.08));box-shadow:inset 0 0 0 1px rgba(92,242,214,.45),0 14px 30px -14px rgba(92,242,214,.5);outline:none}
+.latapp:first-child{background:linear-gradient(160deg,rgba(255,210,87,.22),rgba(255,154,60,.08));box-shadow:inset 0 0 0 1px rgba(255,210,87,.4)}
+.latx{position:absolute;right:14px;top:12px;width:38px;height:38px;border:0;border-radius:12px;background:rgba(255,255,255,.08);color:#fff;font-size:16px;cursor:pointer}
+@media (max-height:520px),(max-width:760px){
+  .latbox{grid-template-columns:200px 1fr;gap:12px;padding:12px;border-radius:20px}
+  .lathead b{font-size:22px}.latcard{grid-template-columns:1fr;padding:8px}.latcard svg{display:none}.latobj b{font-size:13px}.latteam img{width:42px}
+  .latapps{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}.latapp{padding:9px 10px;border-radius:14px}.latapp span{font-size:22px;margin-bottom:2px}.latapp b{font-size:14px}.latapp small{display:none}
+}
+/* "back to Veyra" pill on the card screens */
+.backw{display:none;align-items:center;gap:6px;margin-right:10px;padding:8px 14px;border-radius:999px;font:700 15px var(--ui);color:#0b0916;text-decoration:none;
+  background:linear-gradient(135deg,#5cf2d6,#8fe3ff);box-shadow:0 8px 20px -8px rgba(92,242,214,.7)}
+.backw.on{display:inline-flex}.backw span{font-size:11px}

@@ -1,12 +1,12 @@
 {
-  "version": "2.4.0",
+  "version": "2.5.0",
   "launcher": "2.1",
   "minApk": 4,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Android: Pokebox.apk is now built automatically for every release \u2014 download it straight to your phone",
-    "Android: card pictures download the first time you see them, are shrunk to phone size and then work offline",
-    "Phones: the current objective stays visible, buttons and joystick scale to your screen, notch-safe layout",
-    "Same signing key for every APK from now on, so new versions install over the old one (saves kept)"
+    "The game now starts in the open world — cards, binder, shop and battles live inside the new Lattice device (Esc / menu button)",
+    "Lattice: your trainer card, seals, current objective, team and all card apps in one screen, world pauses while it is open",
+    "Every card screen has a '◀ Veyra' button that takes you straight back where you were",
+    "Story scenes no longer pop up while the Lattice is open"
   ]
 }
