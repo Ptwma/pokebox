@@ -4,7 +4,7 @@
 // Design notes: claude/pokebox-story-bible.md (v2).
 import * as C from './core.js';
 import * as P from './progress.js';
-import { REGIONS, ROUTES, routePoint } from './terrain.js';
+import { REGIONS, ROUTES, routePoint, K } from './terrain.js';
 
 /* ------------------------------------------------------------------ cast (joins the existing P.CAST used by story scenes) */
 export const CAST2 = {
@@ -277,7 +277,7 @@ export function blockedAt() { return null; }
 const TIER = [[0, 0], [30, 1], [59, 2], [121, 3], [180, 4], [239, 5], [301, 6], [340, 3], [360, 0]];
 const RIFT_TIER = 8;
 export function tierAt(x, z) {
-  const r = Math.hypot(x, z); if (r < 300) return RIFT_TIER - (r / 300) * 2; // the Rift and its causeway: endgame danger
+  const r = Math.hypot(x, z); if (r < 300 * K) return RIFT_TIER - (r / (300 * K)) * 2; // the Rift and its causeway: endgame danger
   const u = ringU(x, z);
   for (let i = 1; i < TIER.length; i++) { const [u1, t1] = TIER[i], [u0, t0] = TIER[i - 1]; if (u <= u1) return t0 + (t1 - t0) * (u - u0) / (u1 - u0); }
   return 0;

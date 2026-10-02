@@ -13,7 +13,7 @@ import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
 import { createFieldBattle } from './fieldbattle.js';
 import { GFX, clamp, lerp, smooth, rng, fbm, col, makeSky, makeWater, grassField as grassFieldImpl, particles, makePost, envFromSky } from './world_env.js';
-import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist } from './terrain.js';
+import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K } from './terrain.js';
 
 export const TYPE_COL = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -90,6 +90,8 @@ const WEATHER = {
   harbor: ['clear', 'clear', 'clear', 'cloudy', 'rain'], mistvale: ['fog', 'rain', 'cloudy', 'clear'], starfall: ['clear', 'clear', 'cloudy'],
   frostline: ['snow', 'clear', 'snow', 'fog'], voltspire: ['storm', 'rain', 'cloudy', 'storm'], sandreach: ['clear', 'clear', 'dust'], rift: ['clear', 'fog'],
 };
+const WILDS = { harbor: ['Tidegrass Meadows', 'Wild lands'], mistvale: ['Mistmoor', 'Wild lands'], starfall: ['Signal Highlands', 'Wild lands'], frostline: ['Frostline Wilds', 'Wild lands'],
+  voltspire: ['Stormrise Plateau', 'Wild lands'], sandreach: ['Glassdune Wastes', 'Wild lands'], rift: ['Obsidian Wastes', 'Wild lands'] };
 const DEFAULT_SPAWN = { x: REGIONS.harbor.x + 16, z: REGIONS.harbor.z + 22 }; // the harbor pier
 
 /* ------------------------------------------------------------------ small shared pieces */
@@ -595,7 +597,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   /* ================================================================== island-wide textures: height+grass (grass blades, water), minimap */
   let gridTex = null, grassMesh = null, water = null, sky = null, mapCanvas = null;
   async function buildGrid() {
-    const n = quality === 'low' ? 448 : 640, d = await wcall({ type: 'grid', n });
+    const n = quality === 'low' ? 560 : 800, d = await wcall({ type: 'grid', n });
     gridTex = new THREE.DataTexture(d.grid, d.n, d.n, THREE.RGFormat, THREE.FloatType); gridTex.magFilter = gridTex.minFilter = THREE.LinearFilter; gridTex.needsUpdate = true;
     const m = d.m, cv = document.createElement('canvas'); cv.width = cv.height = m; cv.getContext('2d').putImageData(new ImageData(d.map, m, m), 0, 0); mapCanvas = cv;
   }
@@ -613,7 +615,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const okSpot = (x, z) => { const y = H(x, z); if (y < 1.2) return false; const nr = nearestRegion(x, z); if (nr.d < 85) return false; if (roadDist(x, z) < 7) return false;
       const sl = Math.abs(H(x + 3, z) - H(x - 3, z)) + Math.abs(H(x, z + 3) - H(x, z - 3)); if (sl > 2.6) return false; return !made.some(([mx, mz]) => Math.hypot(mx - x, mz - z) < 55); };
     const TYPES = ['camp', 'ruin', 'grove', 'chest', 'grove', 'chest', 'lookout', 'ruin', 'camp', 'chest'];
-    for (let t = 0; t < 2600 && made.length < 70; t++) {
+    for (let t = 0; t < 5000 && made.length < 120; t++) {
       const x = (R() * 2 - 1) * M, z = (R() * 2 - 1) * M; if (!okSpot(x, z)) continue;
       const type = TYPES[made.length % TYPES.length], y = H(x, z), g = new THREE.Group(); g.position.set(x, y, z); worldRoot.add(g);
       const P_ = (name, dx, dz, o = {}) => { if (!has(name)) return null; const yy = H(x + dx, z + dz) - y + (o.yOff || 0); const m = place(g, name, dx, yy, dz, o); if (o.block) addCollider({ x: x + dx, z: z + dz, r: o.block }); return m; };
@@ -763,14 +765,14 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const s = P.ensure(); s.world.v2 ||= Date.now();
     let x = opts.x, z = opts.z;
     if (id && id !== 'here' && REGIONS[id] && opts.travel) { const R = REGIONS[id]; x = R.x + (AREAS[id].spawn?.[0] || 0); z = R.z + (AREAS[id].spawn?.[1] || 20); }
-    if (x == null || !s.world.pos?.v2) { const p = s.world.pos?.v2 ? s.world.pos : DEFAULT_SPAWN; x = x ?? p.x; z = z ?? p.z; }
+    if (x == null || s.world.pos?.v3 !== K) { const p = s.world.pos?.v3 === K ? s.world.pos : DEFAULT_SPAWN; /* positions from an older map scale are not valid any more */ x = x ?? p.x; z = z ?? p.z; }
     if (QS.blockedAt(x, z)) ({ x, z } = DEFAULT_SPAWN);
     if (!player) { player = makeRigged(s.look); scene.add(player.group); }
     player.group.position.set(x, H(x, z), z); player.vel = new THREE.Vector3(); cam.yaw = cam.tYaw = Math.atan2(x - REGIONS.harbor.x, z - REGIONS.harbor.z + 60) || Math.PI; player.group.rotation.y = cam.yaw + Math.PI; vy = 0;
     streamChunks(x, z, true);
     await new Promise(res => { const tick = () => { const c = chunks.get(Math.floor(x / CH) + ',' + Math.floor(z / CH)); if (c?.state === 'ready' || performance.now() - t0 > 15000) res(); else setTimeout(tick, 60); }; const t0 = performance.now(); tick(); });
     refreshNPCs(); spawnCompanions(); lastRegion = null; snap = true; near = null; hooks.prompt?.(null);
-    s.world.pos = { v2: 1, x, z }; envCycle(0, true); hooks.loading?.(false);
+    s.world.pos = { v2: 1, v3: K, x, z }; envCycle(0, true); hooks.loading?.(false);
     setTimeout(runStoryAuto, 400);
   }
   function refreshLook() { if (!player) return; prepare([P.ensure().look]).then(() => { const p = player.group.position.clone(), r = player.group.rotation.y; scene.remove(player.group); player = makeRigged(P.ensure().look); player.group.position.copy(p); player.group.rotation.y = r; player.vel = new THREE.Vector3(); scene.add(player.group); }); }
@@ -836,7 +838,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const q = QS.Q();
     if (nr.d < 70) { if (!q.visited[nr.id]) { q.visited[nr.id] = Date.now(); } if (lastRegion !== nr.id) { lastRegion = nr.id; lastRoute = null; const a = AREAS[nr.id]; hooks.onArea?.({ name: a.name, sub: a.sub, echo: a.echo, id: nr.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nr.id); } }
     else { let best = null, bd = 16; for (const r of ROUTES) { const d = segDist(pp.x, pp.z, r.pts); if (d < bd) { bd = d; best = r; } }
-      if (best && lastRoute !== best.id) { lastRoute = best.id; lastRegion = null; hooks.onArea?.({ name: best.name, sub: best.sub, echo: A.echo, route: true, id: best.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nearestRegion(pp.x, pp.z).id); } }
+      if (best && lastRoute !== best.id) { lastRoute = best.id; lastRegion = null; hooks.onArea?.({ name: best.name, sub: best.sub, echo: A.echo, route: true, id: best.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nearestRegion(pp.x, pp.z).id); }
+      else if (!best && bd >= 16 && nr.d > 95) { const wid = 'wild-' + nr.id; if (lastRoute !== wid) { lastRoute = wid; lastRegion = null; const WN = WILDS[nr.id] || WILDS.harbor;
+        hooks.onArea?.({ name: WN[0], sub: WN[1], echo: (AREAS[nr.id] || A).echo, route: true, id: wid, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nr.id); } } }
   }
   function swapFx(id) {
     if (fxId === id) return; fxId = id;
@@ -912,7 +916,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (canFight && (isStoryBattle || await hooks.confirm?.(QS.beaten(np.key) ? `Rematch ${npcName(id)}?` : `Battle ${np.name || npcName(id)}?`, 'Battle', 'Later'))) await trainerBattle(np);
   }
   function faceTo(a, x, z) { if (!a) return; const p = a.group.position; a.group.rotation.y = Math.atan2(x - p.x, z - p.z); }
-  function savePos() { if (!player) return; const p = player.group.position; P.ensure().world.pos = { v2: 1, x: p.x, z: p.z }; }
+  function savePos() { if (!player) return; const p = player.group.position; P.ensure().world.pos = { v2: 1, v3: K, x: p.x, z: p.z }; }
 
   /* ---------- cinematic dialogue (Genshin-style): letterbox, the camera cuts between the people who speak */
   const cv1 = new THREE.Vector3(), cv2 = new THREE.Vector3(), cv3 = new THREE.Vector3();
@@ -1221,7 +1225,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     enter, start, stop, resize, refreshLook, refreshPartner: spawnCompanions, refreshPet: spawnCompanions, refreshStory() { refreshNPCs(); runStoryAuto(); },
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
-    get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, get mode() { return mode; },
+    get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
     get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, decorLog, villagers: allVillagers }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },

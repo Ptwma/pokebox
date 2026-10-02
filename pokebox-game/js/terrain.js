@@ -21,14 +21,16 @@ export function segDist(px, pz, pts) {
 }
 
 /* ------------------------------------------------------------------ layout */
-export const WORLD = 1150; // square the continent fits in (centre 0,0)
+/** world scale: the whole continent layout (towns, routes, coast, lake, Rift) is spread by K; towns themselves keep their size */
+export const K = 1.5;
+export const WORLD = Math.round(1150 * K); // square the continent fits in (centre 0,0)
 export const REGIONS = {
-  harbor:    { x: 0,    z: 392,  biome: 'meadow',   name: 'Lumen Harbor' },
-  mistvale:  { x: -318, z: 190,  biome: 'marsh',    name: 'Mistvale' },
-  starfall:  { x: -318, z: -190, biome: 'cliffs',   name: 'Starfall' },
-  frostline: { x: 0,    z: -392, biome: 'snow',     name: 'Frostline' },
-  voltspire: { x: 318,  z: -190, biome: 'plateau',  name: 'Voltspire' },
-  sandreach: { x: 318,  z: 190,  biome: 'dunes',    name: 'Sandreach' },
+  harbor:    { x: 0 * K,    z: 392 * K,  biome: 'meadow',   name: 'Lumen Harbor' },
+  mistvale:  { x: -318 * K, z: 190 * K,  biome: 'marsh',    name: 'Mistvale' },
+  starfall:  { x: -318 * K, z: -190 * K, biome: 'cliffs',   name: 'Starfall' },
+  frostline: { x: 0 * K,    z: -392 * K, biome: 'snow',     name: 'Frostline' },
+  voltspire: { x: 318 * K,  z: -190 * K, biome: 'plateau',  name: 'Voltspire' },
+  sandreach: { x: 318 * K,  z: 190 * K,  biome: 'dunes',    name: 'Sandreach' },
   rift:      { x: 0,    z: 0,    biome: 'volcanic', name: 'Obsidian Rift' },
 };
 export const RING_ORDER = ['harbor', 'mistvale', 'starfall', 'frostline', 'voltspire', 'sandreach'];
@@ -37,9 +39,9 @@ export const RING_ORDER = ['harbor', 'mistvale', 'starfall', 'frostline', 'volts
 function arcRoute(a, b, seed) {
   const A = REGIONS[a], B = REGIONS[b], ta = Math.atan2(A.x, A.z), tb0 = Math.atan2(B.x, B.z);
   let tb = tb0; while (tb - ta > Math.PI) tb -= Math.PI * 2; while (ta - tb > Math.PI) tb += Math.PI * 2;
-  const pts = [], N = 14;
+  const pts = [], N = Math.round(14 * K);
   for (let i = 0; i <= N; i++) {
-    const k = i / N, th = lerp(ta, tb, k), rr = 372 + Math.sin(k * Math.PI * 2 + seed) * 22 * Math.sin(k * Math.PI) + (vnoise(seed * 3.1, k * 4) - .5) * 26 * Math.sin(k * Math.PI);
+    const k = i / N, th = lerp(ta, tb, k), rr = (372 + Math.sin(k * Math.PI * 2 + seed) * 22 * Math.sin(k * Math.PI) + (vnoise(seed * 3.1, k * 4) - .5) * 26 * Math.sin(k * Math.PI)) * K;
     pts.push([Math.sin(th) * rr, Math.cos(th) * rr]);
   }
   pts[0] = [A.x, A.z]; pts[N] = [B.x, B.z];
@@ -52,7 +54,7 @@ export const ROUTES = [
   { id: 'r4', name: 'Route 4', sub: 'Stormrise Road', from: 'frostline', to: 'voltspire', pts: arcRoute('frostline', 'voltspire', 4) },
   { id: 'r5', name: 'Route 5', sub: 'Glassburn Steps', from: 'voltspire', to: 'sandreach', pts: arcRoute('voltspire', 'sandreach', 5) },
   { id: 'r6', name: 'Route 6', sub: 'Old Ferry Coast', from: 'sandreach', to: 'harbor', pts: arcRoute('sandreach', 'harbor', 6) },
-  { id: 'cw', name: 'Relay Causeway', sub: 'to the Obsidian Rift', from: 'frostline', to: 'rift', pts: [[0, -392], [0, -330], [3, -250], [-2, -170], [2, -110], [0, -40]] },
+  { id: 'cw', name: 'Relay Causeway', sub: 'to the Obsidian Rift', from: 'frostline', to: 'rift', pts: [[0, -392], [0, -330], [3, -250], [-2, -170], [2, -110], [0, -40]].map(([x, z]) => [x * K, z * K]) },
 ];
 /* gates: barricades on a route that open with story progress (flag names are set by the quest engine).
    `at` is placed where quests.ringLimit() actually stops the player, so the sign and the invisible wall agree. */
@@ -116,8 +118,8 @@ const RING_IDS = RING_ORDER;
 export const BIOME_LIST = Object.keys(BIOMES);
 export function regionWeights(x, z) {
   const w = {}; let s = 0;
-  for (const id of RING_IDS) { const R = REGIONS[id], d = Math.hypot(x - R.x, z - R.z), v = Math.exp(-((d / 190) ** 2)); w[id] = v; s += v; }
-  const rr = Math.hypot(x, z); w.rift = Math.exp(-((rr / 120) ** 2)) * 3; s += w.rift;
+  for (const id of RING_IDS) { const R = REGIONS[id], d = Math.hypot(x - R.x, z - R.z), v = Math.exp(-((d / (190 * K)) ** 2)); w[id] = v; s += v; }
+  const rr = Math.hypot(x, z); w.rift = Math.exp(-((rr / (120 * K)) ** 2)) * 3; s += w.rift;
   if (s < 1e-6) { w.harbor = 1; s = 1; }
   for (const k in w) w[k] /= s;
   return w;
@@ -131,7 +133,7 @@ const biomeHeight = {
   snow: (x, z) => { const r = 1 - Math.abs(fbm(x * .01 + 9, z * .01) * 2 - 1); return 3.5 + r * r * 16 + (fbm(x * .04, z * .04) - .5) * 3; },
   plateau: (x, z) => 2.5 + Math.floor(fbm(x * .015 + 11, z * .015) * 5) * 1.6 + (fbm(x * .05, z * .05) - .5) * 1.5,
   dunes: (x, z) => 2.4 + Math.sin(x * .045 + fbm(x * .01, z * .01) * 6) * 2.4 + (fbm(x * .02, z * .02 + 3) - .5) * 3.5,
-  volcanic: (x, z) => { const r = Math.hypot(x, z); return 2.5 + smooth(18, 42, r) * 6 * (1 - smooth(48, 70, r)) + (fbm(x * .05, z * .05) - .5) * 2 - (1 - smooth(10, 20, r)) * 2; },
+  volcanic: (x, z) => { const r = Math.hypot(x, z) / K; return 2.5 + smooth(18, 42, r) * 6 * (1 - smooth(48, 70, r)) + (fbm(x * .05, z * .05) - .5) * 2 - (1 - smooth(10, 20, r)) * 2; },
 };
 const BIOME_OF = Object.fromEntries(Object.entries(REGIONS).map(([k, v]) => [k, v.biome]));
 
@@ -141,13 +143,13 @@ export function roadDist(x, z) { let d = 1e9; for (const r of ROUTES) { d = Math
 export function townDist(x, z) { let d = 1e9, id = null; for (const k in REGIONS) { const R = REGIONS[k], dd = Math.hypot(x - R.x, z - R.z); if (dd < d) { d = dd; id = k; } } return { d, id }; }
 
 function landMask(x, z) {
-  const r = Math.hypot(x, z), th = Math.atan2(x, z);
+  const r = Math.hypot(x, z) / K, th = Math.atan2(x, z); z /= K; x /= K;
   let coast = 505 + (fbm(Math.sin(th) * 2.2 + 5, Math.cos(th) * 2.2) - .5) * 70;
   const harborSector = Math.exp(-((th / .22) ** 2)); coast = lerp(coast, 434, harborSector);                // Lumen Harbor sits on the sea
   const lake = 228 + (fbm(Math.sin(th) * 3 + 1, Math.cos(th) * 3 + 2) - .5) * 50;
   const ring = smooth(lake - 12, lake + 16, r) * (1 - smooth(coast - 26, coast + 6, r));
   const island = 1 - smooth(60, 92, r);
-  const cw = Math.abs(x) < 16 && z < -30 && z > -380 ? 1 - smooth(5, 11, Math.abs(x - Math.sin(z * .02) * 2)) : 0;   // rock causeway to the Rift
+  const cw = Math.abs(x) < 16 / K && z < -30 && z > -380 ? 1 - smooth(5 / K, 11 / K, Math.abs(x - Math.sin(z * .02) * 2)) : 0;   // rock causeway to the Rift
   return Math.max(ring, island, cw);
 }
 
@@ -163,7 +165,7 @@ export function sample(x, z, full = true) {
   let y = 0; for (const id in w) if (w[id] > .003) y += w[id] * biomeHeight[BIOME_OF[id]](x, z);
   const rd = roadDist(x, z), { d: td, id: tid } = townDist(x, z);
   // mountains away from roads & towns (guides you along the routes), with gaps for meadows/side valleys
-  const mask = smooth(.42, .62, fbm(x * .006 + 2, z * .006 + 7, 3));
+  const mask = smooth(.5, .7, fbm(x * .006 / K + 2, z * .006 / K + 7, 3));
   const mountain = smooth(34, 90, rd) * smooth(70, 120, td) * mask;
   if (mountain > 0) { const rg = 1 - Math.abs(fbm(x * .02 + 4, z * .02, 4) * 2 - 1); y += mountain * (8 + rg * rg * 26); }
   // roads: gently flattened
@@ -184,7 +186,8 @@ export function sample(x, z, full = true) {
   let gk = 0; for (const id in w) gk += w[id] * BIOMES[BIOME_OF[id]].grassK;
   let plaza = 0; if (td < TOWN_R + 4) { const R = REGIONS[tid]; for (const [fx, fz, r] of FLATS[tid] || []) plaza = Math.max(plaza, smooth(r + 1.5, r - 1, Math.hypot(x - R.x - fx, z - R.z - fz))); }
   let tpath = 9; if (td < TOWN_R + 6) { const R = REGIONS[tid]; for (const p of TOWN_PATHS[tid] || []) tpath = Math.min(tpath, segDist(x - R.x, z - R.z, p.pts)); }
-  const grass = clamp(gk * smooth(.3, .8, y) * smooth(2.4, 4.2, rd) * smooth(1.6, 2.8, tpath) * (1 - plaza) * (1 - mountain * .7), 0, 1.2);
+  const snowcap = smooth(13, 17, y) * smooth(.2, .4, mountain);   // no lawn on the snowy peaks
+  const grass = clamp(gk * smooth(.3, .8, y) * smooth(2.4, 4.2, rd) * smooth(1.6, 2.8, tpath) * (1 - plaza) * (1 - mountain * .7) * (1 - snowcap), 0, 1.2);
   return { y, w, rd, td, tid, town, mountain, grass, tpath, land };
 }
 

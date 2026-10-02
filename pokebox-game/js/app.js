@@ -835,9 +835,9 @@ function worldTravel() {
   const q = QS.Q(), m = $('#wModal'), W = world; m.hidden = false;
   const ids = Object.keys(W.regions), map = W.mapCanvas;
   m.innerHTML = `<div class="wbox wmap"><div class="sech"><div><div class="eyebrow">Relay Ferry · fast travel</div><h3 class="display">Veyra</h3></div><button class="btn ghost sm" id="wClose" type="button">✕</button></div>
-    <div class="vmap">${map ? `<img src="${map.toDataURL()}" alt="Map of Veyra">` : ''}${ids.map(id => { const R = W.regions[id], ok = q.visited[id] && !QS.blockedAt(R.x, R.z), x = (R.x / 1150 + .5) * 100, y = (R.z / 1150 + .5) * 100;
+    <div class="vmap">${map ? `<img src="${map.toDataURL()}" alt="Map of Veyra">` : ''}${ids.map(id => { const R = W.regions[id], ok = q.visited[id] && !QS.blockedAt(R.x, R.z), x = (R.x / (W.size || 1150) + .5) * 100, y = (R.z / (W.size || 1150) + .5) * 100;
       return `<button class="vpin ${ok ? '' : 'locked'}" data-area="${id}" type="button" ${ok ? '' : 'disabled'} style="left:${x}%;top:${y}%"><i></i><b>${esc(W.areas[id].name)}</b></button>`; }).join('')}
-      ${(() => { const p = W.player?.group.position; return p ? `<span class="vme" style="left:${(p.x / 1150 + .5) * 100}%;top:${(p.z / 1150 + .5) * 100}%"></span>` : ''; })()}</div>
+      ${(() => { const p = W.player?.group.position; return p ? `<span class="vme" style="left:${(p.x / (W.size || 1150) + .5) * 100}%;top:${(p.z / (W.size || 1150) + .5) * 100}%"></span>` : ''; })()}</div>
     <p class="muted small">Ferry stops open when you first reach a town. Locked routes open as you earn Circuit Seals.</p></div>`;
   $('#wClose').onclick = () => { m.hidden = true; };
   $$('[data-area]').forEach(b => b.onclick = () => { m.hidden = true; sfx.whoosh(.5); W.travelTo(b.dataset.area); });
