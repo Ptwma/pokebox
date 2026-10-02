@@ -41,14 +41,14 @@ const ARCH = {
   kid_m:      { model: 'kid_m', h: .64, walker: 2.3, kid: true, hat: ['cap', 'none'], names: ['Timmy', 'Leo', 'Pip'], lines: ['When I grow up I will have ALL the cards. All of them!', 'Did you see that? A wild Echo! Over there! ...It ran away.'] },
   kid_f:      { model: 'kid_f', h: .6, walker: 2.3, kid: true, names: ['Lily', 'Mina', 'Rae'], lines: ['My big sister is a Ranger. She is way stronger than you.', 'Can I see your partner? Please please please?'] },
 };
-const JOBS = {
-  fish: { prop: 'rod', gap: [8, 14], clip: 'Interact', speed: .5 },
-  hammer: { prop: 'hammer', clip: 'Punch_Right', gap: [.8, 1.7], speed: .7 },
-  sweep: { prop: 'broom', clip: 'Interact', gap: [1.4, 2.6], speed: .55 },
-  read: { prop: 'book', clip: 'Interact', gap: [7, 12], speed: .45 },
-  sell: { clip: 'Wave', alt: 'Interact', gap: [5, 9], speed: .8 },
-  chat: { clip: 'Interact', alt: 'Wave', gap: [3, 6], speed: .7 },
-  garden: { prop: 'can', clip: 'Interact', gap: [2.2, 4], speed: .55 },
+const JOBS = { // loop: Blender job animation; work/rest seconds give natural pauses; prop in the right hand
+  fish: { prop: 'rod', loop: 'Job_Fish', work: [14, 30], rest: [3, 6] },
+  hammer: { prop: 'hammer', loop: 'Job_Hammer', work: [5, 10], rest: [2, 5], speed: .9 },
+  sweep: { prop: 'broom', loop: 'Job_Sweep', work: [6, 12], rest: [2, 4], speed: .9 },
+  read: { prop: 'book', loop: 'Job_Read', work: [20, 40], rest: [3, 6] },
+  sell: { loop: 'Job_Talk', work: [4, 8], rest: [4, 8], alt: 'Wave' },
+  chat: { loop: 'Job_Talk', work: [5, 10], rest: [2, 5] },
+  garden: { prop: 'can', loop: 'Job_Water', work: [6, 12], rest: [3, 6] },
 };
 function archLook(a, R) {
   const A = ARCH[a], pick = (arr, d) => arr ? arr[R() * arr.length | 0] : d;
@@ -1094,8 +1094,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         const J = JOBS[v.job];
         if (dPl < 3.4) faceSmooth(v.ch, pp.x, pp.z, dt, 3); else faceSmooth(v.ch, g.x + Math.sin(v.face), g.z + Math.cos(v.face), dt, 1.5);
         v.jt -= dt;
-        if (v.jt <= 0 && J?.clip && dPl > 3.4 && dPl < 40) { v.ch.play(J.alt && Math.random() < .3 ? J.alt : J.clip, .4, { once: true, speed: J.speed * (.85 + Math.random() * .3) }); v.jt = J.gap[0] + Math.random() * (J.gap[1] - J.gap[0]); }
-        else v.ch.locomote(0);
+        if (dPl < 3.4) { if (!v.paused) { v.paused = true; v.ch.play('Idle', .4); } }   // stops working to talk to you
+        else if (v.jt <= 0 && J) { v.working = !v.working; v.paused = false; const [a, b] = v.working ? J.work : J.rest; v.jt = a + Math.random() * (b - a);
+          if (v.working) v.ch.play(J.loop, .5, { speed: (J.speed || 1) * (.9 + Math.random() * .2) }); else if (J.alt && Math.random() < .5) v.ch.play(J.alt, .4, { once: true }); else v.ch.play('Idle', .5); }
+        else if (v.paused && dPl >= 3.4) { v.paused = false; v.jt = 0; v.working = false; }
         if (dPl < 40) v.ch.update(dt); continue;
       }
       if (v.wait > 0) { v.wait -= dt; v.ch.locomote(0); if (dPl < 4) faceSmooth(v.ch, pp.x, pp.z, dt); }
@@ -1217,7 +1219,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, decorLog }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, decorLog, villagers: allVillagers }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },
   };

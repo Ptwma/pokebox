@@ -1,11 +1,10 @@
 {
-  "version": "3.1.0",
+  "version": "3.2.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Ranger Rank: earn Rank Points from battles, captures, chests and discoveries — Rookie to Champion League, coins on every promotion, you never drop below a tier you reached",
-    "Ranking app in the Lattice: your rank, recent results and a Veyra leaderboard against the trainers of the story",
-    "Your rank is shown next to your coins in the world HUD"
+    "Townsfolk now have real work animations made in Blender: sweeping, hammering, fishing, reading, watering plants, talking with gestures",
+    "They work in natural stretches with breaks, and stop to face you when you walk up to them"
   ]
 }
