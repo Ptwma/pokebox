@@ -143,7 +143,7 @@ export function createFieldBattle(ctx) {
     if (b) { e.preventDefault(); e.stopPropagation(); b.click(); }
   }
   function plate(side) {
-    const f = B.active(side), el = ui.querySelector(side === 'e' ? '#fbE' : '#fbP'), hp = Math.max(0, f.hp), pct = hp / f.maxHp * 100;
+    const f = B.active(side), el = ui.querySelector(side === 'e' ? '#fbE' : '#fbP'), hp = Math.max(0, Math.round(f._hp ?? f.hp)), pct = hp / f.maxHp * 100, en = f._en ?? f.energy;
     const team = B[side].team.map((x, i) => `<i class="${x.hp <= 0 ? 'down' : ''} ${i === B[side].act ? 'on' : ''}"></i>`).join('');
     const buffs = ['atk', 'def', 'spd'].filter(k => f.buff[k] !== 1).map(k => `<span class="fb-bf ${f.buff[k] > 1 ? 'up' : 'dn'}">${k.toUpperCase()}${f.buff[k] > 1 ? '▲' : '▼'}</span>`).join('');
     // the foe telegraphs what it can do next turn — that is what makes Guard and switching real decisions
@@ -151,7 +151,7 @@ export function createFieldBattle(ctx) {
     el.style.setProperty('--tc', TC[f.type] || '#ccc');
     el.innerHTML = `<div class="fb-top"><b>${esc(f.name)}</b><span class="fb-type">${esc(f.type)}</span>${f.status ? `<span class="fb-st ${f.status}">${f.status === 'burn' ? 'BRN' : 'PAR'} ${f.statusT}</span>` : ''}${buffs}<span class="fb-r">${RN[f.card.r] || ''}</span></div>
       <div class="fb-hp"><i style="width:${pct}%" class="${pct < 30 ? 'low' : pct < 55 ? 'mid' : ''}"></i></div>
-      <div class="fb-bot"><small>${hp} / ${f.maxHp} HP</small><span class="fb-en" title="Energy">${Array.from({ length: ENERGY_MAX }, (_, i) => `<i class="${i < f.energy ? 'on' : ''}"></i>`).join('')}</span><span class="fb-team">${team}</span></div>${intent}`;
+      <div class="fb-bot"><small>${hp} / ${f.maxHp} HP</small><span class="fb-en" title="Energy">${Array.from({ length: ENERGY_MAX }, (_, i) => `<i class="${i < en ? 'on' : ''}"></i>`).join('')}</span><span class="fb-team">${team}</span></div>${intent}`;
   }
   function log(html) { const l = ui.querySelector('#fbLog'); const p = document.createElement('p'); p.innerHTML = html; l.append(p); while (l.children.length > 2) l.firstChild.remove(); }
   function moves() {
@@ -176,6 +176,9 @@ export function createFieldBattle(ctx) {
     if (choose) { const t = ui.querySelector('#fbTurn'); t.innerHTML = `<small>Turn ${B.turn}</small><b>Your move</b>`; t.getAnimations().forEach(a => a.cancel());
       t.animate([{ opacity: 0, transform: 'translate(-50%,-14px)' }, { opacity: 1, transform: 'translate(-50%,0)', offset: .15 }, { opacity: 1, offset: .75 }, { opacity: .0 }], { duration: 1900, fill: 'forwards' }); }
   }
+  function banner(small, big, side) { // who is acting right now — makes the foe's reply read as ITS turn, not as damage from your own attack
+    const t = ui?.querySelector('#fbTurn'); if (!t) return; t.innerHTML = `<small>${small}</small><b class="${side === 'e' ? 'foe' : ''}">${esc(big)}</b>`; t.getAnimations().forEach(a => a.cancel());
+    t.animate([{ opacity: 0, transform: 'translate(-50%,-10px)' }, { opacity: 1, transform: 'translate(-50%,0)', offset: .15 }, { opacity: 1, offset: .7 }, { opacity: 0 }], { duration: 1500, fill: 'forwards' }); }
   function acting(side) { for (const s of ['p', 'e']) { ui?.querySelector(s === 'e' ? '#fbE' : '#fbP')?.classList.toggle('acting', s === side); if (state) state.ring[s].on = s === side ? 1 : 0; } }
   function cutIn(name, type, big) { // move name banner for signature moves and ultimates
     const el = ui.querySelector('#fbCut'); el.style.setProperty('--tc', TC[type] || '#fff'); el.className = 'fb-cut' + (big ? ' big' : ''); el.innerHTML = `<b>${esc(name)}</b>`;
@@ -229,7 +232,8 @@ export function createFieldBattle(ctx) {
 
   async function strike(e) {
     const s = e.side, o = s === 'p' ? 'e' : 'p', att = state.mon[s], def = state.mon[o], big = e.kind === 'ult', ranged = e.kind !== 'attack', col = TC[e.type] || '#fff';
-    acting(s); log(`${s === 'p' ? 'Your' : 'The foe\'s'} <b>${esc(B.active(s).name)}</b> used <b style="color:${col}">${esc(e.move)}</b>`);
+    acting(s); banner(s === 'p' ? 'Your turn' : 'Foe\'s turn', s === 'p' ? B.active(s).name : (state.spec.name ? state.spec.name + '\'s ' : '') + B.active(s).name, s);
+    log(`${s === 'p' ? 'Your' : 'The foe\'s'} <b>${esc(B.active(s).name)}</b> used <b style="color:${col}">${esc(e.move)}</b>`);
     const A0 = att.group.position.clone(), D0 = def.group.position.clone(), dir = D0.clone().sub(A0).setY(0).normalize(), sc0 = att.group.scale.clone();
     // 1 · anticipation: the camera settles behind the attacker, it gathers itself (squash), its ring flares with type light
     if (ranged) { shot = { mode: 'over', a: A0, b: D0 }; cutIn(e.move, e.type, big); }
@@ -256,7 +260,7 @@ export function createFieldBattle(ctx) {
     def.setFlash?.(1); setTimeout(() => def.setFlash?.(0), big ? 160 : 110);
     if (big || e.crit) impactFrame(ui);
     const sp = screenOf(def.group, 2.2); onomato(ui.querySelector('#fbFx'), sp.x, sp.y - 30, e.kind === 'attack' ? 'Fighting' : e.type, { big, crit: e.crit });
-    floatText(def.group, '−' + e.d, 'dmg' + (e.crit ? ' crit' : ''));
+    e._apply?.(); floatText(def.group, '−' + e.d, 'dmg' + (e.crit ? ' crit' : '') + (o === 'p' ? ' hurt' : ''));
     if (e.guarded) setTimeout(() => floatText(def.group, 'Guarded', 'lbl up'), 120);
     if (e.cling) setTimeout(() => floatText(def.group, 'Hanging on!', 'lbl weak'), 360);
     if (e.eff) setTimeout(() => floatText(def.group, 'Super effective!', 'lbl eff'), 180); else if (e.weak) setTimeout(() => floatText(def.group, 'Not very effective', 'lbl weak'), 180);
@@ -285,22 +289,27 @@ export function createFieldBattle(ctx) {
   }
   async function act(a) {
     if (busy || B.over) return; busy = true; phase(false); moves();
+    // the whole round is resolved up front; the plates must only show what the animation has reached so far —
+    // otherwise your own HP dropped the moment YOU attacked (it already contained the foe's reply)
+    const all = [...B.p.team, ...B.e.team]; for (const f of all) { f._hp = f.hp; f._en = f.energy; }
     const ev = B.round(a);
     for (const e of ev) {
       if (!ui) return;
-      if (e.t === 'hit') await strike(e);
+      if (e.t === 'hit') { const att = B.active(e.side), def = B.active(e.side === 'p' ? 'e' : 'p'); att._en = att.energy;
+        e._apply = () => { def._hp = Math.max(def.minHp || 0, (def._hp ?? def.hp) - e.d); }; await strike(e); }
       else if (e.t === 'ko') await knockOut(e.side);
       else if (e.t === 'switch') await sendOut(e.side, e.to);
-      else if (e.t === 'guard') { acting(e.side); guardBubble(e.side, true); floatText(state.mon[e.side].group, 'Guard', 'lbl up'); hooks.sfx?.('clink', .4); await wait(420); }
+      else if (e.t === 'guard') { const gf = B.active(e.side); gf._en = gf.energy; acting(e.side); guardBubble(e.side, true); floatText(state.mon[e.side].group, 'Guard', 'lbl up'); hooks.sfx?.('clink', .4); await wait(420); }
       else if (e.t === 'status') { flashGlow(state.mon[e.side].group.position.clone().setY(state.mon[e.side].group.position.y + 1), e.st === 'burn' ? '#ff7a2a' : '#ffe94a', 3, 400); floatText(state.mon[e.side].group, e.st === 'burn' ? 'Burned!' : 'Paralyzed!', 'lbl ' + e.st); await wait(500); }
       else if (e.t === 'para') { acting(e.side); floatText(state.mon[e.side].group, 'Can\'t move!', 'lbl para'); hooks.sfx?.('zap', .3); await wait(650); }
-      else if (e.t === 'burn') { acting(e.side); state.mon[e.side].setFlash?.(.6); setTimeout(() => state?.mon[e.side]?.setFlash?.(0), 120); floatText(state.mon[e.side].group, '−' + e.d, 'dmg burn'); hooks.sfx?.('flame', .3); await wait(520); }
+      else if (e.t === 'burn') { const bf = B.active(e.side); bf._hp = Math.max(bf.minHp || 0, (bf._hp ?? bf.hp) - e.d); acting(e.side); state.mon[e.side].setFlash?.(.6); setTimeout(() => state?.mon[e.side]?.setFlash?.(0), 120); floatText(state.mon[e.side].group, '−' + e.d, 'dmg burn'); hooks.sfx?.('flame', .3); await wait(520); }
       else if (e.t === 'cure') { floatText(state.mon[e.side].group, e.st === 'burn' ? 'Burn faded' : 'Can move again', 'lbl up'); await wait(300); }
-      else if (e.t === 'heal') { flashGlow(state.mon[e.side].group.position.clone().setY(state.mon[e.side].group.position.y + 1), '#7fe3a2', 2.6, 380); floatText(state.mon[e.side].group, '+' + e.n, 'heal'); await wait(320); }
+      else if (e.t === 'heal') { const hf = B.active(e.side); hf._hp = Math.min(hf.maxHp, (hf._hp ?? hf.hp) + e.n); flashGlow(state.mon[e.side].group.position.clone().setY(state.mon[e.side].group.position.y + 1), '#7fe3a2', 2.6, 380); floatText(state.mon[e.side].group, '+' + e.n, 'heal'); await wait(320); }
       else if (e.t === 'debuff' || e.t === 'buff') { floatText(state.mon[e.side].group, e.stat + (e.t === 'buff' ? ' ↑' : ' ↓'), 'lbl ' + (e.t === 'buff' ? 'up' : 'dn')); await wait(320); }
       else if (e.t === 'end') { await wait(450); return finish(e.result); }
       plate('p'); plate('e');
     }
+    for (const f of all) { f._hp = f.hp; f._en = f.energy; } // end of the round: plates catch up with the real state
     guardBubble('p', false); guardBubble('e', false); acting(null);
     busy = false; if (ui) { plate('p'); plate('e'); moves(); captureHint(); phase(true); }
   }

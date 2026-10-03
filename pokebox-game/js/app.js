@@ -10,6 +10,8 @@ import { createWorld, AREAS } from './world.js';
 import * as QS from './quests.js';
 import { runTitle } from './title.js';
 import * as RK from './rank.js';
+import { openWorldMap } from './worldmap.js';
+import { runPrologue, startCoach } from './prologue.js';
 import { autoCheck, manualCheck } from './updater.js';
 import { createPreview, PETS } from './chars.js';
 import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
@@ -826,15 +828,9 @@ function worldConfirm(q, yes, no) {
     const done = v => { m.hidden = true; m.innerHTML = ''; res(v); }; $('#wYes').onclick = () => done(true); $('#wNo').onclick = () => done(false); $('#wYes').focus(); });
 }
 function worldTravel() {
-  const q = QS.Q(), m = $('#wModal'), W = world; m.hidden = false;
-  const ids = Object.keys(W.regions), map = W.mapCanvas;
-  m.innerHTML = `<div class="wbox wmap"><div class="sech"><div><div class="eyebrow">Relay Ferry · fast travel</div><h3 class="display">Veyra</h3></div><button class="btn ghost sm" id="wClose" type="button">✕</button></div>
-    <div class="vmap">${map ? `<img src="${map.toDataURL()}" alt="Map of Veyra">` : ''}${ids.map(id => { const R = W.regions[id], ok = q.visited[id] && !QS.blockedAt(R.x, R.z), x = (R.x / (W.size || 1150) + .5) * 100, y = (R.z / (W.size || 1150) + .5) * 100;
-      return `<button class="vpin ${ok ? '' : 'locked'}" data-area="${id}" type="button" ${ok ? '' : 'disabled'} style="left:${x}%;top:${y}%"><i></i><b>${esc(W.areas[id].name)}</b></button>`; }).join('')}
-      ${(() => { const p = W.player?.group.position; return p ? `<span class="vme" style="left:${(p.x / (W.size || 1150) + .5) * 100}%;top:${(p.z / (W.size || 1150) + .5) * 100}%"></span>` : ''; })()}</div>
-    <p class="muted small">Ferry stops open when you first reach a town. Locked routes open as you earn Circuit Seals.</p></div>`;
-  $('#wClose').onclick = () => { m.hidden = true; };
-  $$('[data-area]').forEach(b => b.onclick = () => { m.hidden = true; sfx.whoosh(.5); W.travelTo(b.dataset.area); });
+  const W = world; if (!W) return; if (!$('#wModal').hidden && $('#wModal').classList.contains('fs')) return;
+  sfx.whoosh?.(.25); document.querySelector('.cx-area')?.remove();
+  openWorldMap($('#wModal'), { W, q: QS.Q(), req: AREA_REQ, target: QS.target(), onTravel: id => { sfx.whoosh(.5); W.travelTo(id); } });
 }
 /* starter choice (story step) */
 function chooseStarter() {
@@ -903,7 +899,8 @@ function ensureWorld() {
       const c = pool[Math.floor(R() * pool.length)]; return { i: c.i, img: cardImg(c), n: c.n, f: c.f, t: c.t }; },
     talk: (lines, o) => playScene(lines, o), confirm: worldConfirm, chooseStarter, goal: worldGoal,
     onStep: st => { if (st) toast(`<b>New objective:</b> ${esc(st.text)}`); worldHud(); },
-    onChapter: (ch, idx) => { xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
+    reveal: o => vsCard(o), arrival: (id, a) => { sfx.rare?.(1); },
+    onChapter: (ch, idx) => { whenFree(() => chapterCard(idx + 1)); xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
       if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
@@ -912,7 +909,7 @@ function ensureWorld() {
     onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title') || document.body.classList.contains('cine-on') || !$('#scene').hidden || !$('#wModal').hidden) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
-  $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;
+  $('#wMap').onclick = worldTravel; $('#wMini').onclick = () => worldTravel(); $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;
   if (TOUCH) { // virtual stick (left) + action buttons (right); camera = drag anywhere else, pinch = zoom
     $('#wTouch').hidden = false; const st2 = $('#wStick'), knob = st2.querySelector('i'); let sid = null, c0 = null;
     const setK = (dx, dy) => { const r = 52, l = Math.hypot(dx, dy), k = l > r ? r / l : 1; knob.style.transform = `translate(${dx * k}px,${dy * k}px)`; world.setStick(dx * k / r, dy * k / r); };
@@ -941,14 +938,46 @@ VIEWS.world = () => {
   view.innerHTML = ''; const w = $('#worldWrap'), s = P.ensure(); w.hidden = false; document.body.classList.add('game'); const W = ensureWorld();
   if (st().settings.music !== false && !document.body.classList.contains('at-title')) setTimeout(() => { if (document.body.classList.contains('game')) music.world(...musRegion); }, 600);
   const pets = ensurePets();
-  if (!W.ready && !W._entering) { W._entering = true; W.enter('here', {}).finally(() => { W._entering = false; worldHud(); }); W._look = JSON.stringify(s.look); }
-  else if (W.ready && JSON.stringify(s.look) !== W._look) { W.refreshLook(); W._look = JSON.stringify(s.look); }
+  if (wantsPrologue()) document.body.classList.add('prolog-on'); // the story waits until the prologue has played
+  if (!W.ready && !W._entering) { W._entering = true; W.enter('here', {}).finally(() => { W._entering = false; worldHud(); firstSteps(W); }); W._look = JSON.stringify(s.look); }
+  else if (W.ready) firstSteps(W);
+  if (W.ready && JSON.stringify(s.look) !== W._look) { W.refreshLook(); W._look = JSON.stringify(s.look); }
   else if ((companionCard()?.i ?? null) !== worldPartner) W.refreshPartner();
   worldPartner = companionCard()?.i ?? null;
   if (pendingEcho) { pendingEcho = false; setTimeout(() => W.echoWon?.(), 700); }
   W.setPaused(false); W.start(); $('#worldCanvas').focus(); window.__world = W; worldHud();
-  if (!s.story.seen.worldIntro) { s.story.seen.worldIntro = Date.now(); C.save(); setTimeout(() => toast(TOUCH ? 'Welcome to Veyra! Left stick to move · <b>✋</b> to talk and interact · <b>☰</b> opens your Lattice.' : 'Welcome to Veyra! <b>WASD</b> move · <b>Shift</b> run · <b>E</b> interact · <b>Esc</b> menu.'), 600); }
 };
+/* cinematic cards: the VS reveal before Warden / rival / GLYPH battles and the title card of each new chapter */
+function vsCard({ name, role, glyph }) {
+  document.querySelector('.vsrev')?.remove(); const d = document.createElement('div'); d.className = 'vsrev' + (glyph ? ' glyph' : '');
+  d.innerHTML = `<div class="vs-band"><span class="vs-vs">VS</span><div><small>${esc(role)}</small><b>${esc(name)}</b></div></div>`; document.body.append(d); sfx.charge?.(.7);
+  setTimeout(() => d.classList.add('out'), 2300); setTimeout(() => d.remove(), 2900);
+}
+function whenFree(fn, tries = 240) { const free = !document.body.classList.contains('cine-on') && $('#scene').hidden && $('#wModal').hidden && !document.querySelector('.prolog, .upd'); if (free) fn(); else if (tries > 0) setTimeout(() => whenFree(fn, tries - 1), 500); }
+function chapterCard(idx) {
+  const ch = QS.STORY[idx]; if (!ch || !document.body.classList.contains('game')) return;
+  const d = document.createElement('div'); d.className = 'chcard'; d.style.setProperty('--ac', ch.color || '#ffd257');
+  d.innerHTML = `<div class="ch-in"><small>Chapter ${idx + 1} of ${QS.STORY.length} · ${esc(AREA[ch.region] || '')}</small><b class="display">${esc(ch.title)}</b><p>${esc(ch.steps[0]?.text || '')}</p></div>`;
+  document.body.append(d); sfx.whoosh?.(.4); const bye = () => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }; d.onclick = bye; setTimeout(bye, 3800);
+}
+/* first run: the prologue (what Veyra, Echoes and Lattice cards are), then a step-by-step coach for the controls */
+const NO_INTRO = /[?&]noprologue/.test(location.search) || (navigator.webdriver && !/[?&]prologue/.test(location.search)); // automated checks skip it unless asked
+function wantsPrologue() { const s = P.ensure(), q = QS.Q(); return !NO_INTRO && (s.story.seen.replayIntro || (!s.story.seen.prologue && q.ch === 0 && q.step === 0)); }
+let introRunning = false, coach = null;
+async function firstSteps(W) {
+  if (introRunning) return; const s = P.ensure(); let played = false;
+  if (wantsPrologue()) { played = true;
+    introRunning = true;
+    while (document.body.classList.contains('at-title') || !W.ready) await new Promise(r => setTimeout(r, 250)); // never under the title screen
+    s.story.seen.prologue = Date.now(); delete s.story.seen.replayIntro; C.save();
+    try { await runPrologue({ W, sfx, music: st().settings.music !== false ? music : null }); } finally { document.body.classList.remove('prolog-on'); introRunning = false; W.refreshStory?.(); }
+  }
+  document.body.classList.remove('prolog-on');
+  if (!s.story.seen.coach && !NO_INTRO && !coach && (played || !s.story.seen.worldIntro)) { // veterans (who saw the old welcome) are not coached again
+    coach = startCoach({ W, touch: TOUCH, isBusy: () => !$('#scene').hidden || document.body.classList.contains('cine-on') || !$('#wModal').hidden || $('#worldWrap').hidden || !!document.querySelector('.prolog, #lattice:not([hidden]), #gMenu:not([hidden]), .upd'),
+      onDone: () => { s.story.seen.coach = Date.now(); s.story.seen.worldIntro = Date.now(); C.save(); coach = null; } });
+  }
+}
 
 
 /* ------------------------------------------------------------------ Lattice device: the Ranger's card device, the hub between Veyra and the card game */
@@ -1131,11 +1160,12 @@ VIEWS.profile = () => {
     <label>Opening studio <select id="setStudio"><option value="studio" ${s.settings.studio === 'studio' ? 'selected' : ''}>Pink studio (GIF)</option><option value="dark" ${s.settings.studio === 'dark' ? 'selected' : ''}>Dark Pokebox</option></select></label>
   </div>
   <div class="row"><button class="btn ghost" id="exp" type="button">Export save</button><label class="btn ghost" for="imp">Import save</label><input type="file" id="imp" accept=".json,application/json" hidden>
-  <button class="btn danger" id="reset" type="button">Reset progress</button></div><p class="muted" id="resetMsg"></p></section>`;
+  <button class="btn ghost" id="replayIntro" type="button">Replay intro</button><button class="btn danger" id="reset" type="button">Reset progress</button></div><p class="muted" id="resetMsg"></p></section>`;
   bindLook(); bindName(); preview3d()?.set({ ...P.ensure().look });
   $('#setSound').onchange = e => { s.settings.sound = e.target.checked; setSound(e.target.checked); C.save(); };
   $('#setMusic').onchange = e => { s.settings.music = e.target.checked; setMusic(e.target.checked); if (e.target.checked && document.body.classList.contains('game')) music.world(...musRegion); C.save(); };
   $('#setMystery').onchange = e => { s.settings.mystery = e.target.checked; C.save(); };
+  $('#replayIntro').onclick = () => { s.story.seen.replayIntro = 1; C.save(); location.hash = '#world'; };
   $('#setFast').onchange = e => { s.settings.fast = e.target.checked; C.save(); };
   $('#setFps').onchange = e => { s.settings.fps = e.target.checked; C.save(); window.__perfHud?.(e.target.checked); };
   $('#setShadows').onchange = e => { s.settings.shadows = e.target.checked; C.save(); toast('Applies the next time the game starts.'); };

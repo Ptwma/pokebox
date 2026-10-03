@@ -81,7 +81,8 @@ export function routePoint(route, k) { // point + direction at fraction k (0..1)
 export const TOWN_BASE = {
   harbor: (x, z) => { const r = Math.hypot(x * .95, z * 1.05); return 1.5 - smooth(40, 52, z) * 5 + (fbm(x * .05, z * .05) - .5) * 1.8 * smooth(22, 40, r) - .35 - Math.max(0, 1 - Math.hypot(x - 28, z - 34) / 22) * 2.2; },
   mistvale: (x, z) => .9 + (fbm(x * .06 + 7, z * .06) - .5) * 3 - Math.max(0, 1 - Math.hypot(x - 12, z + 6) / 10) * 2.4 - Math.max(0, 1 - Math.hypot(x + 16, z - 12) / 8) * 2,
-  sandreach: (x, z) => 1.2 + Math.sin(x * .12 + fbm(x * .03, z * .03) * 4) * 1.4 + (fbm(x * .04, z * .04 + 3) - .5) * 3,
+  sandreach: (x, z) => { const r = Math.hypot(x, z - 2), k = .25 + .75 * smooth(44, 64, r); // the walled bazaar sits on levelled ground; dunes outside, an oasis pond inside
+    return 1.2 + (Math.sin(x * .12 + fbm(x * .03, z * .03) * 4) * 1.4 + (fbm(x * .04, z * .04 + 3) - .5) * 3) * k - Math.max(0, 1 - Math.hypot(x + 29, z + 9) / 7) * 2.6; },
   starfall: (x, z) => 2 + (fbm(x * .07, z * .07) - .5) * 4 + Math.max(0, 1 - Math.hypot(x + 4, z + 14) / 12) * 3,
   voltspire: (x, z) => 1.4 + (fbm(x * .05 + 11, z * .05) - .5) * 2.6 + Math.floor(fbm(x * .02, z * .02) * 4) * .6,
   frostline: (x, z) => 2 + (fbm(x * .06 + 2, z * .06) - .5) * 5 + Math.max(0, -z - 20) * .35 - Math.max(0, 1 - Math.hypot(x - 14, z - 14) / 9) * 3.2,
@@ -90,7 +91,7 @@ export const TOWN_BASE = {
 export const FLATS = { // flat pads for buildings / plazas: [x, z, radius, height] (local)
   harbor: [[0, 2, 12, 1.25], [-10, -11, 9, 1.25], [10, -12, 5.5, 1.25]], // the other houses stand on planned lots (TOWN_LOTS)
   mistvale: [[16, 5, 5, 1.1], [-22, -12, 5, 1.2]], sandreach: [[-4, -6, 7, 1.6]], starfall: [[-4, -14, 9, 3.2], [8, -4, 5, 2.4]],
-  voltspire: [[0, 0, 8, 1.8]], frostline: [[2, -4, 7, 2.2], [-14, 8, 5, 2.2]], rift: [[0, -18, 11, 1.4], [0, 4, 7, .9]],
+  voltspire: [[0, 0, 8, 1.8]], frostline: [[2, -4, 7, 2.2], [-14, 8, 5, 2.2], [14, 14, 9, .5]], rift: [[0, -18, 11, 1.4], [0, 4, 7, .9]],
 };
 export const TOWN_PATHS = { // local
   harbor: [{ pts: [[0, 30], [0, 16], [0, 4], [-4, -4], [-10, -4]] }, { pts: [[0, 6], [8, 6], [15, 10], [20, 17], [21, 23]] }, { pts: [[-2, 2], [-12, 4], [-20, 1], [-26, -10]] }, { pts: [[2, -4], [4, -14], [6, -18], [16, -20], [24, -18]] }],
@@ -104,36 +105,51 @@ export const TOWN_PATHS = { // local
 /* ------------------------------------------------------------------ town planning: building lots along the streets
    Every lot sits beside a street with its door facing it, gets a flat pad (no grass) and a short footpath to the street.
    Computed once, deterministically, so the terrain worker (pads, paths) and the world (buildings) agree. */
-const LOT = { gap: 10.5, set: 6.8, pad: 4.3, plaza: 14, edge: 41, apart: 9.5 };
-// how many houses each town gets (closest to the plaza first); the Rift is a ruin, not a town
-const LOT_N = { harbor: 12, mistvale: 9, starfall: 8, frostline: 9, voltspire: 11, sandreach: 11, rift: 0 };
-// every town gets a ring lane and a cross avenue besides its original streets, so houses can line real streets
-for (const id in TOWN_PATHS) { if (!LOT_N[id]) continue;
-  const ring = Array.from({ length: 17 }, (_, i) => { const a = i / 16 * Math.PI * 2; return [Math.cos(a) * 24, 2 + Math.sin(a) * 24]; });
-  TOWN_PATHS[id].push({ pts: ring, lane: true }, { pts: [[-34, 2], [-12, 2]], lane: true }, { pts: [[12, 2], [34, 2]], lane: true }); }
+const LOT = { gap: 9.2, set: 6.3, pad: 4.2, plaza: 14, apart: 8.1, clear: 4.9 };
+// every town has its own street pattern and size (inspired by film towns: a port grid of canal-side streets, a forest village
+// of winding rings, a fan of terraces under the observatory, a winter ring around the lodge square, a diagonal tech grid,
+// a walled bazaar with four gates). n = number of buildings (the hub and the cities are bigger), edge = town radius.
+const ring = (r, wob = 0, ph = 0, a0 = 0, a1 = Math.PI * 2, n = 28) => Array.from({ length: n + 1 }, (_, i) => { const a = a0 + (a1 - a0) * i / n, rr = r * (1 + wob * Math.sin(a * 3 + ph)); return [Math.cos(a) * rr, 2 + Math.sin(a) * rr]; });
+const radial = (a, r0, r1) => [[Math.cos(a) * r0, 2 + Math.sin(a) * r0], [Math.cos(a) * r1, 2 + Math.sin(a) * r1]];
+const grid = (sp, rot, ext) => { const out = [], c = Math.cos(rot), s = Math.sin(rot), T = (u, v) => [u * c - v * s, 2 + u * s + v * c];
+  for (let k = -3; k <= 3; k++) { if (!k) continue; out.push([T(k * sp, -ext), T(k * sp, ext)], [T(-ext, k * sp), T(ext, k * sp)]); } return out; };
+export const TOWN_PLAN = {
+  harbor:    { n: 46, edge: 58, style: 'tropical', streets: [...grid(22, 0, 56), radial(-Math.PI / 2, 12, 50)] },
+  mistvale:  { n: 32, edge: 56, style: 'wetland', reserve: [[-31, 9, 8]], streets: [ring(22, .12, 1), ring(42, .08, 2), ...[0, 1, 2, 3, 4, 5].map(i => radial(i / 6 * Math.PI * 2 + .3, 12, 50))] },
+  starfall:  { n: 32, edge: 56, style: 'stargaze', streets: [ring(22, 0, 0, Math.PI * .9, Math.PI * 2.1), ring(42, 0, 0, Math.PI * .85, Math.PI * 2.15),
+    ...[0, 1, 2, 3, 4].map(i => radial(Math.PI + (i + .5) / 5 * Math.PI, 12, 52)), radial(Math.PI / 2, 12, 36)] },
+  frostline: { n: 34, edge: 56, style: 'winter', reserve: [[14, 14, 11]], streets: [ring(22, .05, 4), ring(42, .05, 1), ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => radial(i / 8 * Math.PI * 2 + .2, 12, 50))] },
+  voltspire: { n: 42, edge: 58, style: 'tech', streets: [...grid(21, Math.PI / 4, 56)] },
+  sandreach: { n: 38, edge: 54, style: 'desert', walls: 56, streets: [ring(21), ring(41, 0, 0, 0, Math.PI * 2, 36), ...[0, 1, 2, 3].map(i => radial(i / 4 * Math.PI * 2 + Math.PI / 4, 12, 52)), ...[0, 1, 2, 3].map(i => radial(i / 4 * Math.PI * 2, 12, 44))] },
+};
+for (const id in TOWN_PLAN) for (const pts of TOWN_PLAN[id].streets) TOWN_PATHS[id].push({ pts, lane: true });
 export const TOWN_LOTS = {};
 for (const id in TOWN_PATHS) {
   const lots = [], base = TOWN_BASE[id], hand = (FLATS[id] || []).slice(), streets = TOWN_PATHS[id].slice();
-  for (const p of streets) for (let i = 0; i < p.pts.length - 1; i++) {
-    const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
-    for (let d = 4; d <= L - 3; d += LOT.gap) for (const side of [-1, 1]) {
-      const sx = ax + dx * d, sz = az + dz * d, x = sx - dz * side * LOT.set, z = sz + dx * side * LOT.set;
-      if (Math.hypot(x, z - 2) < LOT.plaza || Math.hypot(x, z) > LOT.edge) continue;                 // keep the plaza and the town edge free
-      if (lots.some(l => Math.hypot(l.x - x, l.z - z) < LOT.apart)) continue;
-      if (streets.some(q => segDist(x, z, q.pts) < LOT.set - .6)) continue;                          // not on top of another street
-      if (hand.some(([fx, fz, r]) => Math.hypot(fx - x, fz - z) < r + 4.5)) continue;                // not on the hand-built pads (lab, shop, plaza…)
-      const y0 = base(x, z), y1 = Math.min(base(x + 3, z), base(x - 3, z), base(x, z + 3), base(x, z - 3)); if (y1 < .35) continue; // dry land only
-      lots.push({ x, z, sx, sz, rot: Math.atan2(sx - x, sz - z), y: Math.max(.95, y0) });
+  // walk every street at a steady pace (curved rings are many short segments, so the walk runs along the whole polyline)
+  const stations = []; for (const p of streets) { let next = 4; // distance along the polyline where the next station goes
+    for (let i = 0, run = 0; i < p.pts.length - 1; i++) { const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az); if (L < 1e-6) continue; const dx = (bx - ax) / L, dz = (bz - az) / L;
+      while (next <= run + L) { const d = next - run; stations.push([ax + dx * d, az + dz * d, dx, dz]); next += LOT.gap; } run += L; } }
+  const why = {}; const no = k => (why[k] = (why[k] || 0) + 1, true);
+  for (const [sx, sz, dx, dz] of stations) for (const side of [-1, 1]) {
+    {
+      const x = sx - dz * side * LOT.set, z = sz + dx * side * LOT.set;
+      if (Math.hypot(x, z - 2) < LOT.plaza || Math.hypot(x, z - 2) > (TOWN_PLAN[id]?.edge || 41)) { no('edge'); continue; }                 // keep the plaza and the town edge free
+      if (lots.some(l => Math.hypot(l.x - x, l.z - z) < LOT.apart)) { no('apart'); continue; }
+      if (streets.some(q => segDist(x, z, q.pts) < LOT.clear)) { no('street'); continue; }                         // not on top of another street
+      if (hand.some(([fx, fz, r]) => Math.hypot(fx - x, fz - z) < r + 4.5) || (TOWN_PLAN[id]?.reserve || []).some(([fx, fz, r]) => Math.hypot(fx - x, fz - z) < r + 3)) { no('pad'); continue; }               // not on the hand-built pads (lab, shop, plaza…)
+      const y0 = base(x, z), y1 = Math.min(base(x + 3, z), base(x - 3, z), base(x, z + 3), base(x, z - 3)); if (y1 < .35) { no('wet'); continue; } // dry land only
+      lots.push({ x, z, sx, sz, rot: Math.atan2(sx - x, sz - z), y: Math.max(.95, y0), opts: { maxW: LOT.apart - 1.1, maxD: 7 } });
     }
   }
-  lots.sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2)); lots.length = Math.min(lots.length, LOT_N[id] || 0);
+  lots.sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2)); lots.length = Math.min(lots.length, TOWN_PLAN[id]?.n || 0);
   for (const l of lots) {
     FLATS[id].push([l.x, l.z, LOT.pad, l.y]);
-    const k = (LOT.set - 2.6) / LOT.set; TOWN_PATHS[id].push({ spur: true, pts: [[l.x + (l.sx - l.x) * .42, l.z + (l.sz - l.z) * .42], [l.x + (l.sx - l.x) * k, l.z + (l.sz - l.z) * k]] });
+    const k = (LOT.set - 2.4) / LOT.set; TOWN_PATHS[id].push({ spur: true, pts: [[l.x + (l.sx - l.x) * .42, l.z + (l.sz - l.z) * .42], [l.x + (l.sx - l.x) * k, l.z + (l.sz - l.z) * k]] });
   }
-  TOWN_LOTS[id] = lots;
+  TOWN_LOTS[id] = lots; if (typeof process !== 'undefined' && process.env?.LOTDBG) console.log(id, lots.length, stations.length, JSON.stringify(why));
 }
-const TOWN_R = 44, TOWN_BLEND = 72;
+const TOWN_R = 60, TOWN_BLEND = 88; // bigger towns since v3.12 (30–46 buildings)
 
 /* ------------------------------------------------------------------ biomes */
 export const BIOMES = {

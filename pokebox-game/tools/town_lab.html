@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Town lab</title><style>html,body{margin:0;background:#8fc4ef}canvas{display:block}</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three/build/three.module.js", "three/addons/": "../vendor/three/addons/" } }</script></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { buildHouses, STYLES, windmill, lighthouse, greatTree } from '../js/town_gen.js';
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); r.shadowMap.enabled = true; document.body.append(r.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color('#9fd0f4');
+const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, .5, 500);
+sc.add(new THREE.HemisphereLight('#dff0ff', '#6a8a5a', 1.6)); const sun = new THREE.DirectionalLight('#fff4e0', 2.2); sun.position.set(30, 50, 40); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80 }); sc.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: '#7cb35a' })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; sc.add(ground);
+const styles = Object.keys(STYLES), which = new URLSearchParams(location.search).get('s');
+const list = which ? [which] : styles;
+list.forEach((s, row) => { const lots = []; for (let i = 0; i < 6; i++) lots.push({ x: (i - 2.5) * 11, z: -row * 16, y: 0, rot: 0 }); const t = buildHouses(s, lots, 7 + row); sc.add(t.group); t.glass.emissiveIntensity = location.search.includes('night') ? 1.4 : 0; });
+if (!which) { const w = windmill(); w.group.position.set(40, 0, 0); sc.add(w.group); const l = lighthouse(); l.group.position.set(40, 0, -30); sc.add(l.group); const g = greatTree(); g.position.set(40, 0, -60); sc.add(g); }
+const n = list.length; cam.position.set(0, 16 + n * 6, 22 + n * 4); cam.lookAt(0, 0, -n * 7);
+if (location.search.includes('night')) { sc.background = new THREE.Color('#0d1530'); sun.intensity = .15; }
+r.render(sc, cam); window.__done = true;
+</script></body></html>

@@ -13,12 +13,13 @@ import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
 import { createFieldBattle } from './fieldbattle.js';
 import { GFX, clamp, lerp, smooth, rng, fbm, col, makeSky, makeWater, grassField as grassFieldImpl, particles, makePost, envFromSky } from './world_env.js';
-import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, TOWN_LOTS, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K } from './terrain.js';
+import { buildHouses, windmill, lighthouse, greatTree, lightString, wallSegment, Builder as TB, box as tbBox, cyl as tbCyl, cone as tbCone, frame as tbFrame, col as tbCol } from './town_gen.js';
+import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, TOWN_LOTS, TOWN_PLAN, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K } from './terrain.js';
 
 export const TYPE_COL = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
 // a popup the player is using (travel map, starter pick, Lattice, menu, update dialog): story scenes wait for it to close
 const SWIM_Y = .3; // lift the model while swimming so head and shoulders ride on the surface (ground under shallow water is at -0.45)
-const uiBlocked = () => !!document.querySelector('#wModal:not([hidden]), #lattice:not([hidden]), #gMenu:not([hidden]), #lvup:not([hidden]), #modal:not([hidden]), .upd');
+const uiBlocked = () => document.body.classList.contains('prolog-on') || !!document.querySelector('#wModal:not([hidden]), #lattice:not([hidden]), #gMenu:not([hidden]), #lvup:not([hidden]), #modal:not([hidden]), .upd, .prolog');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /* ------------------------------------------------------------------ people */
@@ -159,7 +160,7 @@ export function createWorld(canvas, hooks = {}) {
   let style = 'toon', comic = true, quality = 'medium', pr = 1, prMax = 1, prT = 0, post = null, shadows = true, viewFar = 200, frameN = 0, vegR = 150;
   // build-time context (the town BUILD code below uses these names)
   let root = null, areaId = 'harbor', A = AREAS.harbor, h = H;
-  let colliders = [], items = [], villagers = [], animated = [], tickers = [], markers = [], lampGlows = [], bolt = null;
+  let colliders = [], items = [], villagers = [], animated = [], tickers = [], markers = [], lampGlows = [], nightFx = [], bolt = null;
   const grass = { push() {} }, grassField = () => null, addEchoes = () => {}, addNPC = () => {};
   // runtime
   // busy = something owns the player (a talk, a scene, a battle intro). Several can overlap, so it is a hold count:
@@ -218,7 +219,12 @@ export function createWorld(canvas, hooks = {}) {
   }
   const nearPath = (x, z, d = 2.2) => (TOWN_PATHS[areaId] || []).some(p => segDist(x, z, p.pts) < d);
   const clearOf = (x, z, d) => !colliders.some(c => Math.hypot(c.x - x, c.z - z) < (c.box ? Math.max(c.hw, c.hd) : c.r) + d);
-  const onLot = (x, z, pad = 6.5) => (TOWN_LOTS[areaId] || []).some(l => Math.hypot(l.x - x, l.z - z) < pad); // planned building lots stay clear of trees & rocks
+  const R0 = () => REGIONS[areaId], iceRinks = [], pushables = [];
+  // props you can shove around (barrels, crates): they slide with friction, stop against walls and push back when stuck
+  function pushable(name, x, z, { rot = 0, scale = 1, r = .48 } = {}) { if (!has(name)) return; const m = kit(name, x, z, { rot, scale }); if (!m) return;
+    const y0 = m.position.y - h(x, z); pushables.push({ m, x: x + R0().x, z: z + R0().z, ox: R0().x, oz: R0().z, y0, r: r * scale, vx: 0, vz: 0, wob: 0 }); }
+  const onIce = (x, z) => iceRinks.some(k => Math.hypot(k.x - x, k.z - z) < k.r);
+  const onLot = (x, z, pad = 6.5) => (TOWN_LOTS[areaId] || []).some(l => Math.hypot(l.x - x, l.z - z) < pad) || (TOWN_PLAN[areaId]?.reserve || []).some(([rx, rz, rr]) => Math.hypot(rx - x, rz - z) < rr + pad * .3); // planned building lots stay clear of trees & rocks
   const offPath = (x, z) => !nearPath(x, z, 2.6) && !onLot(x, z);
 
   function lamp(x, z) {
@@ -384,7 +390,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       addVillagers(2, 41, [[0, 20], [4, 10], [12, 5], [4, 10]]); 
     },
     sandreach() {
-      scatter(CLIFFS, 14, 31, (x, z, y) => offPath(x, z) && clearOf(x, z, 6), { rMin: 26, rMax: 50, sMin: 1.6, sMax: 2.8, blockR: 3, tint: { all: '#e8a36a' } });
+      scatter(CLIFFS, 14, 31, (x, z, y) => offPath(x, z) && clearOf(x, z, 6), { rMin: 62, rMax: 78, sMin: 1.6, sMax: 2.8, blockR: 3, tint: { all: '#e8a36a' } });
       scatter(['FL_Rock_Sand', 'FL_Rock_Sand'], 30, 32, (x, z, y) => offPath(x, z) && clearOf(x, z, 2), { rMin: 8, rMax: 50, sMin: .5, sMax: 1.1, blockR: .9 });
       scatter(PALMS, 14, 33, (x, z, y) => y < 1.4 && offPath(x, z) && clearOf(x, z, 2), { rMin: 14, rMax: 46, sMin: 1.5, sMax: 2.2, blockR: .5 });
       scatter(DEAD, 10, 34, (x, z, y) => offPath(x, z) && clearOf(x, z, 4), { rMin: 12, rMax: 46, sMin: .4, sMax: .6, blockR: .6 });
@@ -415,7 +421,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     voltspire() {
       scatter(DEAD, 20, 51, (x, z, y) => offPath(x, z) && clearOf(x, z, 4), { rMin: 10, rMax: 48, sMin: .45, sMax: .75, blockR: .6 });
       scatter(ROCKS, 40, 52, (x, z, y) => offPath(x, z) && clearOf(x, z, 2), { rMin: 8, rMax: 50, sMin: .5, sMax: 1.4, blockR: 1 });
-      scatter(CLIFFS, 10, 53, (x, z, y) => offPath(x, z) && clearOf(x, z, 6), { rMin: 30, rMax: 50, sMin: 1.4, sMax: 2.4, blockR: 3, tint: { all: '#9a9480' } });
+      scatter(CLIFFS, 10, 53, (x, z, y) => offPath(x, z) && clearOf(x, z, 6), { rMin: 62, rMax: 78, sMin: 1.4, sMax: 2.4, blockR: 3, tint: { all: '#9a9480' } });
       scatter(['FL_TallGrass_Dry'], 80, 54, (x, z, y) => offPath(x, z), { rMin: 6, rMax: 48, sMin: .8, sMax: 1.3, shadow: false, tint: null });
       kit('Platform_Metal', 0, 0, { yOff: .05, scale: 1.5 }); kit('Column_Pipes', 0, 0, { scale: 2.2, block: 1.4 }); kit('Prop_Crate_Large', 4, 3, { scale: .7, rot: .4, block: 1.2 }); kit('Prop_Barrel1', -3.5, 3.5, { scale: .9 });
       const top = new THREE.Mesh(new THREE.IcosahedronGeometry(.9, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff2a0').multiplyScalar(3) })); top.position.set(0, h(0, 0) + 11.4, 0); root.add(top); animated.push(k => { top.scale.setScalar(1 + Math.sin(k * 9) * .15); });
@@ -481,14 +487,20 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     }
     return null;
   }
+  // who works outside the procedural houses of each town (one in four houses, capped by quality)
+  const HOUSE_FOLK = { harbor: ['fisher', 'merchant', 'worker_f', 'elder_m', 'merchant_f'], mistvale: ['gardener', 'fisher', 'elder_f', 'gardener'], starfall: ['scholar', 'elder_m', 'scholar', 'worker_f'],
+    frostline: ['docker', 'worker_f', 'elder_m'], voltspire: ['smith', 'scholar', 'worker_f', 'smith'], sandreach: ['merchant', 'merchant_f', 'smith', 'gardener'] };
+  // signature kit buildings kept among the procedural houses (one or two per town, they anchor the regional look)
+  const SIGNATURE = { harbor: ['SR_Market_B', 'SR_Market_A'], mistvale: ['MV_Lookout', 'MV_Stilt'], starfall: ['SF_Archive'], frostline: ['FL_Lodge'], voltspire: ['VS_Station'], sandreach: ['SR_Workshop', 'SR_Market_A', 'SR_Market_B'] };
   function decorateTown(id) {
     if (!has('TT_RelayCenter') || id === 'rift') return;
-    const R = REGIONS[id], seed = id.length * 97;
-    const npcs = QS.ROSTER.filter(r => r.pos.region === id || Math.hypot(r.pos.x - R.x, r.pos.z - R.z) < 60).map(r => [r.pos.x - R.x, r.pos.z - R.z, 3.5]);
+    const R = REGIONS[id], seed = id.length * 97, plan = TOWN_PLAN[id] || {};
+    const npcs = QS.ROSTER.filter(r => r.pos.region === id || Math.hypot(r.pos.x - R.x, r.pos.z - R.z) < 70).map(r => [r.pos.x - R.x, r.pos.z - R.z, 3.5]);
+    { const sp = AREAS[id]?.spawn || [0, 18]; npcs.push([sp[0], sp[1], 7], [sp[0] * .5, (sp[1] + 2) * .5, 5]); if (id === 'harbor') npcs.push([DEFAULT_SPAWN.x - R.x, DEFAULT_SPAWN.z - R.z, 7], [9, 13, 5]); } // the arrival spot and the walk to the plaza stay open (first view of the town)
     // ---- the town plan: every building stands on a lot beside a street, door to the street (terrain.js TOWN_LOTS)
-    const lots = (TOWN_LOTS[id] || []).map(l => ({ ...l, used: false }));
+    const lots = (TOWN_LOTS[id] || []).map(l => ({ ...l, y: h(l.x, l.z), used: false }));
     const near = (l, r) => npcs.some(([nx, nz, nr]) => Math.hypot(nx - l.x, nz - l.z) < nr + r) || items.some(it => Math.hypot(it.x - l.x, it.z - l.z) < r + 2.5);
-    const take = (l, rad) => { l.used = true; for (const o of lots) if (o !== l && Math.hypot(o.x - l.x, o.z - l.z) < rad + 4.5) o.used = true; npcs.push([l.x, l.z, rad + 1]); };
+    const take = (l, rad) => { l.used = true; for (const o of lots) if (o !== l && Math.hypot(o.x - l.x, o.z - l.z) < rad + 3.2) o.used = true; npcs.push([l.x, l.z, rad + 1]); };
     const pick = (tx, tz, rad) => lots.filter(l => !l.used && !near(l, rad * .6)).sort((a, b) => Math.hypot(a.x - tx, a.z - tz) - Math.hypot(b.x - tx, b.z - tz))[0];
     const raise = (name, l, sc) => { const bb = bounds(name), w = (bb.max.x - bb.min.x) * sc, d = (bb.max.z - bb.min.z) * sc, rad = Math.max(w, d) / 2;
       kit(name, l.x, l.z, { y: l.y - .12, rot: l.rot, scale: sc }); blockBox(l.x, l.z, w * .46, d * .46, l.rot); take(l, rad);
@@ -500,39 +512,31 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const wid = WARDEN_OF[id], w = wid && QS.ROSTER.find(r => r.id === wid);
     if (w) { const wx = w.pos.x - R.x, wz = w.pos.z - R.z, gl = pick(wx, wz, 6);
       if (gl) { raise('TT_Gym', gl, .82); const tg = label(AREAS[id].name.toUpperCase() + ' TRIAL HALL', (P.CAST[wid]?.name || 'Warden') + "'s Trial", '#c9a4ff'); tg.position.set(gl.x, gl.y + 9, gl.z); tg.scale.multiplyScalar(1.3); root.add(tg); } }
-    // regional houses on the remaining lots, nearest the plaza first, types interleaved so streets are varied
-    const DIST = {
-      mistvale: [['MV_Cottage_A', 3], ['MV_Cottage_B', 3], ['MV_Stilt', 2], ['MV_Lookout', 1]],
-      starfall: [['SF_Archive', 1], ['SF_House', 6]],
-      frostline: [['FL_Lodge', 1], ['FL_Chalet_A', 4], ['FL_Chalet_B', 4]],
-      voltspire: [['VS_Station', 1], ['VS_Block_B', 3], ['VS_Block_A', 3], ['VS_Block_C', 3]],
-      sandreach: [['SR_Workshop', 1], ['SR_Adobe_B', 3], ['SR_Adobe_A', 3], ['SR_Adobe_C', 3], ['SR_Market_A', 1], ['SR_Market_B', 1]],
-      harbor: [['SR_Market_B', 1], ['SR_Market_A', 1]],
-    }[id] || [];
-    const queue = []; for (let round = 0; queue.length < 40 && round < 8; round++) for (const [name, n] of DIST) if (round < n && has(name)) queue.push(name);
-    let di = 0;
-    for (const l of lots.slice().sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2))) {
-      if (l.used || near(l, 2.5)) continue;
-      const name = queue.shift(), seedL = seed + 40 + di++ * 7;
-      if (name) { const sc = name.includes('Market') ? 1 : .85, { d } = raise(name, l, sc), who = BLD_JOB[name];
-        if (who && di % 3 !== 2) { const dep = d / 2 + 1.7, fx = l.x + Math.sin(l.rot) * dep, fz = l.z + Math.cos(l.rot) * dep;
-          addWorker(who, fx + Math.cos(l.rot) * 1.4, fz - Math.sin(l.rot) * 1.4, l.rot + (ARCH[who].job === 'chat' ? 0 : Math.PI * .1), seedL); } }
-      else if (id === 'harbor') { // Lumen Harbor keeps its own plaster-and-brick houses (procedural kit), now lined up on the streets
-        const Rh = rng(seedL), hw = 2 + (Rh() * 2 | 0), hd = 2 + (Rh() < .5 ? 1 : 0), fl = Rh() < .45 ? 2 : 1, wall = Rh() < .35 ? 'Brick' : 'Plaster';
-        house(root, l.x, l.y - .05, l.z, { w: hw, d: hd, floors: fl, wall, seed: seedL, rot: l.rot, balcony: fl > 1 }); blockBox(l.x, l.z, hw + .3, hd + .3, l.rot); take(l, Math.max(hw, hd) + .5);
-        decorLog.push(['bld', id, 'house', l.x + R.x, l.z + R.z]);
-        if (has('TT_Flowerbed') && Rh() < .7) { const sd = Rh() < .5 ? -1 : 1, fx = l.x + Math.sin(l.rot) * (hd + 1.4) + Math.cos(l.rot) * sd * (hw + .4), fz = l.z + Math.cos(l.rot) * (hd + 1.4) - Math.sin(l.rot) * sd * (hw + .4); kit('TT_Flowerbed', fx, fz, { rot: l.rot, block: .6 }); } }
-      else { // nothing left to build: a small pocket park, so a pad never sits empty
-        take(l, 3); if (has('TT_Bench')) kit('TT_Bench', l.x + Math.sin(l.rot) * 1.2, l.z + Math.cos(l.rot) * 1.2, { rot: l.rot, block: .7 });
-        if (has('TT_Flowerbed')) { kit('TT_Flowerbed', l.x - Math.cos(l.rot) * 2.2, l.z + Math.sin(l.rot) * 2.2, { rot: l.rot, block: .6 }); kit('TT_Flowerbed', l.x + Math.cos(l.rot) * 2.2, l.z - Math.sin(l.rot) * 2.2, { rot: l.rot, block: .6 }); }
-        kit(id === 'frostline' ? 'FL_Pine_Snow' : id === 'sandreach' ? 'FL_Palm' : 'FL_Tree_A', l.x - Math.sin(l.rot) * 2, l.z - Math.cos(l.rot) * 2, { scale: .9, block: .5 }); }
+    // signature kit buildings: spread around the town (every few lots), the rest are procedural houses in the town's own style
+    const sig = (SIGNATURE[id] || []).filter(has), byDist = lots.slice().sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2));
+    sig.forEach((name, i) => { const l = byDist.filter(l => !l.used && !near(l, 2.5))[3 + i * 5]; if (!l) return;
+      const sc = name.includes('Market') ? 1 : .85, { d } = raise(name, l, sc), who = BLD_JOB[name];
+      if (who) { const dep = d / 2 + 1.7, fx = l.x + Math.sin(l.rot) * dep, fz = l.z + Math.cos(l.rot) * dep; addWorker(who, fx + Math.cos(l.rot) * 1.4, fz - Math.sin(l.rot) * 1.4, l.rot + (ARCH[who].job === 'chat' ? 0 : Math.PI * .1), seed + 300 + i); } });
+    const hl = byDist.filter(l => !l.used && !near(l, 2.2));
+    if (hl.length && plan.style) {
+      const res = buildHouses(plan.style, hl, seed * 13 + 7); root.add(res.group);
+      res.group.traverse(o => { if (o.isMesh) { o.castShadow = quality !== 'low'; o.receiveShadow = true; } });
+      for (const c of res.colliders) blockBox(c.x, c.z, c.hw, c.hd, c.rot);
+      const gm = res.glass, night = plan.style === 'tech' ? 1.9 : 1.5, dayI = plan.style === 'tech' ? .25 : 0; nightFx.push(day => { gm.emissiveIntensity = lerp(night, dayI, day); });
+      const folk = HOUSE_FOLK[id] || [], cap = quality === 'high' ? 9 : quality === 'medium' ? 6 : 3; let nW = 0;
+      hl.forEach((l, i) => { l.used = true; decorLog.push(['bld', id, 'house:' + plan.style, l.x + R.x, l.z + R.z]);
+        if (i % 4 === 1 && nW < cap && folk.length) { const who = folk[i % folk.length], dep = res.colliders[i].hd + 1.6, fx = l.x + Math.sin(l.rot) * dep, fz = l.z + Math.cos(l.rot) * dep;
+          if (ARCH[who] && addWorker(who, fx + Math.cos(l.rot) * 1.8, fz - Math.sin(l.rot) * 1.8, l.rot + Math.PI * .15, seed + 500 + i)) nW++; } });
+      decorLog.push(['houses', id, hl.length, res.tris | 0]);
     }
-    // street lamps at a steady rhythm along the streets (not the footpaths), alternating sides
-    { let k = 0; for (const p of TOWN_PATHS[id] || []) { if (p.spur) continue; for (let i = 0; i < p.pts.length - 1; i++) {
-      const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
-      for (let d = 6; d < L - 2; d += 13) { const sd = k++ % 2 ? 1 : -1, x = ax + dx * d - dz * sd * 2.7, z = az + dz * d + dx * sd * 2.7;
-        if (Math.hypot(x, z - 2) < 13 || Math.hypot(x, z) > 42 || h(x, z) < .4 || !clearOf(x, z, 1.2) || (TOWN_PATHS[id] || []).some(q => q.spur && segDist(x, z, q.pts) < 1.6)) continue;
-        lamp(x, z); } } } }
+    townLandmarks(id, npcs);
+    // street lamps at a steady rhythm along the streets (not the footpaths), alternating sides; capped for phones (each lamp is a draw call)
+    { let k = 0, n = 0; const cap = quality === 'high' ? 44 : quality === 'medium' ? 30 : 18, edge = (plan.edge || 44) - 2;
+      for (const p of TOWN_PATHS[id] || []) { if (p.spur) continue; for (let i = 0; i < p.pts.length - 1; i++) {
+        const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az); if (L < 1e-6) continue; const dx = (bx - ax) / L, dz = (bz - az) / L;
+        for (let d = 6; d < L - 2; d += 16) { const sd = k++ % 2 ? 1 : -1, x = ax + dx * d - dz * sd * 2.7, z = az + dz * d + dx * sd * 2.7;
+          if (n >= cap || onLot(x, z, .5) || Math.hypot(x, z - 2) < 13 || Math.hypot(x, z - 2) > edge || h(x, z) < .4 || !clearOf(x, z, 1.2) || (TOWN_PATHS[id] || []).some(q => q.spur && segDist(x, z, q.pts) < 1.6)) continue;
+          lamp(x, z); n++; } } } }
     // benches & flowerbeds along the town paths
     const Rr = rng(seed + 3);
     for (const p of TOWN_PATHS[id] || []) for (let i = 0; i < p.pts.length - 1; i++) {
@@ -540,11 +544,103 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
       for (let d = 4; d < L - 2; d += 9) {
         const side = Rr() < .5 ? -1 : 1, x = ax + dx * d - dz * side * 2.9, z = az + dz * d + dx * side * 2.9;
-        if (Math.hypot(x, z) < 12 || !clearOf(x, z, 1.4) || h(x, z) < .6 || npcs.some(([nx, nz]) => Math.hypot(nx - x, nz - z) < 3)) continue;
-        const name = Rr() < .55 ? 'TT_Flowerbed' : 'TT_Bench', rot = Math.atan2(dz * side * -1, -dx * side) ;
+        if (Math.hypot(x, z) < 12 || !clearOf(x, z, 1.4) || h(x, z) < .6 || onLot(x, z, 4.6) || npcs.some(([nx, nz]) => Math.hypot(nx - x, nz - z) < 3)) continue;
+        const name = Rr() < .55 ? 'TT_Flowerbed' : 'TT_Bench';
         kit(name, x, z, { rot: Math.atan2(-(-dz * side), -(dx * side)), block: .7 });
       }
     }
+  }
+
+  /* ================================================================== landmark set pieces (one idea per town, inspired by the films' towns) */
+  function townLandmarks(id, npcs) {
+    const plan = TOWN_PLAN[id] || {}, mat = () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 });
+    const mesh = (B, shadow = true) => { const m = new THREE.Mesh(B.geometry(), mat()); m.castShadow = shadow && quality !== 'low'; m.receiveShadow = true; root.add(m); return m; };
+    const free = (x, z, rad) => !nearPath(x, z, rad + 1.2) && !onLot(x, z, rad + 4.2) && clearOf(x, z, rad) && !npcs.some(([nx, nz, nr]) => Math.hypot(nx - x, nz - z) < nr + rad) && !items.some(it => Math.hypot(it.x - x, it.z - z) < rad + 3);
+    const cands = (r0, r1, sd, n = 260) => { const Rc = rng(sd), o = []; for (let i = 0; i < n; i++) { const a = Rc() * Math.PI * 2, r = r0 + Rc() * (r1 - r0); o.push([Math.cos(a) * r, 2 + Math.sin(a) * r]); } return o; };
+    const spots = (list, rad, count, apart, score) => { const out = []; for (const [x, z] of list.filter(([x, z]) => free(x, z, rad)).sort((a, b) => score(a) - score(b))) { if (out.some(([ox, oz]) => Math.hypot(ox - x, oz - z) < apart)) continue; out.push([x, z]); if (out.length >= count) break; } return out; };
+    const poleString = (pts, color, hgt = 4.6) => { // lantern strings between thin posts
+      const B = new TB(); for (const [x, z] of pts) { tbCyl(B, tbFrame(x, h(x, z) - .2, z, 0), 0, 0, 0, .09, hgt + .3, tbCol('#3a3a44'), 6); block(x, z, .25); }
+      mesh(B, false); const ls = lightString(pts.map(([x, z]) => [x, h(x, z) + hgt, z]), color, .7); root.add(ls.group);
+      nightFx.push(day => ls.mat.color.copy(ls.base).multiplyScalar(lerp(2.6, .9, day))); };
+    if (id === 'harbor') {
+      // windmills on the hills above the port (a wind-festival town), sails always turning
+      for (const [x, z] of spots(cands(28, 58, 11), 3, 3, 14, ([x, z]) => -h(x, z))) {
+        const wm = windmill(); wm.group.position.set(x, h(x, z) - .2, z); wm.group.rotation.y = Math.atan2(-x, -(z - 2)); root.add(wm.group); block(x, z, 2.1);
+        const sp = .5 + (x * 7 % 3) * .1; animated.push(k => { wm.blades.rotation.z = k * sp; }); decorLog.push(['lm', id, 'windmill', x + R0().x, z + R0().z]); }
+      // a lighthouse on the rocks at the end of the harbour, its beam sweeping at night
+      // …on a rock at the water's edge past the pier (searched on a grid: shallow water or beach, clear of the docks and boats)
+      let lh = null, best = 1e9; for (let x = -10; x <= 60; x += 2) for (let z = 28; z <= 64; z += 2) { const y = h(x, z); if (y < -1.6 || y > .5) continue;
+        if (Math.hypot(x - 26.5, z - 41) < 5 || (Math.abs(x - 21) < 3.5 && z > 19 && z < 47) || (z > 33 && z < 39 && x > 18 && x < 34) || nearPath(x, z, 3)) continue;
+        const sc = Math.hypot(x - 32, z - 50); if (sc < best) { best = sc; lh = [x, z]; } }
+      if (lh) { const [x, z] = lh, L = lighthouse(), y0 = Math.max(h(x, z), -1.6), top = Math.max(.7, y0 + .6), RB = new TB();
+        tbCyl(RB, tbFrame(x, y0 - 1.2, z, 0), 0, 0, 0, 2.6, top - y0 + 1.2, tbCol('#8f8a80'), 9, tbCol('#a39d92')); tbCyl(RB, tbFrame(x + 1.6, y0 - 1, z - 1.2, .5), 0, 0, 0, 1.3, top - y0 + .5, tbCol('#7d786f'), 7, tbCol('#958f84')); mesh(RB);
+        L.group.position.set(x, top, z); root.add(L.group); block(x, z, 2.6);
+        animated.push(k => { L.pivot.rotation.y = k * .7; }); nightFx.push(day => { L.beam.material.opacity = lerp(.32, 0, day); }); decorLog.push(['lm', id, 'lighthouse', x + R0().x, z + R0().z]); }
+      // bunting over the plaza streets (canal-city festival)
+      poleString([[-12, -6], [-13, 8], [-5, 14], [7, 14], [13, 8], [12, -5]], '#ffb35a', 4.4);
+    } else if (id === 'mistvale') {
+      // the Great Tree: the old heart of the forest village (its ground is reserved in the town plan)
+      const gt = (plan.reserve || [])[0];
+      if (gt) { const [x, z] = gt, g = greatTree(); g.position.set(x, h(x, z), z); g.traverse(o => { if (o.isMesh) o.castShadow = quality !== 'low'; }); root.add(g); block(x, z, 3.2); decorLog.push(['lm', id, 'greattree', x + R0().x, z + R0().z]);
+        const ff = lightString([[x - 4, h(x, z) + 5, z - 3], [x + 4, h(x, z) + 6, z - 2], [x + 3, h(x, z) + 5, z + 4], [x - 4, h(x, z) + 5.5, z + 3], [x - 4, h(x, z) + 5, z - 3]], '#c8ff9a', .5, 1.1); root.add(ff.group);
+        nightFx.push(day => ff.mat.color.copy(ff.base).multiplyScalar(lerp(2.8, .4, day))); }
+      // fishing piers on stilts into the two ponds
+      for (const [cx, cz] of [[12, -6], [-16, 12]]) { let sx = cx, sz = cz; const ang = Math.atan2(2 - cz, -cx);
+        for (let r = 0; r < 16; r += .5) { sx = cx + Math.cos(ang) * r; sz = cz + Math.sin(ang) * r; if (h(sx, sz) > .45) break; }
+        const B = new TB(), len = Math.min(7, Math.hypot(sx - cx, sz - cz) - 1.5); if (len < 2) continue; const ry = Math.atan2(cx - sx, cz - sz), T = tbFrame(sx, .2, sz, ry);
+        tbBox(B, T, 0, 0, len / 2, 1.6, .16, len + .6, tbCol('#8a6440')); for (let k = 0; k <= len; k += 1.6) for (const sd of [-.7, .7]) tbBox(B, T, sd, -1.4, k, .16, 1.6, .16, tbCol('#5b3d26'));
+        tbBox(B, T, .75, .16, len / 2, .08, .6, len, tbCol('#5b3d26')); mesh(B); blockBox(sx + Math.sin(ry) * len / 2, sz + Math.cos(ry) * len / 2, .9, len / 2, ry); }
+    } else if (id === 'starfall') {
+      // stone arches over the terrace streets, a star lantern on each (a star-festival town)
+      const glow = new THREE.MeshStandardMaterial({ vertexColors: true, emissive: new THREE.Color('#ffe08a'), emissiveIntensity: 1, roughness: .4 }), BG = new TB(), B = new TB();
+      for (const st of plan.streets || []) { if (st.length !== 2) continue; const [[ax, az], [bx, bz]] = st, L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L, d = Math.min(L - 2, 15);
+        const x = ax + dx * d, z = az + dz * d, y = h(x, z), T = tbFrame(x, y - .2, z, Math.atan2(dx, dz));
+        for (const sd of [-3.1, 3.1]) { tbBox(B, T, sd, 0, 0, .9, 5, .9, tbCol('#b8bdd6')); block(x + Math.cos(Math.atan2(dx, dz)) * sd, z - Math.sin(Math.atan2(dx, dz)) * sd, .6); }
+        tbBox(B, T, 0, 5, 0, 7.4, .7, 1.1, tbCol('#c4c8dc')); tbBox(B, T, 0, 5.7, 0, 1.2, .5, .6, tbCol('#3d4a8a')); tbBox(BG, T, 0, 6.2, 0, .7, .7, .3, tbCol('#ffd27a')); }
+      mesh(B); const gm = new THREE.Mesh(BG.geometry(), glow); root.add(gm); nightFx.push(day => { glow.emissiveIntensity = lerp(2.4, .3, day); });
+      poleString([[-11, -3], [-13, 7], [-6, 14], [6, 14], [13, 7], [11, -3]], '#ffd27a', 4.8); poleString([[-14, 9], [0, 17], [14, 9]], '#9ad0ff', 5.4);
+    } else if (id === 'frostline') {
+      // the frozen lake becomes a skating rink, with festival lights around it (ice under the player's feet: slippery, see moveFeel)
+      const [cx, cz] = [14, 14], y = h(cx, cz); const ice = new THREE.Mesh(new THREE.CircleGeometry(8.6, 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#cfeaff', roughness: .12, metalness: .05, polygonOffset: true, polygonOffsetFactor: -2 }));
+      ice.position.set(cx, y + .04, cz); ice.receiveShadow = true; root.add(ice); iceRinks.push({ x: cx + R0().x, z: cz + R0().z, r: 8.4 });
+      const ring = []; for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; ring.push([cx + Math.cos(a) * 10.2, cz + Math.sin(a) * 10.2]); } ring.push(ring[0]);
+      poleString(ring.filter(([x, z]) => !nearPath(x, z, 1.4)), '#ffcf80', 4.2); decorLog.push(['lm', id, 'rink', cx + R0().x, cz + R0().z]);
+    } else if (id === 'voltspire') {
+      // wind turbines on the ridge and radio masts with blinking beacons (a storm-powered city)
+      const red = new THREE.MeshBasicMaterial({ color: '#ff3a2a' });
+      for (const [x, z] of spots(cands(44, 60, 51), 2.5, 4, 16, ([x, z]) => -h(x, z))) {
+        const B = new TB(), T = tbFrame(0, 0, 0, 0); tbCyl(B, T, 0, 0, 0, .55, 15, tbCol('#e8ecf0'), 10); tbBox(B, T, 0, 15, -.2, 1.1, 1.1, 2.2, tbCol('#d8dde4'));
+        const g = new THREE.Group(), m = new THREE.Mesh(B.geometry(), mat()); m.castShadow = quality !== 'low'; g.add(m);
+        const BB = new TB(); for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2, TT = (lx, ly, lz) => [lx * Math.cos(a) - ly * Math.sin(a), lx * Math.sin(a) + ly * Math.cos(a), lz]; BB.quad(TT(-.25, .3, 0), TT(.25, .3, 0), TT(.08, 7.5, 0), TT(-.08, 7.5, 0), tbCol('#f4f6f8')); BB.quad(TT(.25, .3, 0), TT(-.25, .3, 0), TT(-.08, 7.5, 0), TT(.08, 7.5, 0), tbCol('#dfe4ea')); }
+        const bl = new THREE.Mesh(BB.geometry(), mat()); bl.position.set(0, 15.5, 1); g.add(bl); const bc = new THREE.Mesh(new THREE.SphereGeometry(.2, 6, 4), red); bc.position.set(0, 16.2, -.2); g.add(bc);
+        g.position.set(x, h(x, z) - .2, z); g.rotation.y = Math.atan2(-x, -(z - 2)); root.add(g); block(x, z, .9);
+        const sp = 1.1 + (Math.abs(x) % 3) * .15; animated.push(k => { bl.rotation.z = k * sp; bc.visible = (k * 1.2 + x) % 2 < .35; }); decorLog.push(['lm', id, 'turbine', x + R0().x, z + R0().z]); }
+    } else if (id === 'sandreach') {
+      // the walled bazaar: a crenellated wall with gate towers wherever a street or road passes, and an oasis inside
+      const rw = plan.walls || 56, seg = 40, B = new TB(), gap = [];
+      for (let i = 0; i < seg; i++) { const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2, am = (a0 + a1) / 2, mx = Math.cos(am) * rw, mz = 2 + Math.sin(am) * rw;
+        const road = nearPath(mx, mz, 4.5) || roadDist(mx + R0().x, mz + R0().z) < 5.5 || npcs.some(([nx, nz]) => Math.hypot(nx - mx, nz - mz) < 5) || items.some(it => Math.hypot(it.x - mx, it.z - mz) < 5);
+        if (road) { gap.push(am); continue; }
+        const x0 = Math.cos(a0) * rw, z0 = 2 + Math.sin(a0) * rw, x1 = Math.cos(a1) * rw, z1 = 2 + Math.sin(a1) * rw, y = Math.min(h(x0, z0), h(x1, z1), h(mx, mz));
+        wallSegment(B, x0, z0, x1, z1, y, '#e2b07a', 3.4); blockBox(mx, mz, Math.hypot(x1 - x0, z1 - z0) / 2 + .1, .6, Math.atan2(x1 - x0, z1 - z0) + Math.PI / 2); }
+      for (const am of gap) for (const da of [-.5, .5]) { const a = am + da * Math.PI * 2 / seg, x = Math.cos(a) * rw, z = 2 + Math.sin(a) * rw, T = tbFrame(x, h(x, z) - .4, z, -a);
+        tbBox(B, T, 0, 0, 0, 2.2, 5.2, 2.2, tbCol('#d9a066')); tbBox(B, T, 0, 5.2, 0, 2.6, .5, 2.6, tbCol('#f1d2a2')); block(x, z, 1.4); }
+      mesh(B); decorLog.push(['lm', id, 'walls', gap.length]);
+      // the bazaar square: a well-fountain and a ring of market stalls with striped awnings, facing the centre
+      fountain(0, 2); const AW = ['#e2683c', '#2fb3a5', '#3d8fd6', '#f2c03d'], BA = new TB();
+      for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2 + .2, x = Math.cos(a) * 9.6, z = 2 + Math.sin(a) * 9.6; if (nearPath(x, z, 1.8) || !clearOf(x, z, 1.6)) continue;
+        const rot = Math.atan2(-x, 2 - z); if (has('PR_Stall_Empty')) kit('PR_Stall_Empty', x, z, { rot, scale: 1.05, block: 1 }); else block(x, z, 1);
+        const T = tbFrame(x, h(x, z), z, rot); for (let k = 0; k < 5; k++) tbBox(BA, T, -1.2 + k * .6, 2.55, .2, .6, .08, 2.2, tbCol(k % 2 ? '#fff4e0' : AW[i % AW.length]));
+        if (has('PR_FarmCrate_Apple')) kit(i % 2 ? 'PR_FarmCrate_Apple' : 'PR_Barrel_Apples', x + Math.cos(rot) * 1.6, z - Math.sin(rot) * 1.6, { rot, block: .4 }); }
+      mesh(BA, false);
+      // oasis: palms and reeds around the pond
+      const [ox, oz] = [-29, -9]; for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2 + .3, x = ox + Math.cos(a) * 8.4, z = oz + Math.sin(a) * 8.4; if (!nearPath(x, z, 1.6) && clearOf(x, z, 1)) kit('FL_Palm', x, z, { scale: 1.6 + (i % 3) * .2, rot: a, block: .4 }); }
+      scatter(['FL_TallGrass', 'FL_Fern'], 26, 39, (x, z, y) => y > -.1 && y < .6 && Math.hypot(x - ox, z - oz) < 9, { rMin: 20, rMax: 40, sMin: .8, sMax: 1.3, shadow: false });
+      decorLog.push(['lm', id, 'oasis', ox + R0().x, oz + R0().z]);
+    }
+    // a few loose barrels and crates around the square that you can push
+    const PUSH = id === 'voltspire' ? ['PR_Crate_Metal', 'PR_Barrel', 'PR_Crate_Metal'] : id === 'sandreach' ? ['PR_Vase_2', 'PR_Crate_Wooden', 'PR_Barrel'] : ['PR_Barrel', 'PR_Crate_Wooden', 'PR_Barrel_Apples', 'PR_FarmCrate_Empty'];
+    spots(cands(10, 22, 77 + id.length), 1, quality === 'low' ? 3 : 6, 3.5, ([x, z]) => Math.abs(Math.hypot(x, z - 2) - 14)).forEach(([x, z], i) => pushable(PUSH[i % PUSH.length], x, z, { rot: i * 1.3, r: PUSH[i % PUSH.length].includes('Crate') ? .55 : .45 }));
   }
 
   /* ================================================================== terrain streaming (worker) */
@@ -886,6 +982,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (rainP) rainP.userData.amt.value = wet ? wk : 0;
     if (fxP) { const k = fxP.userData.kind; if (k === 'snow' || k === 'dust') fxP.userData.amt.value = .3 + .7 * wk; }
     for (const L of lampGlows) L.m.color.copy(L.base).multiplyScalar(lerp(3.6, 1.1, day));
+    for (const f of nightFx) f(day);
     if (wet && weather.state === 'storm' && Math.random() < dt * .04 * wk) { flash = 1; hooks.sfx?.('zap'); }
     if (water) { const wu = water.userData.u; wu.fogColor.value.copy(scene.fog.color); wu.fogNear.value = scene.fog.near; wu.fogFar.value = scene.fog.far; wu.sky.value.copy(su.bot.value); wu.sunCol.value.copy(sun.color); wu.sunDir.value.copy(sunDir); }
     if (grassMesh) { const gu = grassMesh.userData.grass; if (force || frameN % 30 === 0) { const w = regionWeights(pp.x, pp.z); const b = new THREE.Color(0, 0, 0), tp = new THREE.Color(0, 0, 0);
@@ -899,7 +996,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   function detectPlace(pp, nr) {
     const q = QS.Q();
     { const k = nr.id + (isNight() ? ':n' : ''); if (k !== musKey) { musKey = k; hooks.region?.(nr.id, isNight()); } } // soundtrack follows the nearest region + night
-    if (nr.d < 70) { if (!q.visited[nr.id]) { q.visited[nr.id] = Date.now(); } if (lastRegion !== nr.id) { lastRegion = nr.id; lastRoute = null; const a = AREAS[nr.id]; hooks.onArea?.({ name: a.name, sub: a.sub, echo: a.echo, id: nr.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nr.id); } }
+    if (nr.d < 70) { if (!q.visited[nr.id]) { q.visited[nr.id] = Date.now(); if (nr.id !== 'harbor' && !arrivalQ.includes(nr.id)) arrivalQ.push(nr.id); } if (lastRegion !== nr.id) { lastRegion = nr.id; lastRoute = null; const a = AREAS[nr.id]; hooks.onArea?.({ name: a.name, sub: a.sub, echo: a.echo, id: nr.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nr.id); } }
     else { let best = null, bd = 16; for (const r of ROUTES) { const d = segDist(pp.x, pp.z, r.pts); if (d < bd) { bd = d; best = r; } }
       if (best && lastRoute !== best.id) { lastRoute = best.id; lastRegion = null; hooks.onArea?.({ name: best.name, sub: best.sub, echo: A.echo, route: true, id: best.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nearestRegion(pp.x, pp.z).id); }
       else if (!best && bd >= 16 && nr.d > 95) { const wid = 'wild-' + nr.id; if (lastRoute !== wid) { lastRoute = wid; lastRegion = null; const WN = WILDS[nr.id] || WILDS.harbor;
@@ -980,6 +1077,85 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
   function faceTo(a, x, z) { if (!a) return; const p = a.group.position; a.group.rotation.y = Math.atan2(x - p.x, z - p.z); }
   function savePos() { if (!player) return; const p = player.group.position; P.ensure().world.pos = { v2: 1, v3: K, x: p.x, z: p.z }; }
+
+  /* ---------- camera cinematics: flyovers for the prologue, town arrivals and reveals.
+     A shot = { focus:[x,z] (where terrain must be streamed), dur, cam(e) → [x,y,z], look(e) → [x,y,z], fov, shake } with e = eased 0..1.
+     Terrain streams around the shot's focus instead of the player while it plays. Skippable (stopCinematic). */
+  let focusOverride = null, cineStop = null;
+  const easeIO = k => k < .5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
+  const waitChunks = ms => new Promise(res => { const t0 = performance.now(); const chk = () => (pending <= 0 || performance.now() - t0 > ms) ? res() : setTimeout(chk, 120); chk(); });
+  async function cinematic(shots, o = {}) {
+    if (!player || !shots?.length) return;
+    let stop = false; cineStop = () => { stop = true; };
+    holdOn(); player.vel?.set(0, 0, 0); player.locomote?.(0); document.body.classList.add('cine-on');
+    for (const n of npcs) { if (n.tag) n.tag.visible = false; if (n.mk) n.mk.visible = false; } beacon.visible = false;
+    const fov0 = camera.fov, v = new THREE.Vector3(), lk = new THREE.Vector3();
+    try {
+      for (let i = 0; i < shots.length && !stop; i++) {
+        const S = shots[i]; focusOverride = { x: S.focus[0], z: S.focus[1] }; streamChunks(S.focus[0], S.focus[1], true);
+        for (const id in towns) towns[id].root.visible = Math.hypot(towns[id].x - S.focus[0], towns[id].z - S.focus[1]) < viewFar + 70;
+        for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - S.focus[0], lm.z - S.focus[1]) < viewFar * .85;
+        if (!o.noWait) await waitChunks(S.wait ?? 1600);
+        if (stop) break;
+        o.onShot?.(i, S);
+        const dur = S.dur / (window.__pbxFast || 1);
+        await new Promise(res => { let t = 0; cineCam = (c, dt) => { t += dt; const k = Math.min(1, t / dur), e = S.linear ? k : easeIO(k);
+          v.set(...S.cam(e)); lk.set(...S.look(e)); if (S.shake) { const a = S.shake * (1 - k); v.x += (Math.random() - .5) * a; v.y += (Math.random() - .5) * a; }
+          c.position.copy(v); c.lookAt(lk); const f = S.fov || 50; if (Math.abs(c.fov - f) > .05) { c.fov += (f - c.fov) * Math.min(1, dt * 4); c.updateProjectionMatrix(); }
+          if (k >= 1 || stop) res(); }; });
+      }
+    } finally {
+      cineCam = null; cineStop = null; focusOverride = null; camera.fov = fov0; camera.updateProjectionMatrix(); snap = true; document.body.classList.remove('cine-on'); holdOff();
+      for (const n of npcs) { if (n.tag) n.tag.visible = true; if (n.mk) n.mk.visible = true; } goalT = 0; const pp = player.group.position; streamChunks(pp.x, pp.z, true);
+    }
+  }
+  /* first arrival in a town: a short establishing flyover over its streets, then down behind you */
+  const arrivalQ = [], AUTOTEST = navigator.webdriver && !/[?&]prologue/.test(location.search); // automated checks skip the flyovers unless asked
+  function arrivalShots(id) {
+    const R = REGIONS[id], pp = player.group.position, ry = player.group.rotation.y, cx = R.x, cz = R.z + 2, a0 = Math.atan2(pp.x - cx, pp.z - cz);
+    const bx = pp.x - Math.sin(ry) * 5.6, bz = pp.z - Math.cos(ry) * 5.6;
+    return [
+      { focus: [cx, cz], dur: 6.5, fov: 50, wait: 900, cam: e => { const a = a0 + .9 - e * 1.5, r = 58 - e * 18; return [cx + Math.sin(a) * r, H(cx, cz) + 34 - e * 12, cz + Math.cos(a) * r]; }, look: e => [cx, H(cx, cz) + 2 + e * 2, cz] },
+      { focus: [pp.x, pp.z], dur: 2.6, fov: 58, wait: 300, cam: e => { const k = 1 - e; return [bx + (cx - bx) * k * .4, pp.y + 2.4 + 14 * k, bz + (cz - bz) * k * .4]; }, look: () => [pp.x, pp.y + 1.4, pp.z] },
+    ];
+  }
+  function tryArrival() {
+    if (AUTOTEST) arrivalQ.length = 0;
+    if (!arrivalQ.length || busy || mode !== 'explore' || cineCam || battleCam || uiBlocked() || paused) return;
+    const id = arrivalQ.shift(); hooks.arrival?.(id, AREAS[id]); cinematic(arrivalShots(id), {}).catch(() => {});
+  }
+  /* Warden / rival / GLYPH reveal before the big battles: low angle, slow push-in, name card */
+  const REVEAL = { maren: 'Trial Warden · Lumen Harbor', mira: 'Trial Warden · Mistvale', sable: 'Trial Warden · Starfall', orin: 'Trial Warden · Frostline', vera: 'Trial Warden · Voltspire', dom: 'Trial Warden · Sandreach',
+    kest: 'Rift hunter', kai: 'Ace Trainer', lyra: 'Champion of Veyra', glyph: 'The Echo beneath Node 7', rho: 'Your rival' };
+  async function reveal(np, mirror) {
+    const role = REVEAL[np.id]; if (!role || !np.ch || AUTOTEST) return;
+    const g = np.ch.group, ry = g.rotation.y, p = g.position.clone();
+    // pick a side the camera can stand on (not inside a building): in front, then the sides, then behind
+    const free = (x, z) => { const q = { x, z }; collide(q, .35); return Math.hypot(q.x - x, q.z - z) < 1e-3 && H(x, z) > -.3; };
+    let fx = Math.sin(ry), fz = Math.cos(ry);
+    for (const a of [0, .7, -.7, 1.4, -1.4, Math.PI]) { const tx = Math.sin(ry + a), tz = Math.cos(ry + a); if (free(p.x + tx * 4.6, p.z + tz * 4.6) && free(p.x + tx * 3, p.z + tz * 3)) { fx = tx; fz = tz; break; } }
+    np.ch.play?.(mirror ? 'Interact' : 'Wave', .2, { once: true });
+    await cinematic([{ focus: [p.x, p.z], dur: mirror ? 3.4 : 2.6, fov: 34, shake: mirror ? .25 : 0, wait: 0,
+      cam: e => { const x = p.x + fx * (4.6 - e * 1.6) + fz * .8, z = p.z + fz * (4.6 - e * 1.6) - fx * .8; return [x, Math.max(p.y + .95 + e * .35, H(x, z) + .8, 1.1), z]; }, look: e => [p.x, p.y + 1.5 + e * .1, p.z] }],
+      { noWait: true, onShot: () => hooks.reveal?.({ name: np.name || npcName(np.id), role, glyph: !!mirror }) });
+  }
+
+  /** shots for the first-run prologue: Node 7 → Mistvale → Lumen Harbor (labs) → a Trial town → the Rift → down onto you */
+  function prologueShots() {
+    const at = (id, x = 0, z = 0) => { const R = REGIONS[id]; return [R.x + x, R.z + z]; };
+    const orbit = (cx, cz, r0, r1, y0, y1, a0, a1, ly = 0) => ({ cam: e => { const a = a0 + (a1 - a0) * e, r = r0 + (r1 - r0) * e; return [cx + Math.sin(a) * r, Math.max(H(cx + Math.sin(a) * r, cz + Math.cos(a) * r) + 4, y0 + (y1 - y0) * e), cz + Math.cos(a) * r]; }, look: () => [cx, H(cx, cz) + ly, cz] });
+    const glide = (p0, p1, l0, l1) => ({ cam: e => [p0[0] + (p1[0] - p0[0]) * e, p0[1] + (p1[1] - p0[1]) * e, p0[2] + (p1[2] - p0[2]) * e], look: e => [l0[0] + (l1[0] - l0[0]) * e, l0[1] + (l1[1] - l0[1]) * e, l0[2] + (l1[2] - l0[2]) * e] });
+    const [rx, rz] = at('rift', 0, -18), [mx, mz] = at('mistvale'), [hx, hz] = at('harbor'), [lx, lz] = at('harbor', -10, -11), [sx, sz] = at('starfall', -4, -14);
+    const pp = player.group.position, ry = player.group.rotation.y, bx = pp.x - Math.sin(ry) * 5.6, bz = pp.z - Math.cos(ry) * 5.6;
+    return [
+      { focus: [rx, rz], dur: 9, fov: 48, ...orbit(rx, rz, 70, 46, 60, 34, 0, 1.2, 12) },
+      { focus: [mx, mz], dur: 8, fov: 52, ...glide([mx - 50, H(mx, mz) + 30, mz + 40], [mx + 10, H(mx, mz) + 16, mz + 22], [mx - 10, 2, mz], [mx + 4, 2, mz - 6]) },
+      { focus: [lx, lz], dur: 8, fov: 50, ...glide([hx + 30, 26, hz + 38], [lx + 8, H(lx, lz) + 9, lz + 18], [hx, 3, hz], [lx, H(lx, lz) + 4, lz]) },
+      { focus: [sx, sz], dur: 8, fov: 50, ...orbit(sx, sz, 44, 30, 34, 18, 2.4, 3.4, 4) },
+      { focus: [rx, rz], dur: 6, fov: 38, shake: .35, ...glide([rx + 22, H(rx, rz) + 8, rz + 26], [rx + 9, H(rx, rz) + 5, rz + 11], [rx, H(rx, rz) + 14, rz], [rx, H(rx, rz) + 20, rz]) },
+      { focus: [pp.x, pp.z], dur: 6.5, fov: 58, wait: 2200, ...glide([pp.x - Math.sin(ry) * 40, pp.y + 34, pp.z - Math.cos(ry) * 40], [bx, pp.y + 2.4, bz], [pp.x, pp.y + 2, pp.z], [pp.x, pp.y + 1.4, pp.z]) },
+    ];
+  }
 
   /* ---------- cinematic dialogue (Genshin-style): letterbox, the camera cuts between the people who speak */
   const cv1 = new THREE.Vector3(), cv2 = new THREE.Vector3(), cv3 = new THREE.Vector3();
@@ -1075,6 +1251,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (res.result === 'win' || caught) setTimeout(runStoryAuto, 400);
   }
   async function trainerBattle(np, { mirror = false } = {}) {
+    await reveal(np, mirror).catch(() => {});
     mode = 'battle'; savePos();
     const back = clearArena(null); const res = await FB.start({ kind: 'trainer', npc: np, mirror, name: np.name || npcName(np.id) }); back();
     mode = 'explore';
@@ -1113,7 +1290,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const gliding = glideOn && !onGround; if (gliding) { speed = 10.5; if (!mv.lengthSq()) mv.set(Math.sin(player.group.rotation.y), 0, Math.cos(player.group.rotation.y)); }
       if (rollT > 0 && !mv.lengthSq()) mv.set(Math.sin(player.group.rotation.y), 0, Math.cos(player.group.rotation.y));
       if (mv.lengthSq()) { mv.normalize(); const a = Math.atan2(mv.x, mv.z); let d = a - player.group.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); player.group.rotation.y += d * Math.min(1, dt * 12); }
-      player.vel.lerp(mv.multiplyScalar(speed), Math.min(1, dt * (onGround ? 10 : 3)));
+      // momentum: quick to start, quicker to stop, slow to change on ice, floaty in the air
+      { const ice = onGround && onIce(pp.x, pp.z), want = mv.multiplyScalar(speed * (ice ? 1.05 : 1)), acc = !onGround ? 3 : ice ? 1.25 : want.lengthSq() >= player.vel.lengthSq() ? 8.5 : 13;
+        player.vel.lerp(want, Math.min(1, dt * acc)); }
       const nx = pp.x + player.vel.x * dt, nz = pp.z + player.vel.z * dt, hn = H(nx, nz), ho = H(pp.x, pp.z), st = Math.hypot(nx - pp.x, nz - pp.z) || 1e-4;
       const why = QS.blockedAt(nx, nz);
       if (why) { player.vel.multiplyScalar(0); if (blockMsgT <= 0) { blockMsgT = 3; const G = GATES.find(g => g.route === why); hooks.toast?.(why === 'starter' ? 'Rho: "Whoa — not without a partner Echo! Dr. Vale is at the Lab."' : G ? G.text : 'You can\'t go that way yet.'); } }
@@ -1122,6 +1301,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       else player.vel.multiplyScalar(.2);
       blockMsgT -= dt;
       collide(pp);
+      for (const b of pushables) { const dx = b.x - pp.x, dz = b.z - pp.z, d = Math.hypot(dx, dz), min = b.r + .42;
+        if (d < min && d > 1e-4) { const nx = dx / d, nz = dz / d, along = Math.max(0, player.vel.x * nx + player.vel.z * nz);
+          b.vx = nx * along * .9; b.vz = nz * along * .9; b.x += nx * (min - d); b.z += nz * (min - d); b.wob = Math.min(1, b.wob + along * .08); } }
       const gy = Math.max(H(pp.x, pp.z), -.45);
       const wasAir = !onGround; vy -= 18 * dt; if (gliding) vy = Math.max(vy, -1.9); pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; glideOn = false; if (wasAir && airT > .35) player.play('Jump_Land', .08, { once: true, speed: 1.3 }); }
       airT = onGround ? 0 : airT + dt; climbT -= dt;
@@ -1136,6 +1318,12 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       player.group.children[0] && (player.group.children[0].position.y += ((swimming ? SWIM_Y : 0) - player.group.children[0].position.y) * Math.min(1, dt * 6)); // float at the surface while swimming
     }
     player.update(dt);
+    for (const b of pushables) { if (!b.vx && !b.vz && b.wob < .01) continue;
+      const ox = b.x, oz = b.z, q = { x: b.x + b.vx * dt, z: b.z + b.vz * dt }; collide(q, b.r);
+      const blocked = Math.hypot(q.x - (ox + b.vx * dt), q.z - (oz + b.vz * dt)) > 1e-3 || H(q.x, q.z) < -.2 || Math.abs(H(q.x, q.z) - H(ox, oz)) > .5;
+      if (blocked) { b.vx = b.vz = 0; if (Math.hypot(pp.x - b.x, pp.z - b.z) < b.r + .42) { const d = Math.hypot(pp.x - b.x, pp.z - b.z) || 1; pp.x = b.x + (pp.x - b.x) / d * (b.r + .42); pp.z = b.z + (pp.z - b.z) / d * (b.r + .42); } }
+      else { b.x = q.x; b.z = q.z; const f = Math.exp(-dt * (onIce(b.x, b.z) ? .6 : 5)); b.vx *= f; b.vz *= f; if (Math.hypot(b.vx, b.vz) < .05) b.vx = b.vz = 0; }
+      b.wob *= Math.exp(-dt * 4); b.m.position.set(b.x - b.ox, H(b.x, b.z) + b.y0, b.z - b.oz); b.m.rotation.z = Math.sin(t * 18) * b.wob * .08; b.m.rotation.x = Math.cos(t * 15) * b.wob * .05; }
     { sun.position.set(pp.x + sunDir.x * 60, pp.y + sunDir.y * 60, pp.z + sunDir.z * 60); sun.target.position.copy(pp); }
     if (grassMesh) { grassMesh.userData.grass.time.value = t; grassMesh.userData.grass.player.value.copy(pp); }
     if (water) { water.position.set(Math.round(pp.x / 32) * 32, 0, Math.round(pp.z / 32) * 32); water.userData.tick(t); }
@@ -1166,7 +1354,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (post?.U?.sunUv) { // screen position of the sun for the light shafts (fade when it is behind the camera or far off-screen)
       tmp.copy(camera.position).addScaledVector(sunDir, 900).project(camera); const vis = tmp.z < 1 ? 1 - clamp((Math.max(Math.abs(tmp.x), Math.abs(tmp.y)) - .9) / .8, 0, 1) : 0;
       post.U.sunUv.value.set(tmp.x * .5 + .5, tmp.y * .5 + .5); post.U.sunVis.value = vis * (sunDir.y > .02 ? 1 : 0) * (env?.look?.night ? .25 : 1); post.U.rays.value = quality === 'low' ? 0 : 1; }
-    streamT -= dt; if (streamT <= 0) { streamT = .35; streamChunks(pp.x, pp.z); for (const o of gateObjs) if (!QS.flag(o.G.flag)) o.g.visible = o.g.position.distanceTo(pp) < 160; for (const id in towns) towns[id].root.visible = Math.hypot(towns[id].x - pp.x, towns[id].z - pp.z) < viewFar + 70; for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - pp.x, lm.z - pp.z) < viewFar * .85; }
+    streamT -= dt; if (streamT <= 0 && !focusOverride) { streamT = .35; streamChunks(pp.x, pp.z); for (const o of gateObjs) if (!QS.flag(o.G.flag)) o.g.visible = o.g.position.distanceTo(pp) < 160; for (const id in towns) towns[id].root.visible = Math.hypot(towns[id].x - pp.x, towns[id].z - pp.z) < viewFar + 70; for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - pp.x, lm.z - pp.z) < viewFar * .85; }
     for (const n of npcs) { const d = Math.hypot(pp.x - n.x, pp.z - n.z); n.ch.group.visible = d < 70 && n.id !== 'glyph'; if (n.glyphFx) n.glyphFx.visible = d < 120; if (d < 45) n.ch.update(dt); n.mk.rotation.y = t * 2; n.mk.position.y = 3.25 + Math.sin(t * 3) * .08;
       if (d < 6) faceSmooth(n.ch, pp.x, pp.z, dt, 4); else { let dd = n.face - n.ch.group.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); n.ch.group.rotation.y += dd * Math.min(1, dt * 1.5); }
       if (n.routeTrainer && !QS.beaten(n.key) && d < 7.5 && mode === 'explore' && !busy && !n.spotted) { n.spotted = true; spotted(n); } }
@@ -1192,7 +1380,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     updateWilds(dt, pp); envCycle(dt);
     animated.forEach(f => f(t)); tickers.forEach(f => f(t, pp));
     if (flash > 0) flash = Math.max(0, flash - dt * 4);
-    goalT -= dt; if (goalT <= 0) { goalT = .5; updateGoal(pp); }
+    goalT -= dt; if (goalT <= 0) { goalT = .5; updateGoal(pp); tryArrival(); }
     FB.update(dt, t);
     if (mode === 'explore') {
       let best = null, bd = 1e9;
@@ -1252,26 +1440,32 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   let mmT = 0;
   function drawMinimap(pp) {
     const cv = hooks.minimap?.(); if (!cv || !mapCanvas || (mmT = (mmT + 1) % 3)) return;
-    const g = cv.getContext('2d'), W = cv.width, R = W / 2, zoom = 1.9, rot = cam.yaw - Math.PI, k = mapCanvas.width / WORLD;
-    g.save(); g.clearRect(0, 0, W, W); g.beginPath(); g.arc(R, R, R - 2, 0, Math.PI * 2); g.clip();
+    // everything is sized in CSS pixels (u = canvas px per css px) so icons stay readable on a small phone minimap
+    const g = cv.getContext('2d'), W = cv.width, R = W / 2, u = W / Math.max(40, cv.clientWidth || W), zoom = R / 75, rot = cam.yaw - Math.PI;
+    g.save(); g.clearRect(0, 0, W, W); g.beginPath(); g.arc(R, R, R - 2 * u, 0, Math.PI * 2); g.clip();
     g.fillStyle = '#1f4f86'; g.fillRect(0, 0, W, W);
     g.translate(R, R); g.rotate(rot); g.translate(-pp.x * zoom, -pp.z * zoom);
     g.imageSmoothingEnabled = true; g.drawImage(mapCanvas, -WORLD / 2 * zoom, -WORLD / 2 * zoom, WORLD * zoom, WORLD * zoom);
-    const dot = (x, z, c, r = 4) => { g.fillStyle = c; g.beginPath(); g.arc(x * zoom, z * zoom, r, 0, 7); g.fill(); g.lineWidth = 1.5; g.strokeStyle = 'rgba(0,0,0,.6)'; g.stroke(); };
-    const found = P.ensure().world.found;
-    for (const it of allItems) if (Math.abs(it.x - pp.x) < 120 && Math.abs(it.z - pp.z) < 120) dot(it.x, it.z, it.kind === 'travel' ? '#ffffff' : found[it.id] ? '#6b7280' : it.kind === 'chest' ? '#ffd257' : '#5cf2d6', it.kind === 'travel' ? 4 : 4.5);
-    for (const n of npcs) if (Math.abs(n.x - pp.x) < 120 && Math.abs(n.z - pp.z) < 120) dot(n.x, n.z, n.trainer && !QS.beaten(n.key) ? '#ffd257' : '#c9a4ff', 4.5);
-    for (const e of wilds) if (!e.dead) dot(e.x, e.z, TYPE_COL[e.type], 3.5);
-    if (goalPos) { g.save(); g.translate(goalPos.x * zoom, goalPos.z * zoom); g.rotate(-rot); g.fillStyle = '#ffd257'; g.strokeStyle = '#1b1530'; g.lineWidth = 2; g.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? 4 : 9; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.closePath(); g.fill(); g.stroke(); g.restore(); }
+    const dot = (x, z, c, r = 4) => { g.fillStyle = c; g.beginPath(); g.arc(x * zoom, z * zoom, r * u, 0, 7); g.fill(); g.lineWidth = 1.5 * u; g.strokeStyle = 'rgba(0,0,0,.65)'; g.stroke(); };
+    const found = P.ensure().world.found, rng2 = 75 / .7;
+    for (const it of allItems) if (Math.abs(it.x - pp.x) < rng2 && Math.abs(it.z - pp.z) < rng2 && (it.kind !== 'chest' || !found[it.id])) dot(it.x, it.z, it.kind === 'travel' ? '#ffffff' : found[it.id] ? '#6b7280' : it.kind === 'chest' ? '#ffd257' : '#5cf2d6', it.kind === 'travel' ? 3.2 : 3.4);
+    for (const n of npcs) if (Math.abs(n.x - pp.x) < rng2 && Math.abs(n.z - pp.z) < rng2) dot(n.x, n.z, n.trainer && !QS.beaten(n.key) ? '#ffd257' : '#c9a4ff', 3.4);
+    for (const e of wilds) if (!e.dead && Math.abs(e.x - pp.x) < rng2 && Math.abs(e.z - pp.z) < rng2) dot(e.x, e.z, TYPE_COL[e.type], 2.6);
+    // town names, upright whatever the camera does
+    g.font = `800 ${11 * u}px "Barlow Condensed", system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const id in REGIONS) { const Rg = REGIONS[id]; if (Math.hypot(Rg.x - pp.x, Rg.z - pp.z) > 75 * 1.3 || Math.hypot(Rg.x - pp.x, Rg.z - pp.z) < 30) continue;
+      g.save(); g.translate(Rg.x * zoom, Rg.z * zoom); g.rotate(-rot); const t = AREAS[id].name, w = g.measureText(t).width + 8 * u; g.fillStyle = 'rgba(18,16,40,.78)'; g.fillRect(-w / 2, -8 * u, w, 16 * u); g.fillStyle = '#fff'; g.fillText(t, 0, 0); g.restore(); }
+    if (goalPos) { g.save(); g.translate(goalPos.x * zoom, goalPos.z * zoom); g.rotate(-rot); g.scale(u, u); g.fillStyle = '#ffd257'; g.strokeStyle = '#1b1530'; g.lineWidth = 2; g.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? 3.5 : 8; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.closePath(); g.fill(); g.stroke(); g.restore(); }
     g.restore();
-    if (goalPos) { const a = Math.atan2(goalPos.x - pp.x, goalPos.z - pp.z), d = Math.hypot(goalPos.x - pp.x, goalPos.z - pp.z); if (d * zoom > R - 10) { const ang = -(a - rot) + Math.PI; const ex = R + Math.sin(ang) * (R - 12), ey = R - Math.cos(ang) * (R - 12);
-      g.save(); g.translate(ex, ey); g.rotate(ang); g.fillStyle = '#ffd257'; g.strokeStyle = '#1b1530'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -9); g.lineTo(7, 6); g.lineTo(-7, 6); g.closePath(); g.fill(); g.stroke(); g.restore(); } }
-    g.save(); g.translate(R, R); g.rotate(-(player.group.rotation.y - cam.yaw)); g.fillStyle = '#fff'; g.strokeStyle = '#1b1530'; g.lineWidth = 2;
-    g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3); g.lineTo(-6, 7); g.closePath(); g.fill(); g.stroke(); g.restore();
-    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 3; g.beginPath(); g.arc(R, R, R - 2, 0, 7); g.stroke();
-    const nx = R + Math.sin(rot) * (R - 13), ny = R - Math.cos(rot) * (R - 13);
-    g.fillStyle = '#ff6a6a'; g.font = '800 14px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('N', nx, ny);
+    if (goalPos) { const a = Math.atan2(goalPos.x - pp.x, goalPos.z - pp.z), d = Math.hypot(goalPos.x - pp.x, goalPos.z - pp.z); if (d * zoom > R - 12 * u) { const ang = -(a - rot) + Math.PI; const ex = R + Math.sin(ang) * (R - 11 * u), ey = R - Math.cos(ang) * (R - 11 * u);
+      g.save(); g.translate(ex, ey); g.rotate(ang); g.scale(u, u); g.fillStyle = '#ffd257'; g.strokeStyle = '#1b1530'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -8); g.lineTo(6, 5); g.lineTo(-6, 5); g.closePath(); g.fill(); g.stroke(); g.restore(); } }
+    // north marker on the rim
+    { const ang = rot, nx = R + Math.sin(-ang) * (R - 10 * u) * -1, ny = R - Math.cos(-ang) * (R - 10 * u); g.save(); g.translate(nx, ny); g.scale(u, u); g.fillStyle = '#ff5a4e'; g.beginPath(); g.arc(0, 0, 7, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = '900 9px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('N', 0, .5); g.restore(); }
+    g.save(); g.translate(R, R); g.rotate(-(player.group.rotation.y - cam.yaw)); g.scale(u, u); g.fillStyle = '#fff'; g.strokeStyle = '#ff4e6a'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, -8); g.lineTo(6, 6); g.lineTo(0, 3); g.lineTo(-6, 6); g.closePath(); g.fill(); g.stroke(); g.restore();
+    g.lineWidth = 3 * u; g.strokeStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.arc(R, R, R - 2 * u, 0, 7); g.stroke();
   }
+
 
   function loop(now) {
     if (!running) return; raf = requestAnimationFrame(loop);
@@ -1301,8 +1495,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers }; },
-    get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, focus: focusOverride, holds, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers, reveal: id => { const n = npcs.find(n => n.id === id); return n ? reveal(n, id === 'glyph') : null; }, pushables }; },
+    cinematic: (shots, o) => cinematic(shots, o), prologue: o => cinematic(prologueShots(), o), stopCinematic() { cineStop?.(); }, get camYaw() { return cam.yaw; },
+    get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS, routes: ROUTES, findPos: ids => allItems.filter(it => ids.includes(it.id)).map(it => ({ x: it.x, z: it.z })),
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },
   };
 }

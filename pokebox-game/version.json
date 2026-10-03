@@ -1,12 +1,15 @@
 {
-  "version": "3.11.0",
+  "version": "3.12.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Towns are planned now: houses stand on proper lots along the streets with their doors to the road and a footpath to the street, instead of being scattered around the plaza",
-    "Every town has a ring lane and a cross avenue, street lamps at a steady rhythm, the Relay Center on the lot nearest the plaza and the Trial Hall next to its Warden",
-    "Trees, rocks and crystals no longer grow on building plots; spare plots become small pocket parks",
-    "Lumen Harbor's houses keep their plaster-and-brick look, now lined up on the streets with flowerbeds by the doors"
+    "Bigger towns, each one different: 30–46 buildings per town in its own architecture — pastel port houses, stilt cottages, star-lantern stone houses, snowy chalets, storm-tech towers and a walled desert bazaar",
+    "Landmarks inspired by the films' towns: harbour windmills and a lighthouse, Mistvale's Great Tree and fishing piers, Starfall's lantern arches, a festival ice rink in Frostline, wind turbines over Voltspire, Sandreach's walls, gates, bazaar and oasis",
+    "New full-screen map: drag, pinch and zoom, readable town names, where you are and which way you face, the objective with a guide line, routes, and ferry travel from each town's card. Tap the minimap to open it",
+    "New players get a narrated prologue over Veyra and a short step-by-step tutorial (Trainer → Replay intro)",
+    "Battles: HP bars change at the moment of each hit, with Your turn / Foe's turn banners — the foe's reply no longer looks like damage from your own attack; damage you take is shown in red",
+    "Cinematics: a flyover the first time you reach a town, VS reveals before Warden, rival and GLYPH battles, and a title card for each new chapter",
+    "Feel: momentum when you start and stop, slippery ice on the Frostline rink, barrels and crates you can push, windows that light up at night"
   ]
 }
