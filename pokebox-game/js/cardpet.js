@@ -106,13 +106,17 @@ export function makeCardPet(card, url, { size = 1.25, echo = false } = {}) {
     body.visible = true;
   };
   // show the living card at once, swap to the die-cut sticker when the cutout is ready (cached after the first time)
-  let cut = false;
-  loader.load(url, t => { if (!cut) setMap(t, t.image.width / t.image.height, true); else t.dispose(); });
+  // the Pokémon only ever appears as its die-cut figure: until the cutout is ready it stays hidden (it pops in when ready);
+  // the flat card is only a last resort when the art can't be cut out at all (or the cutout never arrives)
+  let cut = false, cardTex = null, fell = false;
+  const fallback = () => { if (cut || fell) return; fell = true; if (cardTex) setMap(cardTex, cardTex.image.width / cardTex.image.height, true); else loader.load(url, t => { if (!cut) setMap(t, t.image.width / t.image.height, true); else t.dispose(); }); };
+  loader.load(url, t => { if (cut) t.dispose(); else cardTex = t; });
+  const fbT = setTimeout(fallback, 25000);
   const ready = sticker(card, url, { priority: !echo }).then(r => {
-    if (!r.ok) return; cut = true;
+    if (!r.ok) { clearTimeout(fbT); fallback(); return; } cut = true; clearTimeout(fbT); if (cardTex && !fell) { cardTex.dispose(); cardTex = null; }
     const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(r.bitmap, 0, 0);
     const old = U.map.value; setMap(new THREE.CanvasTexture(c), r.w / r.h, false); if (old !== U.map.value) old.dispose?.();
-  }).catch(() => {});
+  }).catch(() => { clearTimeout(fbT); fallback(); });
 
   // animation state
   let ph = Math.random() * 6, face = 1, faceS = 1, hop = 0, stab = null, lastX = 0;

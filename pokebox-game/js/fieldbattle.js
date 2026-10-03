@@ -11,6 +11,7 @@ import { Battle, fighter, SIG, MOVES, ENERGY_MAX, estimate, mult } from './battl
 import { onomato, impactFrame, TYPE_COL as TC } from './comicfx.js';
 import { cardImg } from './core.js';
 import * as QS from './quests.js';
+import * as P from './progress.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const FAST = () => window.__pbxFast || 1; // automated tests run battles faster
@@ -339,11 +340,11 @@ export function createFieldBattle(ctx) {
       d.className = 'fb-aim'; d.style.cssText = `left:${p.x}px;top:${p.y}px;--c:${col}`; d.innerHTML = `<i class="tgt"></i><i class="shr"></i><b>${TOUCHUI ? 'Tap' : 'Click / Space'} to throw!</b>`; fx.append(d);
       const shr = d.querySelector('.shr'), t0 = performance.now(), per = 1350 / Math.min(2, FAST()); let done = false, sc = 1.9;
       const tick = () => { if (done) return; const k = ((performance.now() - t0) % per) / per; sc = 1.9 - k * 1.45; shr.style.transform = `translate(-50%,-50%) scale(${sc})`; requestAnimationFrame(tick); }; tick();
-      const go = (e, timeout) => { if (done) return; e?.preventDefault?.(); done = true; if (timeout) sc = 9; /* no tap: a plain throw, no bonus */ removeEventListener('keydown', key, true); ui.removeEventListener('pointerdown', go, true);
+      const go = (e, timeout) => { if (done) return; e?.preventDefault?.(); done = true; if (timeout) sc = 9; /* no tap: a plain throw, no bonus */ removeEventListener('keydown', key, true); removeEventListener('pointerdown', go, true); removeEventListener('touchstart', go, true);
         const grade = sc < .72 ? ['Excellent!', .3] : sc < .98 ? ['Great!', .18] : sc < 1.3 ? ['Nice!', .08] : ['', 0];
         d.classList.add('out'); setTimeout(() => d.remove(), 300); res(grade); };
       const key = e => { if (['Space', 'Enter', 'Digit1', 'KeyE'].includes(e.code)) go(e); };
-      addEventListener('keydown', key, true); setTimeout(() => ui.addEventListener('pointerdown', go, true), 120); setTimeout(() => go(null, true), 6000 / FAST());
+      addEventListener('keydown', key, true); setTimeout(() => { if (done) return; addEventListener('pointerdown', go, true); addEventListener('touchstart', go, { capture: true, passive: false }); }, 120); /* a tap ANYWHERE on the screen throws */ setTimeout(() => go(null, true), 6000 / FAST());
     });
   }
   const TOUCHUI = matchMedia('(pointer: coarse)').matches;
@@ -411,7 +412,8 @@ export function createFieldBattle(ctx) {
       if (spec.kind === 'wild') { const lv = spec.wild.lv || Math.round(4 + QS.tierAt(spec.wild.x, spec.wild.z) * 4.6); enemy = [fighter(DB.cards[spec.wild.card.i], lvMult(lv))]; enemy[0].lv = lv; }
       if (spec.kind === 'wild') { if (storyCapture(spec.wild.card)) enemy[0].minHp = 1; } // a story capture can't be wasted by knocking the Echo out
       else if (spec.mirror) enemy = mine.map(f => { const g = fighter(f.card, lvMult(f.lv) * 1.03); g.lv = f.lv + 2; return g; }); // GLYPH copies your team: a little stronger, beatable with Guard, switching and type play
-      else enemy = trainerTeam(spec.npc.key, spec.npc.trainer);
+      else { const tr = spec.npc.trainer, post = QS.done() && QS.beaten(spec.npc.key) && !spec.npc.fest; // after the story, rematches come back stronger (Warden rematches)
+        enemy = trainerTeam(spec.npc.key + (post ? ':rematch' : ''), post ? { ...tr, n: 3, r: [Math.min(5, tr.r[0] + 1), Math.min(8, tr.r[1] + 2)], lvl: Math.max(tr.lvl, 1.3) + .05 } : tr); }
       if (!enemy.length) return { result: 'none' };
       B = new Battle(mine, enemy);
       const st = setupStage(spec); state = { ...st, spec, mon: {}, own: [], wildMon: null, wildHome: null, bubble: {}, ring: { p: ring(st.a, TC[B.active('p').type] || '#fff'), e: ring(st.b, TC[B.active('e').type] || '#fff') } };
@@ -420,6 +422,7 @@ export function createFieldBattle(ctx) {
       if (spec.kind !== 'wild') { state.mon.e = creature(B.active('e'), st.b); state.own.push(state.mon.e); }
       state.mon.p = creature(B.active('p'), st.a); state.own.push(state.mon.p);
       for (const m of [state.mon.p, spec.kind !== 'wild' ? state.mon.e : null]) if (m) { m.group.scale.setScalar(.01); tween(420, k => m.group.scale.setScalar(Math.max(.01, ease(k)))); }
+      try { P.dexSeen(B.e.team.map(f => f.name)); } catch {} setTimeout(() => hooks.sfx?.('cry', B.active('e').type), 500); // Pokédex: everything you face counts as seen
       plate('p'); plate('e'); moves(); log(spec.kind === 'wild' ? `A wild <b>${esc(spec.wild.card.n)}</b> Echo appeared!` : `<b>${esc(spec.name)}</b> challenges you!`);
       ui.classList.add('choose'); setTimeout(() => { if (ui && !busy && state) phase(true); }, 1700);
       return new Promise(res => { resolveFn = res; });

@@ -346,3 +346,12 @@ export function readyCount() {
   if (!storyDone() && chapterReady()) n++; return n;
 }
 export const STAR_TRACK = ITEMS.filter(i => i.u.t === 'stars').sort((a, b) => a.u.n - b.u.n);
+
+/* ---------- Pokédex: species seen (met in battle) and caught (owned as a card). A species is the card name without its
+   card-game suffix (ex, V, VMAX, GX…) or prefix (Mega, Radiant…), so "Charizard ex" and "Charizard" are one entry. */
+export const species = n => { let x = String(n || '').split(/\s*&\s*|\s{2,}/)[0].replace(/[’']/g, '').replace(/\s+/g, ' ').replace(/\s+(Sunny|Rainy|Snowy) Form$/, '').replace(/^Origin Forme\s+/, '').trim(), y;
+  do { y = x; x = x.replace(/[\s-]+(GX|EX|ex|V|VMAX|VSTAR|V-UNION|BREAK|LV\.?X|Prime|LEGEND|Prism Star|Star|G|C|FB|GL|4|E|δ|☆|◇|X|Y)$/i, '').trim(); } while (x !== y);
+  x = x.replace(/^(Team (Rockets?|Aquas?|Magmas?|Plasmas?|Galactics?|Flares?|Skulls?)|Dark|Light|Shining|Radiant|Mega|M|Alolan|Galarian|Hisuian|Paldean|[A-Z][a-z]*s)\s+/, '');
+  return x.trim(); };
+export function dexSeen(names) { const s = ensure(); s.dex ||= {}; let n = 0; for (const x of [].concat(names)) { const k = species(x); if (k && !s.dex[k]) { s.dex[k] = Date.now(); n++; } } if (n) C.save(); return n; }
+export const dexSeenSet = () => ensure().dex || {};

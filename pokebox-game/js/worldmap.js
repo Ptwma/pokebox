@@ -89,9 +89,9 @@ export function openWorldMap(host, opts) {
     sheet.innerHTML = `<div class="wm-sh"><div><div class="eyebrow" style="color:${T.col}">${esc(T.sub)}</div><h4 class="display">${esc(T.name)}</h4>
       <div class="wm-chips">${T.echo.map(e => `<span style="--c:${TYPEC[e] || '#fff'}">${esc(e)}</span>`).join('')}</div>
       <p class="small">${T.id === here ? 'You are here.' : T.visited ? 'Relay Ferry stop — travel there instantly.' : 'Not visited yet: walk there along the routes to open its ferry stop.'}${T.ahead ? ' <b class="warn">Wild Echoes here are ahead of your story.</b>' : ''}</p></div>
-      <div class="wm-act">${can ? `<button class="btn gold" type="button" data-go="${T.id}">Travel ⛴</button>` : ''}<button class="btn ghost sm" type="button" data-fly="${T.id}">Show</button></div></div>`;
+      <div class="wm-act">${can ? `<button class="btn gold" type="button" data-travel="${T.id}">Travel ⛴</button>` : ''}<button class="btn ghost sm" type="button" data-fly="${T.id}">Show</button></div></div>`;
     sheet.hidden = false;
-    sheet.querySelector('[data-go]')?.addEventListener('click', () => { close(); onTravel?.(T.id); });
+    sheet.querySelector('[data-travel]')?.addEventListener('click', e => { e.stopPropagation(); close(); onTravel?.(T.id); }); // (not data-go: the app's global click handler treats data-go as a page link)
     sheet.querySelector('[data-fly]').addEventListener('click', () => flyTo(T.x, T.z, Math.max(view.s, Math.min(cw, ch) / 260)));
   }
   function flyTo(x, z, s = view.s) { const a = { ...view }, t0 = performance.now(); const step = now => { const k = Math.min(1, (now - t0) / 380), e = 1 - (1 - k) ** 3; view.x = a.x + (x - a.x) * e; view.z = a.z + (z - a.z) * e; view.s = a.s + (s - a.s) * e; clampView(); if (k < 1 && alive) requestAnimationFrame(step); }; requestAnimationFrame(step); }

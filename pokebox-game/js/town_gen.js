@@ -185,10 +185,33 @@ export function lighthouse() {
   beam.rotation.z = Math.PI / 2; beam.position.set(13, 0, 0); const pivot = new THREE.Group(); pivot.position.y = 11.95; pivot.add(beam); g.add(pivot);
   return { group: g, pivot, beam };
 }
+const CANOPY = [[0, 10, 0, 7], [4, 8.5, 2, 4.6], [-4, 8.8, -1.5, 4.8], [1.5, 13, -2, 4.4], [-2, 12, 3, 4.2]];
+/** Christmas dressing for the Great Tree: baubles sit exactly on the canopy's facet corners (never floating), a garland of
+    lights follows a ring of the main crown, a gold star crowns the top. Returns { group, glow (lights material), base } */
+export function treeOrnaments(seg = 9, rows = 4, hk = .9) {
+  const g = new THREE.Group(), pts = [], cols = ['#d8323a', '#e8c14a', '#3d7fd6', '#e9e9f0', '#d8323a', '#8a3ad8'];
+  const onSurf = (x, y, z, r, j, i) => { const a = j / rows * Math.PI / 2, t = i / seg * Math.PI * 2; return [x + Math.cos(t) * Math.cos(a) * r, y + Math.sin(a) * r * hk, z + Math.sin(t) * Math.cos(a) * r]; };
+  const inside = (p, k) => CANOPY.some(([x, y, z, r], n) => n !== k && p[1] > y && Math.hypot((p[0] - x) / r, (p[1] - y) / (r * hk), (p[2] - z) / r) < .97);
+  CANOPY.forEach(([x, y, z, r], k) => { for (let j = 0; j < rows; j++) for (let i = 0; i < seg; i++) { if ((i + j * 2 + k) % 2) continue; const p = onSurf(x, y, z, r, j, i); if (!inside(p, k)) pts.push(p); } });
+  const ball = new THREE.InstancedMesh(new THREE.SphereGeometry(.32, 10, 8), new THREE.MeshStandardMaterial({ roughness: .25, metalness: .45 }), pts.length), o = new THREE.Object3D(), c = new THREE.Color();
+  pts.forEach((p, n) => { o.position.set(p[0], p[1] - .26, p[2]); o.updateMatrix(); ball.setMatrixAt(n, o.matrix); ball.setColorAt(n, c.set(cols[n % cols.length])); }); ball.castShadow = true; ball.frustumCulled = false; if (ball.instanceColor) ball.instanceColor.needsUpdate = true; g.add(ball);
+  // a hook for each bauble so it visibly hangs from the leaves
+  const hook = new THREE.InstancedMesh(new THREE.CylinderGeometry(.03, .03, .22, 4), new THREE.MeshStandardMaterial({ color: '#c9a24a', metalness: .6, roughness: .4 }), pts.length);
+  pts.forEach((p, n) => { o.position.set(p[0], p[1] - .02, p[2]); o.updateMatrix(); hook.setMatrixAt(n, o.matrix); }); hook.frustumCulled = false; g.add(hook);
+  // garland: lights along the lowest ring of the main crown, on the surface
+  const [mx, my, mz, mr] = CANOPY[0], ring = Array.from({ length: seg + 1 }, (_, i) => onSurf(mx, my, mz, mr, 1, i % seg)).filter(p => !inside(p, 0));
+  const ls = lightString(ring, '#ffe08a', .25, 1.1); g.add(ls.group);
+  // star on the highest crown
+  const top = CANOPY.reduce((a, b) => (b[1] + b[3] * hk > a[1] + a[3] * hk ? b : a)), sh = new THREE.Shape();
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + Math.PI / 2, rr = i % 2 ? .45 : 1.1; i ? sh.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : sh.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+  const starM = new THREE.MeshStandardMaterial({ color: '#ffd257', emissive: new THREE.Color('#ffb020'), emissiveIntensity: .8, metalness: .5, roughness: .3 });
+  const star = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: .25, bevelEnabled: false }), starM); star.position.set(top[0], top[1] + top[3] * hk + .9, top[2]); g.add(star);
+  return { group: g, glow: ls.mat, base: ls.base, star, starM };
+}
 export function greatTree() { // the village's heart: a huge old tree (forest-village films), roots you can walk around
   const B = new Builder(), T = frame(0, 0, 0, 0);
   cyl(B, T, 0, -.3, 0, 2.6, 9, C('#6b4a2e'), 10); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; box(B, frame(Math.cos(a) * 2.4, -.3, Math.sin(a) * 2.4, -a), 0, 0, 0, 1.2, 1.2, 2.6, C('#5f3f26')); }
-  for (const [x, y, z, r] of [[0, 10, 0, 7], [4, 8.5, 2, 4.6], [-4, 8.8, -1.5, 4.8], [1.5, 13, -2, 4.4], [-2, 12, 3, 4.2]]) { const P = frame(x, y, z, 0); dome(B, P, 0, 0, 0, r, C('#4f9a3a'), 9); dome(B, frame(x, y + .01, z, 0), 0, 0, 0, r * .98, C('#3f7f30'), 9); }
+  for (const [x, y, z, r] of CANOPY) { const P = frame(x, y, z, 0); dome(B, P, 0, 0, 0, r, C('#4f9a3a'), 9); dome(B, frame(x, y + .01, z, 0), 0, 0, 0, r * .98, C('#3f7f30'), 9); }
   const g = new THREE.Group(), m = new THREE.Mesh(B.geometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9 })); m.castShadow = m.receiveShadow = true; g.add(m); return g;
 }
 export function lightString(points, color = '#ffd27a', sag = .9, per = 1.4) { // festival lanterns strung between posts

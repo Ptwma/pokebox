@@ -14,7 +14,8 @@ import { makeCardPet } from './cardpet.js';
 import { createFieldBattle } from './fieldbattle.js';
 import { GFX, clamp, lerp, smooth, rng, fbm, col, makeSky, makeWater, grassField as grassFieldImpl, particles, makePost, envFromSky } from './world_env.js';
 import { relayCenter, cardShop } from './interior.js';
-import { buildHouses, yardFences, fishingBoat, Builder as TB2, box as tbBox2, frame as tbFrame2, windmill, lighthouse, greatTree, lightString, wallSegment, Builder as TB, box as tbBox, cyl as tbCyl, cone as tbCone, frame as tbFrame, col as tbCol } from './town_gen.js';
+import { festivalToday } from './events.js';
+import { buildHouses, yardFences, fishingBoat, Builder as TB2, box as tbBox2, frame as tbFrame2, windmill, lighthouse, greatTree, treeOrnaments, lightString, wallSegment, Builder as TB, box as tbBox, cyl as tbCyl, cone as tbCone, frame as tbFrame, col as tbCol } from './town_gen.js';
 import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, TOWN_LOTS, TOWN_PLAN, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K, mountainAt } from './terrain.js';
 
 export const TYPE_COL = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
@@ -46,6 +47,12 @@ const ARCH = {
   kid_m:      { model: 'kid_m', h: .64, walker: 2.3, kid: true, hat: ['cap', 'none'], names: ['Timmy', 'Leo', 'Pip'], lines: ['When I grow up I will have ALL the cards. All of them!', 'Did you see that? A wild Echo! Over there! ...It ran away.'] },
   kid_f:      { model: 'kid_f', h: .6, walker: 2.3, kid: true, names: ['Lily', 'Mina', 'Rae'], lines: ['My big sister is a Ranger. She is way stronger than you.', 'Can I see your partner? Please please please?'] },
 };
+const ELITE = [ // the Rift League (postgame)
+  { id: 'e4_orin', name: 'Elite Orin', role: 'Rift League · Ice', types: ['Water', 'Metal'], at: [-14, -8], look: { body: 'm', skin: 'sk1', hairColor: 'hc4', hat: 'beanie', top: 'jacket', topColor: 'tc2', acc: 'none' } },
+  { id: 'e4_sable', name: 'Elite Sable', role: 'Rift League · Mind', types: ['Psychic', 'Darkness'], at: [14, -8], look: { body: 'f', skin: 'sk4', hairColor: 'hc0', hat: 'none', top: 'robe', topColor: 'tc9', acc: 'monocle' } },
+  { id: 'e4_kest', name: 'Director Kest', role: 'Rift League · Flame', types: ['Fire', 'Dragon', 'Darkness'], at: [-14, -28], look: { body: 'm', skin: 'sk2', hairColor: 'hc0', hat: 'none', top: 'jacket', topColor: 'tc0', acc: 'none' } },
+  { id: 'e4_lyra', name: 'Champion Lyra', role: 'Rift League · Champion', types: ['Dragon', 'Psychic', 'Fire'], at: [14, -28], look: { body: 'f', skin: 'sk1', hairColor: 'hc6', hat: 'none', top: 'ranger', topColor: 'tc1', acc: 'earring' } },
+];
 const JOBS = { // loop: Universal Animation Library clip; work/rest seconds give natural pauses; prop in the right hand
   fish: { prop: 'rod', loop: 'Idle_Lantern_Loop', work: [14, 30], rest: [3, 6], alt: 'Idle_Rail_Call' },
   hammer: { prop: 'hammer', loop: 'Fixing_Kneeling', work: [6, 12], rest: [2, 5] },
@@ -631,8 +638,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       // the Great Tree: the old heart of the forest village (its ground is reserved in the town plan)
       const gt = (plan.reserve || [])[0];
       if (gt) { const [x, z] = gt, g = greatTree(); g.position.set(x, h(x, z), z); g.traverse(o => { if (o.isMesh) o.castShadow = quality !== 'low'; }); root.add(g); block(x, z, 3.2); decorLog.push(['lm', id, 'greattree', x + R0().x, z + R0().z]);
-        const ff = lightString([[x - 4, h(x, z) + 5, z - 3], [x + 4, h(x, z) + 6, z - 2], [x + 3, h(x, z) + 5, z + 4], [x - 4, h(x, z) + 5.5, z + 3], [x - 4, h(x, z) + 5, z - 3]], '#c8ff9a', .5, 1.1); root.add(ff.group);
-        nightFx.push(day => ff.mat.color.copy(ff.base).multiplyScalar(lerp(2.8, .4, day))); }
+        const orn = treeOrnaments(); orn.group.position.copy(g.position); root.add(orn.group); // Christmas dressing that sits on the leaves
+        nightFx.push(day => { orn.glow.color.copy(orn.base).multiplyScalar(lerp(2.8, 1.1, day)); orn.starM.emissiveIntensity = lerp(2.2, .6, day); });
+        animated.push(k => { orn.star.rotation.y = k * .6; }); }
       // fishing piers on stilts into the two ponds
       for (const [cx, cz] of [[12, -6], [-16, 12]]) { let sx = cx, sz = cz; const ang = Math.atan2(2 - cz, -cx);
         for (let r = 0; r < 16; r += .5) { sx = cx + Math.cos(ang) * r; sz = cz + Math.sin(ang) * r; if (h(sx, sz) > .45) break; }
@@ -940,6 +948,13 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     for (const n of npcs.splice(0)) { actorsRoot.remove(n.ch.group); removeCollider(n.col); }
     for (const r of QS.rosterNow()) spawnNPC(r.id, r.pos, r.face, { trainer: r.trainer, shop: r.shop, mirror: r.mirror });
     for (const rt of QS.ROUTE_TRAINERS) { P.CAST[rt.id] ||= { name: rt.name, role: 'Route trainer', look: villagerLook(rng(rt.id.length * 97 + rt.name.length)) }; spawnNPC(rt.id, rt.pos, 0, { trainer: rt.trainer, name: rt.name, routeTrainer: rt }); }
+    // today's festival: a host in the festival town's plaza with a battle (once a day it pays out)
+    const fest = festivalToday(); if (fest && REGIONS[fest.town]) { const R = REGIONS[fest.town], id = 'fest_' + fest.town;
+      P.CAST[id] = { name: fest.host, role: fest.name, look: villagerLook(rng(fest.day * 131 + 7)) };
+      spawnNPC(id, { x: R.x + 2.5, z: R.z + 13.5 }, 0, { trainer: QS.T(fest.types, [1, 4], 3, .9 + Math.min(10, QS.Q().ch) * .045), name: fest.host, fest, key: id + ':' + new Date().toDateString() }); }
+    // after the story: the Rift League — four Elites around Relay Node 7, then the Hall of Fame
+    if (QS.done()) { const R = REGIONS.rift;
+      ELITE.forEach((e, i) => { P.CAST[e.id] ||= { name: e.name, role: e.role, look: e.look }; spawnNPC(e.id, { x: R.x + e.at[0], z: R.z + e.at[1] }, Math.atan2(-e.at[0], -18 - e.at[1]), { trainer: QS.T(e.types, [3, 7], 3, 1.32 + i * .06), name: e.name, elite: true }); }); }
     if (QS.Q().ch >= 9) { const g = npcs.find(n => n.id === 'glyph'); if (g) { const g0 = new THREE.Group(); g0.position.copy(g.ch.group.position); actorsRoot.add(g0); glyphEntity(g0); g.glyphFx = g0; } }
     refreshGates();
   }
@@ -952,6 +967,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (slideT <= 0 && t > slideCd) { slideT = .75; slideCd = t + 1.6; player.play?.('Slide_Start', .08, { once: true, speed: 1.2 }); setTimeout(() => player?.play?.('Slide_Exit', .12, { once: true }), 520);
       if (blockMsgT <= 0) { blockMsgT = 6; hooks.toast?.('Too steep to climb — stay on the routes through the mountains.'); } }
   }
+  let stuckT = 0, stepD = 0; const stuckP = new THREE.Vector3();
   let spawnT = 0, wildCool = 0, challengeOpen = false; // wildCool: no wild challenges until this time (10 s after any battle)
   // trample the grass where people work and camp, so props on the ground stay readable (grid G channel = grass density)
   const grassClear = [];
@@ -978,7 +994,8 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const want = qst?.kind === 'capture' && qst.type && qst.pos && Math.hypot(pp.x - qst.pos.x, pp.z - qst.pos.z) < (qst.r || 40) + 40 && Math.random() < .65 ? [].concat(qst.type) : null;
     // like the Wild Area: the weather tilts which types come out (rain → Water, storm → Lightning, fog → Psychic, snow → Water/Metal, dust → Fighting/Fire)
     const WX = { rain: ['Water'], storm: ['Lightning', 'Water'], fog: ['Psychic', 'Darkness'], snow: ['Water', 'Metal'], dust: ['Fighting', 'Fire'] }[weather.state];
-    const types = want || (night && Math.random() < .35 ? ['Darkness', 'Psychic'] : WX && Math.random() < .35 * Math.max(.4, weather.wk) ? WX : Aa.echo), type = types[(Math.random() * types.length) | 0];
+    const fest = festivalToday(), festHere = fest && Math.hypot(x - REGIONS[fest.town].x, z - REGIONS[fest.town].z) < 220 && Math.random() < .45 ? fest.types : null;
+    const types = want || festHere || (night && Math.random() < .35 ? ['Darkness', 'Psychic'] : WX && Math.random() < .35 * Math.max(.4, weather.wk) ? WX : Aa.echo), type = types[(Math.random() * types.length) | 0];
     const pick = hooks.echoCard?.(type, Math.random); if (!pick) return;
     // level follows the AREA (Pokémon-style: further along the ring and toward the Rift = stronger), a little bit the story
     const rar = C.DB.cards[pick.i]?.r || 0, alpha = Math.random() < (night ? .1 : .06), lv = Math.max(3, Math.min(62, Math.round(4 + Math.max(QS.tierAt(x, z), QS.Q().ch * .5) * 4.6 + Math.random() * 3 + (alpha ? 6 : 0))));
@@ -1239,7 +1256,8 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
   /* Warden / rival / GLYPH reveal before the big battles: low angle, slow push-in, name card */
   const REVEAL = { maren: 'Trial Warden · Lumen Harbor', mira: 'Trial Warden · Mistvale', sable: 'Trial Warden · Starfall', orin: 'Trial Warden · Frostline', vera: 'Trial Warden · Voltspire', dom: 'Trial Warden · Sandreach',
-    kest: 'Rift hunter', kai: 'Ace Trainer', lyra: 'Champion of Veyra', glyph: 'The Echo beneath Node 7', rho: 'Your rival' };
+    kest: 'Rift hunter', kai: 'Ace Trainer', lyra: 'Champion of Veyra', glyph: 'The Echo beneath Node 7', rho: 'Your rival',
+    e4_orin: 'Rift League · Elite', e4_sable: 'Rift League · Elite', e4_kest: 'Rift League · Elite', e4_lyra: 'Rift League · Champion' };
   async function reveal(np, mirror) {
     const role = REVEAL[np.id]; if (!role || !np.ch || AUTOTEST) return;
     const g = np.ch.group, ry = g.rotation.y, p = g.position.clone();
@@ -1380,7 +1398,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const back = clearArena(null); let res = { result: 'none' };
     try { res = await FB.start({ kind: 'trainer', npc: np, mirror, name: np.name || npcName(np.id) }); } catch (e) { console.warn('[world] trainer battle', e); } finally { back(); mode = 'explore'; wildCool = t + 10; }
     if (res.result === 'win') { const first = !QS.beaten(np.key); QS.markBeaten(np.key); np.tag.material.map.dispose(); const t2 = label(np.name || npcName(np.id), 'Trainer · beaten'); np.tag.material.map = t2.material.map;
-      if (first) storyEvent('win', { id: np.id }); }
+      if (first) storyEvent('win', { id: np.id });
+      if (np.fest) hooks.festivalWin?.(np.fest, np.key);
+      if (np.elite && ELITE.every(e => QS.beaten(e.id))) hooks.hallOfFame?.(); }
   }
   function teleport(x, z) { if (inside) leaveRoomNow(); const pp = player.group.position; pp.set(x, H(x, z), z); player.vel.set(0, 0, 0); vy = 0; airT = 0; onGround = true; if (pet) pet.group.position.set(x + 1.2, H(x + 1.2, z), z); snap = true; streamChunks(x, z, true); savePos(); }
 
@@ -1422,12 +1442,18 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const nx = pp.x + player.vel.x * dt, nz = pp.z + player.vel.z * dt, hn = ground(nx, nz), ho = ground(pp.x, pp.z), st = Math.hypot(nx - pp.x, nz - pp.z) || 1e-4;
       const why = QS.blockedAt(nx, nz);
       if (why) { player.vel.multiplyScalar(0); if (blockMsgT <= 0) { blockMsgT = 3; const G = GATES.find(g => g.route === why); hooks.toast?.(why === 'starter' ? 'Rho: "Whoa — not without a partner Echo! Dr. Vale is at the Lab."' : G ? G.text : 'You can\'t go that way yet.'); } }
+      // water: you swim anywhere (the surface is the floor); from the water you can always climb onto a low shore or a pier
+      else if ((ho < -.3 || hn < -.3) && Math.max(hn, -.45) - Math.max(ho, -.45) < 1.15 && Math.hypot(nx, nz) < WORLD * .5 - 6) { pp.x = nx; pp.z = nz; }
       else if (decks.length && hn - ho < .6 && deckAt(nx, nz) != null) { pp.x = nx; pp.z = nz; } // stepping up onto a pier
-      else if (hn > ho && hn > 7 && onGround && mountainAt(nx, nz) > .35) slideOff(pp); // mountain ranges: too high and steep to climb — you slip and slide back down
-      else if (hn > -.55 && (hn - ho) / st < 1.25) { pp.x = nx; pp.z = nz; }
-      else if (hn > -.55 && (hn - ho) / st < 2.6) { pp.x += (nx - pp.x) * .38; pp.z += (nz - pp.z) * .38; climbT = .25; } // steep hillside: scramble up slowly
-      else if (hn > ho && onGround) slideOff(pp);
+      // mountain ranges: gentle foothills are walkable; only a really steep, high face makes you lose your footing
+      else if (hn > ho && hn > 9 && onGround && (hn - ho) / st > .95 && mountainAt(nx, nz) > .45) slideOff(pp);
+      else if ((hn - ho) / st < 1.25) { pp.x = nx; pp.z = nz; }
+      else if ((hn - ho) / st < 2.6) { pp.x += (nx - pp.x) * .38; pp.z += (nz - pp.z) * .38; climbT = .25; } // steep hillside: scramble up slowly
+      else if (hn > ho && onGround && hn > 4 && ho > -.3) slideOff(pp);
       else player.vel.multiplyScalar(.2);
+      // stuck detector: pushing for a while without getting anywhere → offer the way out
+      if (mv.lengthSq() > .01 && !busy) { stuckT = Math.hypot(pp.x - stuckP.x, pp.z - stuckP.z) < .6 ? stuckT + dt : 0; if (stuckT === 0) stuckP.set(pp.x, 0, pp.z);
+        if (stuckT > 4 && blockMsgT <= 0) { blockMsgT = 10; stuckT = 0; hooks.stuck?.(); } } else { stuckT = 0; stuckP.set(pp.x, 0, pp.z); }
       blockMsgT -= dt;
       collide(pp);
       for (const b of pushables) { const dx = b.x - pp.x, dz = b.z - pp.z, d = Math.hypot(dx, dz), min = b.r + .42;
@@ -1443,6 +1469,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         glider.add(wing, bar); glider.position.y = 2.55; glider.visible = false; player.group.add(glider); applyComic(glider); }
       if (glider) { glider.visible = glideOn && !onGround; if (glider.visible) glider.rotation.z = Math.sin(t * 2) * .05; }
       const swimming = onGround && ground(pp.x, pp.z) < -.3;
+      // footsteps: one per stride, the sound of what you walk on
+      { const sp = Math.hypot(player.vel.x, player.vel.z); if (onGround && sp > .8) { stepD += sp * dt; if (stepD > (sp > 6 ? 1.9 : 1.35)) { stepD = 0;
+        const sf = swimming ? 'water' : deckAt(pp.x, pp.z) != null ? 'wood' : (() => { const nr = nearestRegion(pp.x, pp.z), b = REGIONS[nr.id]?.biome; if (nr.d < 30 && b !== 'snow' && b !== 'dunes') return 'stone'; return b === 'snow' ? 'snow' : b === 'dunes' ? 'sand' : 'grass'; })();
+        hooks.sfx?.('step', sf); } } }
       player.locomote(onGround ? player.vel.length() : 0, !onGround && airT > .12 ? 'air' : swimming ? 'swim' : climbT > 0 ? 'climb' : null);
       player.group.children[0] && (player.group.children[0].position.y += ((swimming ? SWIM_Y : 0) - player.group.children[0].position.y) * Math.min(1, dt * 6)); // float at the surface while swimming
     }
@@ -1717,6 +1747,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
     get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, focus: focusOverride, holds, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers, blocked: (x, z, r = .42) => { const q = { x, z }; collide(q, r); return Math.hypot(q.x - x, q.z - z) > 1e-3; }, ground, reveal: id => { const n = npcs.find(n => n.id === id); return n ? reveal(n, id === 'glyph') : null; }, pushables }; },
+    /** back to safety: the nearest checkpoint (a visited town's arrival spot or the Relay Center you last rested at) */
+    respawnNearest() { if (!player || mode !== 'explore') return false; const pp = player.group.position, q = QS.Q(), c = [];
+      for (const id in REGIONS) if (q.visited?.[id]) { const R = REGIONS[id]; c.push([R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)]); }
+      const rp = P.ensure().world.respawn; if (rp?.x != null) c.push([rp.x, rp.z]); if (!c.length) c.push([DEFAULT_SPAWN.x, DEFAULT_SPAWN.z]);
+      c.sort((a, b) => Math.hypot(a[0] - pp.x, a[1] - pp.z) - Math.hypot(b[0] - pp.x, b[1] - pp.z)); teleport(c[0][0], c[0][1]); slideT = 0; climbT = 0; return true; },
     cinematic: (shots, o) => cinematic(shots, o), prologue: o => cinematic(prologueShots(), o), stopCinematic() { cineStop?.(); }, get camYaw() { return cam.yaw; },
     get indoors() { return !!inside; }, exitRoom: () => exitRoom(),
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS, routes: ROUTES, findPos: ids => allItems.filter(it => ids.includes(it.id)).map(it => ({ x: it.x, z: it.z })),

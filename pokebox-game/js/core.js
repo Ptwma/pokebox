@@ -112,9 +112,18 @@ export function load() {
 let saveT;
 export function save(now = false) {
   clearTimeout(saveT);
-  const w = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+  const w = () => { try { const j = JSON.stringify(S); localStorage.setItem(KEY, j); autoBackup(j); } catch {} };
   now ? w() : (saveT = setTimeout(w, 250));
 }
+/* automatic backups: a snapshot every 15 minutes of play, the last 3 kept (protects against a broken or reset save on this
+   device). To move a save to another device, Settings has "Copy save code" / "Paste save code". */
+const BK = 'pbx_backups';
+function autoBackup(j) { try { const L = JSON.parse(localStorage.getItem(BK) || '[]'); if (L[0] && Date.now() - L[0].t < 15 * 60e3) return;
+  L.unshift({ t: Date.now(), v: j }); while (L.length > 3) L.pop(); localStorage.setItem(BK, JSON.stringify(L)); } catch { try { localStorage.removeItem(BK); } catch {} } }
+export function backups() { try { return JSON.parse(localStorage.getItem(BK) || '[]').map(b => ({ t: b.t, coins: (() => { try { return JSON.parse(b.v).coins; } catch { return 0; } })() })); } catch { return []; } }
+export function restoreBackup(i) { const L = JSON.parse(localStorage.getItem(BK) || '[]'); if (!L[i]) return false; importSave(L[i].v); return true; }
+export const saveCode = () => btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+export function loadSaveCode(code) { importSave(decodeURIComponent(escape(atob(String(code).trim())))); }
 export function resetSave() { S = fresh(); save(true); }
 export function exportSave() { return JSON.stringify(S); }
 export function importSave(txt) { const j = JSON.parse(txt); if (!j || j.v !== 1) throw new Error('Not a Pokebox save file'); S = Object.assign(fresh(), j); save(true); }

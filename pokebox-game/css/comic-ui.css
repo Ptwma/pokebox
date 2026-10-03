@@ -555,3 +555,15 @@ input,select{border-radius:12px!important;box-shadow:0 0 0 2px var(--ink)!import
 body.cine-on:not(.game) .rail,body.cine-on:not(.game) header,body.cine-on:not(.game) .hud{opacity:1!important;pointer-events:auto!important}
 body:not(.game) .cx-area{display:none}
 @media (max-height:520px) and (orientation:landscape){.hud .trainer{max-height:calc(var(--hud) - 4px);overflow:hidden}}
+
+/* ---------- Pokédex */
+.dexsum{display:grid;grid-template-columns:auto auto auto auto auto auto;gap:2px 8px;align-items:baseline}.dexsum b{font:400 30px var(--display);color:var(--gold)}.dexsum small{color:var(--muted);margin-right:10px}
+.dexgoals,.dexfil{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.dexfil .chip{cursor:pointer;border:0;color:var(--text)}.dexfil .chip.on{background:var(--gold);color:#1b1530}
+.dexgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;padding-bottom:24px}
+.dexe{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 6px 8px;border-radius:12px;background:var(--panel);box-shadow:0 0 0 2px var(--ink),3px 3px 0 rgba(0,0,0,.5);border-top:4px solid var(--tc);text-align:center;min-height:150px}
+.dexe img{width:72px;height:100px;object-fit:cover;border-radius:6px}.dexe.seen img{filter:grayscale(1) brightness(.55)}
+.dexe i{display:grid;place-items:center;width:72px;height:100px;border-radius:6px;background:rgba(255,255,255,.04);font:400 34px var(--display);color:var(--dim);font-style:normal}
+.dexe b{font:800 13px var(--ui);line-height:1.1}.dexe small{font:700 11px var(--ui);color:var(--muted)}.dexe.caught small{color:#5fd88a}.dexe.caught{cursor:pointer}
+.dno{position:absolute;left:6px;top:6px;font:800 10px var(--ui);color:var(--muted)}
+@media (max-height:480px){.dexgrid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}.dexe img,.dexe i{width:60px;height:84px}.dexsum b{font-size:22px}}
+.tile.fest{text-decoration:none;color:inherit;border-left:6px solid var(--fc)}

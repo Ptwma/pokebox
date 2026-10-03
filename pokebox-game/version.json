@@ -1,11 +1,21 @@
 {
-  "version": "3.14.0",
+  "version": "3.15.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "One look for the whole game: the menus now use the same comic style as the world — ink outlines, hard shadows, gold highlights — on a still dusk sky (the animated space background is gone, which also saves battery on phones)",
-    "The menu shows the page you are on correctly (it could light up several buttons at once)",
-    "A story scene waiting in Veyra no longer hides the menu bar or shows town banners while you browse cards, the shop or your journey"
+    "Swim anywhere: walk into the sea and you swim at the surface; you can always climb back onto a beach or a pier. No more getting stuck between the water and a slope",
+    "Menu → Unstuck takes you to the nearest checkpoint; if you push against something for a few seconds the game offers it too",
+    "Travelling with the map's Travel button keeps you in Veyra (it used to drop you to the menu)",
+    "Mountains: the foothills are walkable; you only slip on the really steep, high faces",
+    "Poké Ball: a simple tap anywhere throws (no need to hold)",
+    "Pokémon always appear as Pokémon, never as flat cards from far away",
+    "Mistvale's Great Tree is dressed for Christmas: baubles hanging on the leaves, a garland of lights and a star",
+    "New Pokédex (Cards → Pokédex): every species you can meet, seen and caught, with coin rewards at 10/25/50/100/200/400 caught",
+    "After the story: the Rift League (four Elites around Relay Node 7) and the Hall of Fame, stronger Warden rematches, rare legends roaming",
+    "Daily festivals: each day one town celebrates (Wind Festival, Star Festival, Ice Gala…) with more of its Echoes and a Festival Host whose battle wins you clothes",
+    "Sound: every character has a voice while talking, footsteps change with the ground (grass, sand, snow, wood, stone, water), each type has its own cry",
+    "Your save: automatic backups on the device and a save code you can copy and paste to move your progress (Trainer → Settings)",
+    "Townsfolk and trainers have sturdier arms and legs"
   ]
 }

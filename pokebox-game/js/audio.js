@@ -20,6 +20,21 @@ function tone(freq, t, dur, type = 'sine', vol = .2, slide = 0) {
 }
 export const sfx = {
   tick() { if (!ac()) return; tone(1400, ctx.currentTime, .03, 'sine', .025); },
+  /** a speaking voice in blips (Animal-Crossing style): every speaker has their own pitch and timbre */
+  talk(seed = 1, ch = 'a') { if (!ac()) return; let h = 7; for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const base = 180 + (h % 9) * 38, v = 'aeiouy'.includes(String(ch).toLowerCase()) ? 1.25 : 1, t = ctx.currentTime;
+    tone(base * v * (1 + (Math.random() - .5) * .08), t, .055, ['triangle', 'square', 'sine'][h % 3], .03); },
+  /** footsteps by surface: grass, sand, snow, wood (piers), stone (plazas), water */
+  step(kind = 'grass') { if (!ac()) return; const t = ctx.currentTime, n = noise(kind === 'water' ? .18 : .07), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    const P = { grass: ['bandpass', 1400, .05], sand: ['highpass', 2600, .045], snow: ['bandpass', 900, .07], wood: ['lowpass', 500, .09], stone: ['bandpass', 2200, .045], water: ['lowpass', 800, .08] }[kind] || ['bandpass', 1400, .05];
+    f.type = P[0]; f.frequency.value = P[1] * (.9 + Math.random() * .2); env(g, t, .004, P[2], kind === 'water' ? .16 : .06); n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + .25);
+    if (kind === 'wood') tone(160 + Math.random() * 40, t, .06, 'sine', .05); },
+  /** each type has its own cry: a short synthesized call when a wild Echo appears or a battle starts */
+  cry(type = 'Colorless', big = false) { if (!ac()) return; const t = ctx.currentTime, k = big ? 1.3 : 1;
+    const C = { Fire: [330, 'sawtooth', 1.8], Water: [520, 'sine', .7], Grass: [440, 'triangle', 1.25], Lightning: [880, 'square', .5], Psychic: [660, 'sine', 1.5], Fighting: [220, 'sawtooth', .8],
+      Darkness: [180, 'square', 1.4], Metal: [740, 'triangle', .9], Dragon: [150, 'sawtooth', 2.2], Fairy: [990, 'sine', 1.3], Colorless: [400, 'triangle', 1.15] }[type] || [400, 'triangle', 1.1];
+    tone(C[0] / k, t, .22 * k, C[1], .07, C[2]); tone(C[0] * 1.5 / k, t + .12, .18 * k, C[1], .045, 1 / C[2]); },
+
   click() { if (!ac()) return; tone(900, ctx.currentTime, .05, 'triangle', .06); },
   coin() { if (!ac()) return; const t = ctx.currentTime; tone(988, t, .08, 'square', .06); tone(1319, t + .07, .22, 'square', .06); },
   whoosh(d = .5) {

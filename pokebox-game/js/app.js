@@ -12,6 +12,7 @@ import { runTitle } from './title.js';
 import * as RK from './rank.js';
 import { openWorldMap } from './worldmap.js';
 import { runPrologue, startCoach } from './prologue.js';
+import { festivalToday, FESTIVALS } from './events.js';
 import { autoCheck, manualCheck } from './updater.js';
 import { createPreview, PETS, portrait } from './chars.js';
 import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
@@ -300,10 +301,19 @@ document.addEventListener('pointermove', e => {
 });
 let tiltEl = null;
 
+/* small text dialog (save codes): copy-able text or a paste box */
+function openModalText(title, text, onOk) {
+  const m = $('#modal'); m.hidden = false;
+  m.innerHTML = `<div class="mbox" style="max-width:520px;padding:20px"><h3 class="display">${esc(title)}</h3><textarea id="mtxt" rows="6" style="width:100%;font:12px monospace;border-radius:10px;padding:8px" ${onOk ? '' : 'readonly'}>${esc(text)}</textarea>
+    <div class="row" style="margin-top:10px">${onOk ? '<button class="btn gold" id="mok" type="button">Restore</button>' : ''}<button class="btn ghost" data-close type="button">Close</button></div></div>`;
+  const ta = $('#mtxt'); if (!onOk) { ta.focus(); ta.select(); } $('#mok')?.addEventListener('click', () => { const v = ta.value; closeModal(); onOk(v); });
+}
+function confirmTwice(b) { if (b.dataset.arm) return true; b.dataset.arm = 1; const t = b.textContent; b.textContent = 'Tap again to replace your current progress'; setTimeout(() => { delete b.dataset.arm; b.textContent = t; }, 4000); return false; }
+
 /* ------------------------------------------------------------------ page groups: one rail entry, tabs at the top
    Cards = your cards, binder, team and market (all about the cards you own); Journey = story + ranking. Fewer places to look. */
 const GROUPS = {
-  cards: [['collection', 'Cards'], ['binder', 'Binder'], ['battle', 'Team'], ['market', 'Market']],
+  cards: [['collection', 'Cards'], ['dex', 'Pokédex'], ['binder', 'Binder'], ['battle', 'Team'], ['market', 'Market']],
   journey: [['journey', 'Story'], ['ranking', 'Ranking']],
 };
 const GROUP_OF = Object.fromEntries(Object.entries(GROUPS).flatMap(([g, l]) => l.map(([n]) => [n, g])));
@@ -371,6 +381,7 @@ VIEWS.home = () => {
         <div class="chest">🎁</div><div class="eyebrow">Daily reward</div>
         ${d.ready ? `<h3>Day ${d.streak}</h3><p><span class="gold">+${fmt(d.coins)}</span> coins + 1 free pack</p><button class="btn gold glow" id="claim" type="button">Claim</button>` : `<h3>Claimed</h3><p class="muted">Streak ${st().streak} day${st().streak === 1 ? '' : 's'} · back tomorrow</p>`}
       </div>
+      ${(() => { const f = festivalToday(); return f ? `<a class="tile fest" href="#world" style="--fc:${f.color}"><div class="eyebrow">Today's festival</div><h3 class="small">${esc(f.name)}</h3><p class="muted">${esc(AREAS[f.town]?.name || '')} · more ${f.types.join(' & ')} Echoes · beat ${esc(f.host)} for clothes</p></a>` : ''; })()}
       <div class="tile"><div class="eyebrow">Trainer</div><h3>Level ${L.lv}</h3><div class="xpbar" style="height:12px"><i style="width:${(L.pct * 100).toFixed(1)}%"></i></div><p class="muted">${fmt(L.need - L.cur)} XP to next level · every 5 levels = free pack</p></div>
     </div>
     <div class="stage">
@@ -415,8 +426,8 @@ VIEWS.shop = () => {
   const drawOutfits = () => { const box = $('#outfits'); if (!box) return; const L = P.outfitShop(), look = P.ensure().look;
     box.innerHTML = L.map(it => `<div class="ofit ${it.owned ? 'own' : ''}"><div class="ofav">${it.c ? `<i style="background:${it.c}"></i>` : P.avatarSVG({ ...look, [it.slot]: it.id }, { size: 64, bg: false })}</div>
       <b>${esc(it.name)}</b><small>${esc(P.SLOTS.find(x => x.id === it.slot)?.name || '')}</small>
-      ${it.owned ? '<span class="muted small">Owned</span>' : `<button class="btn sm gold" type="button" data-buy="${it.slot}:${it.id}">${fmt(it.price)} coins</button>`}</div>`).join('');
-    $$('[data-buy]').forEach(b => b.onclick = () => { const [sl, id] = b.dataset.buy.split(':'), r = P.buyOutfit(sl, id);
+      ${it.owned ? '<span class="muted small">Owned</span>' : `<button class="btn sm gold" type="button" data-outfit="${it.slot}:${it.id}">${fmt(it.price)} coins</button>`}</div>`).join('');
+    $$('[data-outfit]').forEach(b => b.onclick = () => { const [sl, id] = b.dataset.outfit.split(':'), r = P.buyOutfit(sl, id);
       if (r === false) toast('Not enough coins.', 'err'); else if (r) { sfx.coin?.(); toast(`Bought <b>${esc(r.name)}</b>! Wear it in <a href="#profile" class="gold">Trainer ▸</a>`); updateTop?.(); drawOutfits(); } }); };
   drawOutfits();
   const draw = () => {
@@ -519,6 +530,27 @@ VIEWS.collection = () => {
   };
 };
 
+/* ------------------------------------------------------------------ Pokédex: every species you can meet in Veyra */
+const DEX_GOALS = [10, 25, 50, 100, 200, 400];
+let dexFilter = 'all';
+VIEWS.dex = () => {
+  const mons = DB.cards.filter(c => C.isMon(c) && DB.setBy[c.s]?.sellable), by = new Map();
+  for (const c of mons) { const k = P.species(c.n); if (!k) continue; const e = by.get(k) || { k, t: c.t, cards: [] }; e.cards.push(c); by.set(k, e); }
+  const seen = P.dexSeenSet(), own = st().owned || {}, list = [...by.values()].sort((a, b) => a.t.localeCompare(b.t) || a.k.localeCompare(b.k));
+  list.forEach((e, i) => { e.no = i + 1; e.caught = e.cards.some(c => own[c.i]); e.seen = e.caught || !!seen[e.k]; e.show = e.cards.find(c => own[c.i]) || e.cards[0]; });
+  const nC = list.filter(e => e.caught).length, nS = list.filter(e => e.seen).length, s = P.ensure(); s.dexClaim ||= {};
+  const where = t => Object.entries(AREAS).filter(([, a]) => (a.echo || []).includes(t)).map(([, a]) => a.name).join(', ') || 'anywhere, rarely';
+  const shown = list.filter(e => dexFilter === 'all' || (dexFilter === 'caught' ? e.caught : dexFilter === 'seen' ? e.seen && !e.caught : !e.seen));
+  view.innerHTML = `<section class="wrap dex"><div class="sech"><div><div class="eyebrow">Veyra Pokédex</div><h2 class="display">Pokédex</h2></div>
+      <div class="dexsum"><b>${nC}</b><small>caught</small><b>${nS}</b><small>seen</small><b>${list.length}</b><small>species</small></div></div>
+    <div class="dexgoals">${DEX_GOALS.map(g => { const done = nC >= g, got = s.dexClaim[g]; return `<button class="btn sm ${done && !got ? 'gold glow' : 'ghost'}" type="button" data-dexg="${g}" ${done && !got ? '' : 'disabled'}>${got ? '✓ ' : ''}${g} caught · ${fmt(g * 40)}</button>`; }).join('')}</div>
+    <div class="dexfil">${[['all', 'All'], ['caught', 'Caught'], ['seen', 'Seen'], ['unknown', 'Not seen']].map(([k, t]) => `<button class="chip ${dexFilter === k ? 'on' : ''}" type="button" data-dexf="${k}">${t}</button>`).join('')}</div>
+    <div class="dexgrid">${shown.map(e => `<div class="dexe ${e.caught ? 'caught' : e.seen ? 'seen' : 'unk'}" style="--tc:${TYPEC[e.t] || '#888'}" ${e.caught ? `data-card="${e.show.i}"` : ''} title="${e.seen ? esc(e.k) + ' · ' + esc(e.t) + ' · found in ' + esc(where(e.t)) : '???'}">
+      <span class="dno">#${String(e.no).padStart(3, '0')}</span>${e.seen ? `<img loading="lazy" src="${cardImg(e.show)}" alt="">` : '<i>?</i>'}
+      <b>${e.seen ? esc(e.k) : '???'}</b><small>${e.caught ? '● caught' : e.seen ? '○ seen' : esc(e.t)}</small></div>`).join('')}</div></section>`;
+  $$('[data-dexf]').forEach(b => b.onclick = () => { dexFilter = b.dataset.dexf; VIEWS.dex(); });
+  $$('[data-dexg]').forEach(b => b.onclick = () => { const g = +b.dataset.dexg; if (nC < g || s.dexClaim[g]) return; s.dexClaim[g] = Date.now(); C.addCoins(g * 40, 'pokedex'); C.save(); sfx.coin(); toast(`Pokédex milestone: <b>${g} caught</b> <span class="gold">+${fmt(g * 40)}</span>`); updateTop(); VIEWS.dex(); });
+};
 VIEWS.market = () => {
   const day = C.dayNum(), R = C.rng(day * 7919), pool = DB.cards, listings = [];
   const want = [3, 3, 3, 4, 4, 4, 4, 5, 5, 6, 2, 2];
@@ -761,9 +793,9 @@ function playScene(lines, { title, cine, onLine } = {}) {
     const ownCine = cine && !document.body.classList.contains('cine-on'); if (ownCine) document.body.classList.add('cine-on'); // letterboxed scenes own the screen: HUD hides
     const who2 = who => who === 'you' ? { name: st().name, role: P.item('title', P.ensure().look.title).name, look: P.ensure().look } : P.CAST[who] || { name: who, role: '', look: null };
     const finish = () => { if (done) return; done = true; if (ownCine) document.body.classList.remove('cine-on'); clearInterval(typing); el.hidden = true; el.onclick = null; el.classList.remove('cine'); removeEventListener('keydown', key, true); res(); };
-    const type = (pEl, text) => { let k = 0; clearInterval(typing); sfx.tick(); typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16); };
+    let voiceOf = ''; const type = (pEl, text) => { let k = 0; clearInterval(typing); sfx.tick(); typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k % 6 === 0 && /\w/.test(text[k] || '')) sfx.talk?.(voiceOf, text[k]); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16); };
     const show = () => {
-      const [who, text] = lines[i], c = who2(who);
+      const [who, text] = lines[i], c = who2(who); voiceOf = who;
       onLine?.(who, i);
       if (cine) { // Genshin-style: letterbox, no portraits — the 3D actors are on screen; name + subtitle at the bottom
         if (!el.querySelector('.cdlg')) el.innerHTML = `<div class="lbx t"></div><div class="lbx b"></div><button class="cskip" type="button">Skip ▸▸</button>${title ? `<div class="ctitle">${esc(title)}</div>` : ''}<div class="cdlg"><div class="cname"></div><p id="scP"></p><div class="cnext">▾</div></div>`;
@@ -925,13 +957,19 @@ function ensureWorld() {
     clock: ({ tod, state, night }) => { const el = $('#wClock'); if (!el) return; const hh = Math.floor(tod), mm = Math.floor((tod - hh) * 60 / 10) * 10;
       const ic = { rain: '🌧', storm: '⛈', fog: '🌫', snow: '❄', dust: '🌪', cloudy: night ? '☁' : '⛅' }[state] || (night ? '🌙' : tod < 8 || tod > 18 ? '🌅' : '☀');
       el.innerHTML = `<span>${ic}</span><b>${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}</b><small>${state}</small>`; },
-    echoCard: (type, R) => { const ch = QS.Q().ch, maxR = Math.min(5, 1 + Math.floor(ch / 2)), minR = Math.max(0, maxR - 2);
+    echoCard: (type, R) => { const ch = QS.Q().ch, post = QS.done() && R() < .12, maxR = post ? 8 : Math.min(5, 1 + Math.floor(ch / 2)), minR = post ? 5 : Math.max(0, maxR - 2); // after the story: rare legends roam
       const pool = DB.cards.filter(c => C.isMon(c) && c.t === type && c.r >= minR && c.r <= maxR && DB.setBy[c.s]?.sellable); if (!pool.length) return null;
       const c = pool[Math.floor(R() * pool.length)]; return { i: c.i, img: cardImg(c), n: c.n, f: c.f, t: c.t }; },
     talk: (lines, o) => playScene(lines, o), confirm: worldConfirm, chooseStarter, goal: worldGoal,
     onStep: st => { if (st) toast(`<b>New objective:</b> ${esc(st.text)}`); worldHud(); },
     compass: (head, goal, dist) => compassHud(head, goal, dist),
     fade: on => new Promise(res => { let f = $('#fadeBlack'); if (!f) { f = document.createElement('div'); f.id = 'fadeBlack'; document.body.append(f); } f.classList.toggle('on', !!on); setTimeout(res, 320); }),
+    stuck: () => toast(`Stuck? <a href="#" class="gold" onclick="event.preventDefault();window.__world?.respawnNearest()">Go to the nearest checkpoint ▸</a> (also in the menu: Unstuck)`),
+    festivalWin: (f, key) => { const s = P.ensure(); s.story.seen ||= {}; if (s.story.seen['fest:' + key]) { toast(`Nice battle! The ${esc(f.name)} prize is once a day — come back tomorrow.`); return; }
+      s.story.seen['fest:' + key] = Date.now(); C.addCoins(600, 'festival'); const it = P.chestOutfit(); C.save(); sfx.rare?.(2);
+      toast(`🎉 <b>${esc(f.name)} champion!</b> <span class="gold">+600 coins</span>${it ? ` · new clothes: <b>${esc(it.name)}</b> <a href="#profile" class="gold">Wear ▸</a>` : ''}`); afterProgress(); },
+    hallOfFame: () => { const q = QS.Q(); if (q.flags.hof) return; q.flags.hof = Date.now(); C.addCoins(5000, 'hall of fame'); C.save(); sfx.rare?.(3);
+      playScene([['vale', 'You beat the whole Rift League. Your team goes into the Hall of Fame of Veyra — the first Ranger ever.'], ['rho', 'Champion of the Rift. I am NOT jealous. Okay, a little.']], { title: 'Hall of Fame', cine: true }).then(() => toast('🏆 <b>Hall of Fame!</b> <span class="gold">+5,000 coins</span> · rare legends now roam Veyra more often')); },
     reveal: o => vsCard(o), arrival: (id, a) => { sfx.rare?.(1); },
     onChapter: (ch, idx) => { whenFree(() => chapterCard(idx + 1)); xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
@@ -939,7 +977,7 @@ function ensureWorld() {
       else p.innerHTML = html; },
     region: (id, night) => { musRegion = [id, night]; if (!battleMusic && st().settings.music !== false) music.world(id, night); },
     music: k => { battleMusic = !!k; if (st().settings.music !== false) music.world(k || musRegion[0], k ? false : musRegion[1]); },
-    onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title') || document.body.classList.contains('cine-on') || !$('#scene').hidden || !$('#wModal').hidden) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
+    onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title') || document.body.classList.contains('cine-on') || !$('#scene').hidden || !$('#wModal').hidden) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); { const f = festivalToday(); if (f && f.town === a.id) setTimeout(() => toast(`🎉 <b>${esc(f.name)}</b> today in ${esc(a.name)} — more ${f.types.join(' & ')} Echoes around town, and ${esc(f.host)} is waiting in the plaza.`), 1800); } $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
   $('#wMap').onclick = worldTravel; $('#wMini').onclick = () => worldTravel(); $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;
@@ -1077,7 +1115,7 @@ function openMenu(tab) {
 function closeMenu() { const m = $('#gMenu'); if (m.hidden) return; m.hidden = true; if (document.body.classList.contains('game')) { world?.setPaused(false); $('#worldCanvas').focus(); } }
 function renderMenu() {
   const m = $('#gMenu'), inWorld = document.body.classList.contains('game'), g = gfx(), S2 = st().settings, pets = ensurePets();
-  const tabs = [['resume', inWorld ? 'Resume' : 'Close'], ...(inWorld ? [['map', 'Map'], ['pets', 'Partner']] : []), ['settings', 'Settings'], ['controls', 'Controls'], ['fs', document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'], ['quit', inWorld ? 'Leave world' : 'Home']];
+  const tabs = [['resume', inWorld ? 'Resume' : 'Close'], ...(inWorld ? [['map', 'Map'], ['pets', 'Partner'], ['respawn', 'Unstuck']] : []), ['settings', 'Settings'], ['controls', 'Controls'], ['fs', document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'], ['quit', inWorld ? 'Leave world' : 'Home']];
   let body = '';
   if (menuTab === 'pets') {
     const cur = companionCard(), q = (pets.q || '').toLowerCase();
@@ -1112,6 +1150,7 @@ function renderMenu() {
   $$('#gMenu [data-mt]').forEach(b => b.onclick = () => {
     const k = b.dataset.mt; sfx.click();
     if (k === 'resume') return closeMenu();
+    if (k === 'respawn') { closeMenu(); if (world?.indoors) { toast('Step out of the door first.'); return; } sfx.whoosh?.(.4); if (world?.respawnNearest()) toast('Back to the nearest checkpoint.'); return; }
     if (k === 'fs') { toggleFullscreen(); setTimeout(renderMenu, 250); return; }
     if (k === 'map') { closeMenu(); return worldTravel(); }
     if (k === 'quit') { closeMenu(); location.hash = '#home'; return; }
@@ -1201,11 +1240,17 @@ VIEWS.profile = () => {
     <label>Opening studio <select id="setStudio"><option value="studio" ${s.settings.studio === 'studio' ? 'selected' : ''}>Pink studio (GIF)</option><option value="dark" ${s.settings.studio === 'dark' ? 'selected' : ''}>Dark Pokebox</option></select></label>
   </div>
   <div class="row"><button class="btn ghost" id="exp" type="button">Export save</button><label class="btn ghost" for="imp">Import save</label><input type="file" id="imp" accept=".json,application/json" hidden>
-  <button class="btn ghost" id="replayIntro" type="button">Replay intro</button><button class="btn danger" id="reset" type="button">Reset progress</button></div><p class="muted" id="resetMsg"></p></section>`;
+  <button class="btn ghost" id="copyCode" type="button">Copy save code</button><button class="btn ghost" id="pasteCode" type="button">Paste save code</button>
+  <button class="btn ghost" id="replayIntro" type="button">Replay intro</button><button class="btn danger" id="reset" type="button">Reset progress</button></div><p class="muted" id="resetMsg"></p>
+  <div class="bklist"><div class="eyebrow">Automatic backups on this device</div>${C.backups().map((b, i) => `<button class="btn sm ghost" type="button" data-bk="${i}">Restore ${new Date(b.t).toLocaleString()} · ${fmt(b.coins || 0)} coins</button>`).join('') || '<span class="muted small">The first backup is made after 15 minutes of play.</span>'}
+  <p class="muted small">Your save lives on this device. To keep it safe or move it to another phone/PC, use <b>Copy save code</b> and paste it somewhere safe (notes, a message to yourself).</p></div></section>`;
   bindLook(); bindName(); preview3d()?.set({ ...P.ensure().look });
   $('#setSound').onchange = e => { s.settings.sound = e.target.checked; setSound(e.target.checked); C.save(); };
   $('#setMusic').onchange = e => { s.settings.music = e.target.checked; setMusic(e.target.checked); if (e.target.checked && document.body.classList.contains('game')) music.world(...musRegion); C.save(); };
   $('#setMystery').onchange = e => { s.settings.mystery = e.target.checked; C.save(); };
+  $('#copyCode').onclick = async () => { const code = C.saveCode(); try { await navigator.clipboard.writeText(code); toast('Save code copied — paste it somewhere safe.'); } catch { openModalText('Your save code', code); } };
+  $('#pasteCode').onclick = () => openModalText('Paste a save code', '', code => { try { C.loadSaveCode(code); toast('Save restored.'); route(); } catch (e) { toast('That code is not a Pokebox save.', 'err'); } });
+  $$('[data-bk]').forEach(b => b.onclick = () => { if (!confirmTwice(b)) return; if (C.restoreBackup(+b.dataset.bk)) { toast('Backup restored.'); route(); } });
   $('#replayIntro').onclick = () => { s.story.seen.replayIntro = 1; C.save(); location.hash = '#world'; };
   $('#setFast').onchange = e => { s.settings.fast = e.target.checked; C.save(); };
   $('#setFps').onchange = e => { s.settings.fps = e.target.checked; C.save(); window.__perfHud?.(e.target.checked); };

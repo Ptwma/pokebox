@@ -166,7 +166,7 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
       if (/^Skin/i.test(src.name)) { m.color.set(skin).multiplyScalar(/Darker/i.test(src.name) ? .92 : 1); m.color.offsetHSL(0, -.04, .02); m.roughness = 1; }
       else if (/Hair|Eyebrow|Moustache/i.test(src.name)) { m.color.set(hair).multiplyScalar(/Eyebrow/i.test(src.name) ? .6 : 1); m.roughness = .5; }
       else if (/^Eye$/i.test(src.name)) { m.color.multiplyScalar(.7); m.roughness = .3; }
-      else if (src.name === 'Inner' && COL.Inner && COL.Outfit) { m.color.set(COL.Outfit).lerp(new THREE.Color(COL.Inner), .55); m.roughness = .9; } // the shirt under a vest: a softer tone, never a bright patch
+      else if (src.name === 'Inner' && COL.Inner && COL.Outfit) { m.color.set(COL.Outfit).lerp(new THREE.Color(COL.Inner), .3); m.roughness = .9; } // the shirt under a vest: a softer tone, never a bright patch
       else if (COL[src.name] && src.name !== 'Hair') { m.color.set(COL[src.name]); m.roughness = /Shoes/.test(src.name) ? .6 : .9; } // a coordinated outfit (role / region wardrobe)
       else if (src.name === main) { m.color.set(outfit); m.color.offsetHSL(0, -.03, .03); m.roughness = .9; }
       else { m.color.offsetHSL(0, -.06, .04); m.roughness = .9; }
