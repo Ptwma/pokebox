@@ -732,8 +732,9 @@ async function act(a) {
 function playScene(lines, { title, cine, onLine } = {}) {
   return new Promise(res => {
     const el = $('#scene'); let i = 0, typing = null, done = false;
+    const ownCine = cine && !document.body.classList.contains('cine-on'); if (ownCine) document.body.classList.add('cine-on'); // letterboxed scenes own the screen: HUD hides
     const who2 = who => who === 'you' ? { name: st().name, role: P.item('title', P.ensure().look.title).name, look: P.ensure().look } : P.CAST[who] || { name: who, role: '', look: null };
-    const finish = () => { if (done) return; done = true; clearInterval(typing); el.hidden = true; el.onclick = null; el.classList.remove('cine'); removeEventListener('keydown', key, true); res(); };
+    const finish = () => { if (done) return; done = true; if (ownCine) document.body.classList.remove('cine-on'); clearInterval(typing); el.hidden = true; el.onclick = null; el.classList.remove('cine'); removeEventListener('keydown', key, true); res(); };
     const type = (pEl, text) => { let k = 0; clearInterval(typing); sfx.tick(); typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16); };
     const show = () => {
       const [who, text] = lines[i], c = who2(who);
@@ -906,7 +907,7 @@ function ensureWorld() {
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
       if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
-    onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title')) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
+    onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title') || document.body.classList.contains('cine-on') || !$('#scene').hidden || !$('#wModal').hidden) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
   $('#wMap').onclick = worldTravel; $('#wMenuBtn').onclick = () => openLattice(); $('#wFs').onclick = toggleFullscreen;
@@ -942,7 +943,7 @@ VIEWS.world = () => {
   worldPartner = companionCard()?.i ?? null;
   if (pendingEcho) { pendingEcho = false; setTimeout(() => W.echoWon?.(), 700); }
   W.setPaused(false); W.start(); $('#worldCanvas').focus(); window.__world = W; worldHud();
-  if (!s.story.seen.worldIntro) { s.story.seen.worldIntro = Date.now(); C.save(); setTimeout(() => toast('Welcome to Veyra! <b>WASD</b> move · <b>Shift</b> run · <b>E</b> interact · <b>Esc</b> menu.'), 600); }
+  if (!s.story.seen.worldIntro) { s.story.seen.worldIntro = Date.now(); C.save(); setTimeout(() => toast(TOUCH ? 'Welcome to Veyra! Left stick to move · <b>✋</b> to talk and interact · <b>☰</b> opens your Lattice.' : 'Welcome to Veyra! <b>WASD</b> move · <b>Shift</b> run · <b>E</b> interact · <b>Esc</b> menu.'), 600); }
 };
 
 
@@ -1182,6 +1183,7 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
       onCards: () => { document.body.classList.add('ingame'); start(); location.hash = '#collection'; },
       onSettings: () => { document.body.classList.add('ingame'); start(); location.hash = '#world'; setTimeout(() => openMenu('settings'), 400); } });
   }
+  window.__pbxTest = { showLevelUp, chooseStarter, worldConfirm, worldTravel, openCard, openPack, openMenu, openLattice, playScene, toast }; // used by the automated UI checks
   window.__ready = true;
   setTimeout(autoCheck, 3500); // new version on GitHub? ask the player (never during the first seconds)
   if (!IS_APP) setInterval(() => fetch('/__ping').catch(() => {}), 20000);

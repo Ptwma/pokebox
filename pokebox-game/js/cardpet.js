@@ -28,6 +28,15 @@ const FS = /* glsl */`uniform sampler2D map; uniform float time, echo, back, fla
       float scan = .78 + .22 * sin(gl_FragCoord.y * 1.4 - time * 9.); c = mix(c, (c * .4 + tint * .75) * scan, echo * .62);
       c *= .85 + .3 * step(.97, hs(floor(time * 15.))) * echo;
     }
+    if (back < .5) {
+      // light the paper like an object in the scene: soft top-to-bottom falloff + a rim of key light on the upper-left
+      // edges (sampled from the cut-out's alpha) so the creature separates from busy grass and reads as a shape
+      vec2 o = vec2(.014, .011);
+      float aL = texture2D(map, uv + vec2(-o.x, 0.)).a, aU = texture2D(map, uv + vec2(0., o.y)).a, aR = texture2D(map, uv + vec2(o.x, 0.)).a, aD = texture2D(map, uv - vec2(0., o.y)).a;
+      float key = clamp((1. - aL) * .8 + (1. - aU), 0., 1.), fill = clamp((1. - aR) + (1. - aD), 0., 1.) * .35;
+      c *= mix(.84, 1.05, smoothstep(0., 1., vUv.y));
+      c += (key * mix(vec3(1., .96, .86), tint, .25) * .34 + fill * tint * .22) * (1. - round);
+    }
     c = mix(c, vec3(1.), flash);
     float f = smoothstep(fogNear, fogFar, vFogDepth); c = mix(c, fogColor, f * .85);
     gl_FragColor = vec4(c, 1.);

@@ -1,15 +1,16 @@
 {
-  "version": "3.7.0",
+  "version": "3.8.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Battles now read as turns: a 'Your move' banner each turn, the action bar slides away while moves play out, and the acting side lights up",
-    "Before you choose, the game shows the type matchup, who moves first and when the foe has its Ultimate charged — so Guard and switching are real decisions",
-    "Every hit has a wind-up, a freeze-frame impact with a flash of type-coloured light, knockback and a recovery; signature moves and Ultimates get a name cut-in",
-    "New duel camera: over your creature's shoulder, close-ups on the attacker and the target, and it no longer hides behind trees or houses (they step aside for the fight)",
-    "Guard bubble, burning embers and paralysis sparks on the creatures, buff/debuff tags and status turns on the name plates",
-    "The world HUD hides during battles, grass is trampled flat in the arena, other wild Echoes keep out of the shot",
-    "PC: press 1-9 to pick an action"
+    "Android: the update window no longer runs off the bottom of a landscape phone screen (it blocked every tap). The buttons always stay visible now",
+    "Phone in portrait: the card hub (cards, shop, binder, market, profile) no longer spills off the right edge, and the header and bottom bar fit",
+    "Fixed the player freezing after a story battle when a chapter scene started at the same moment",
+    "Story scenes and area banners wait while the map, Lattice or a menu is open, and the world HUD hides during every cinematic",
+    "New player moves: jump take-off and landing, swimming at the surface, climbing steep slopes and opening chests",
+    "Card creatures catch the light with a rim of sunlight and soft shading, so they read better in the grass and in battle",
+    "Glass silhouettes and other objectives next to rocks can always be reached; the final battle with GLYPH is fairer",
+    "Touch players get touch controls in the welcome tip, and the 'open Journey' link in tips can be tapped"
   ]
 }

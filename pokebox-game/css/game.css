@@ -34,7 +34,9 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .sp-msg{color:var(--muted);letter-spacing:.15em;text-transform:uppercase;font-size:13px}
 
 /* ---------- shell ---------- */
-.shell{position:fixed;inset:0;z-index:1;display:grid;grid-template-columns:var(--rail) 1fr;grid-template-rows:var(--hud) 1fr}
+.shell{position:fixed;inset:0;z-index:1;display:grid;grid-template-columns:var(--rail) minmax(0,1fr);grid-template-rows:var(--hud) minmax(0,1fr)}
+/* never let a wide child (filters, tiles, long names) push the page wider than a phone */
+#view,.hud{min-width:0}#view>*{max-width:100%}
 .rail{grid-row:1/3;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0;background:linear-gradient(180deg,rgba(15,12,22,.92),rgba(8,7,12,.95));border-right:1px solid var(--edge);z-index:3}
 .rlogo{margin-bottom:14px}
 .orb{display:block;width:44px;height:44px;border-radius:50%;background:linear-gradient(180deg,#ff4e5b 0 46%,#111 46% 54%,#f4f4f4 54%);box-shadow:0 0 0 3px #111,0 6px 20px rgba(255,78,91,.4);position:relative}
@@ -304,19 +306,19 @@ section{padding-block:clamp(18px,2.6vw,30px)}
 .lvbox .n{font-family:var(--display);font-size:160px;line-height:.9;background:linear-gradient(180deg,#fff3b0,#ffb020);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 40px rgba(255,190,50,.6))}
 .lvbox h2{font-size:44px}
 
-.toasts{position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:160;display:flex;flex-direction:column;gap:10px;align-items:center;pointer-events:none}
+.toasts{position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:160;display:flex;flex-direction:column;gap:10px;align-items:center;pointer-events:none;max-width:calc(100vw - 24px)}.toast a,.toast button{pointer-events:auto}
 .toast{background:linear-gradient(180deg,rgba(40,34,52,.95),rgba(20,17,26,.95));color:var(--text);border-radius:16px;padding:12px 20px;font-weight:700;font-size:16px;transform:translateY(-20px) scale(.95);opacity:0;transition:.35s cubic-bezier(.2,.9,.3,1.2);max-width:460px;box-shadow:inset 0 0 0 1px var(--edge2),0 16px 40px -12px #000;text-align:center}
 .toast.on{transform:none;opacity:1}.toast.err{box-shadow:inset 0 0 0 1px rgba(255,90,78,.5),0 16px 40px -12px #000;color:#ffc2bb}.toast.ach{box-shadow:inset 0 0 0 1px rgba(255,210,87,.5),0 0 30px -6px rgba(255,190,50,.6)}
 
 @media (max-width:1180px){.lobby{grid-template-columns:1fr}.side{display:grid;grid-template-columns:1fr 1fr}.modes{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:900px){
   :root{--rail:0px}.rail{position:fixed;left:0;right:0;bottom:0;top:auto;flex-direction:row;justify-content:space-around;height:66px;padding:0 6px;border-right:0;border-top:1px solid var(--edge)}
-  .rail .rlogo{display:none}.rail a:not(.rlogo){width:auto;flex:1;height:56px}.rail a.on::before{display:none}
+  .rail .rlogo{display:none}.rail a:not(.rlogo){width:auto;flex:1 1 0;min-width:0;height:56px;padding:0 1px}.rail a.on::before{display:none}
   #view{padding-bottom:70px}.tinfo{min-width:110px}
   .tiles,.two{grid-template-columns:1fr 1fr}.binder{grid-template-columns:1fr}.setlist{position:static;max-height:260px}
   .bhead{grid-template-columns:1fr}.bacts{align-items:flex-start}.mcard{grid-template-columns:1fr}.teamrow{grid-template-columns:repeat(2,1fr)}.filters{grid-template-columns:1fr 1fr}
 }
-@media (max-width:560px){.grid.cards{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}.res{padding:0 10px}.hudR .ibtn{display:none}.side{grid-template-columns:1fr}.modes{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.hud{gap:8px;padding:0 10px}.tinfo{display:none}.hudR{gap:5px;min-width:0}.res{padding:0 8px;height:36px;gap:5px}.res.tok,.res[title="Unique cards"]{display:none}.backw{padding:0 10px}.rail{padding:0 2px}.rail a:not(.rlogo){font-size:8.5px;letter-spacing:0;gap:3px}.rail a span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rail a svg{width:21px;height:21px}.grid.cards{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}.res{padding:0 10px}.hudR .ibtn{display:none}.side{grid-template-columns:1fr}.modes{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition-duration:.01ms!important}}
 
 /* ================= VAULT / PREMIUM (KLUTCH-style reference) ================= */

@@ -205,8 +205,12 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   applyComic(obj); // no ink hull: the black outline around characters is gone
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .2, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   const R = rigActor(obj, ANIME(path) && ualClips ? ualClips : gltf.animations, { height });
-  function locomote(speed) {
+  // state: 'air' (jumping / gliding), 'swim' (deep water), 'climb' (scrambling up a steep slope) — falls back to walking if a clip is missing
+  function locomote(speed, state) {
     if (R.busy()) return;
+    if (state === 'air' && R.has('Jump_Loop')) { R.play('Jump_Loop', .18); return; }
+    if (state === 'swim' && R.has('Swim_Fwd_Loop')) { R.play(speed > .35 ? 'Swim_Fwd_Loop' : 'Swim_Idle_Loop', .3); if (speed > .35) R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 3.5, .8, 1.5)); return; }
+    if (state === 'climb' && speed > .35 && R.has('ClimbUp_1m')) { R.play('ClimbUp_1m', .25); R.current.setEffectiveTimeScale(.9); return; }
     if (speed < .35) R.play('Idle', .3);
     else if (speed < 6.4) { R.play('Walk', .22); R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 3.4, .7, 1.6)); }
     else if (speed > 9.5 && R.has('Sprint')) { R.play('Sprint', .25); R.current.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 10, .85, 1.3)); }

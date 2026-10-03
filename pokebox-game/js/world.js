@@ -16,6 +16,9 @@ import { GFX, clamp, lerp, smooth, rng, fbm, col, makeSky, makeWater, grassField
 import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K } from './terrain.js';
 
 export const TYPE_COL = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
+// a popup the player is using (travel map, starter pick, Lattice, menu, update dialog): story scenes wait for it to close
+const SWIM_Y = .3; // lift the model while swimming so head and shoulders ride on the surface (ground under shallow water is at -0.45)
+const uiBlocked = () => !!document.querySelector('#wModal:not([hidden]), #lattice:not([hidden]), #gMenu:not([hidden]), #lvup:not([hidden]), #modal:not([hidden]), .upd');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /* ------------------------------------------------------------------ people */
@@ -159,11 +162,14 @@ export function createWorld(canvas, hooks = {}) {
   let colliders = [], items = [], villagers = [], animated = [], tickers = [], markers = [], lampGlows = [], bolt = null;
   const grass = { push() {} }, grassField = () => null, addEchoes = () => {}, addNPC = () => {};
   // runtime
+  // busy = something owns the player (a talk, a scene, a battle intro). Several can overlap, so it is a hold count:
+  // the old save/restore (busy0) froze the player forever when a story scene started during a battle talk.
+  let holds = 0; const holdOn = () => { holds++; busy = true; }, holdOff = () => { holds = Math.max(0, holds - 1); busy = holds > 0; };
   let player = null, pet = null, near = null, busy = false, mode = 'explore', built = false, building = null, envTex = null, env = null;
   const worldRoot = new THREE.Group(), terrainRoot = new THREE.Group(), actorsRoot = new THREE.Group(); scene.add(worldRoot, terrainRoot, actorsRoot);
   const towns = {}, npcs = [], wilds = [], allItems = [], allVillagers = [];
   const keys = {}, cam = { yaw: Math.PI, pitch: .26, dist: 5.6, tYaw: Math.PI, tDist: 5.6, idle: 0 }; // Genshin-like: close, chest height, low pitch
-  let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null, cineCam = null, glideOn = false, glider = null;
+  let running = false, paused = false, raf = 0, last = 0, t = 0, flash = 0, snap = true, vy = 0, onGround = true, rollT = 0, autoQ = true, blockMsgT = 0, battleCam = null, cineCam = null, glideOn = false, glider = null, airT = 0, climbT = 0;
   const perf = { n: 0, s: 0 };
   function applyQuality() {
     quality = hooks.quality?.() || quality;
@@ -246,7 +252,7 @@ export function createWorld(canvas, hooks = {}) {
       g.add(orb); animated.push(k => { if (!P.ensure().world.found[id]) { orb.scale.setScalar(1 + .25 * Math.sin(k * 12 + x)); orb.rotation.y = k * 2; } else orbM.color.set('#5cf2d6').multiplyScalar(2.5); });
     }
     if (!done) { const beam = new THREE.Mesh(new THREE.CylinderGeometry(.35, .35, 30, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#5cf2d6', transparent: true, opacity: .09, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false })); beam.position.y = 15; g.add(beam); g.userData.beam = beam; }
-    put(g, x, z); block(x, z, .8); items.push({ kind, id, x, z, g, r: 2.5 });
+    put(g, x, z); block(x, z, .8); items.push({ kind, id, x, z, g, r: 3.4 }); // generous reach: some objectives stand right next to rocks or walls
   }
   function sign(x, z) {
     const g = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: '#6b4a2a', roughness: .9 });
@@ -659,7 +665,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
   function openChest(it) {
     const s = P.ensure(); if (s.world.found[it.id]) { hooks.toast?.('Empty — you already opened this chest.'); return; }
-    s.world.found[it.id] = Date.now(); faceTo(player, it.x, it.z); player.play('Interact', .2, { once: true }); hooks.sfx?.('sparkle');
+    s.world.found[it.id] = Date.now(); faceTo(player, it.x, it.z); player.play('Chest_Open', .2, { once: true }) || player.play('Interact', .2, { once: true }); hooks.sfx?.('sparkle');
     const coins = Math.round(60 + it.tier * 45 + Math.random() * 40), xp = Math.round(25 + it.tier * 12);
     C.addCoins(coins); hooks.xp?.(xp); RK.add(RK.RP.chest, 'Treasure'); C.save(); it.glow.visible = false; if (it.chest) it.chest.rotation.x = -.25;
     hooks.toast?.(`Treasure chest! <span class="gold">+${coins} coins · +${xp} XP</span>`);
@@ -866,7 +872,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   const down = e => {
     if (!running || paused || mode !== 'explore' || e.target.closest?.('input,textarea,select')) return; keys[e.code] = true;
     if (['KeyE', 'Enter'].includes(e.code) && near && !busy) { e.preventDefault(); interact(near); }
-    if (e.code === 'Space' && !busy) { e.preventDefault(); if (onGround) { vy = 6.2; onGround = false; glideOn = false; } else if (player && player.group.position.y - Math.max(H(player.group.position.x, player.group.position.z), -.45) > 1.2) { glideOn = !glideOn; if (glideOn) hooks.sfx?.('whoosh'); } }
+    if (e.code === 'Space' && !busy) { e.preventDefault(); if (onGround) { vy = 6.2; onGround = false; glideOn = false; player?.play?.('Jump_Start', .06, { once: true, speed: 1.6 }); } else if (player && player.group.position.y - Math.max(H(player.group.position.x, player.group.position.z), -.45) > 1.2) { glideOn = !glideOn; if (glideOn) hooks.sfx?.('whoosh'); } }
     if ((e.code === 'KeyQ' || e.code === 'ControlLeft') && rollT <= 0 && !busy && player) { rollT = .7; player.play('Roll', .1, { once: true, speed: 1.4 }); }
     if (e.code === 'KeyM' || e.code === 'Tab') { e.preventDefault(); hooks.travel?.(); }
   };
@@ -890,7 +896,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
 
   /* ---------- interaction */
   async function interact(n) {
-    busy = true; for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) keys[k] = false; target = null;
+    holdOn(); interacting++; for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) keys[k] = false; target = null;
     try {
       if (n.kind === 'npc') await talkTo(n.npc);
       else if (n.kind === 'villager') { faceTo(player, n.v.x, n.v.z); faceTo(n.v.ch, player.group.position.x, player.group.position.z); n.v.ch.play('Wave', .2, { once: true }); if (!n.v.job) n.v.wait = 5; await hooks.talk?.([[n.v.name || 'Villager', n.v.line]]); }
@@ -903,7 +909,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       } else if (n.kind === 'wild') await wildBattle(n.w);
       else if (n.kind === 'travel') hooks.travel?.();
       else if (n.kind === 'chest') openChest(n.item);
-    } finally { busy = false; }
+    } finally { interacting--; holdOff(); }
   }
   async function talkTo(np) {
     const id = np.id; faceTo(player, np.x, np.z); faceTo(np.ch, player.group.position.x, player.group.position.z);
@@ -942,7 +948,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const cast = Object.keys(actors), mid = new THREE.Vector3(); for (const w of cast) mid.add(posOf(w, cv1)); mid.multiplyScalar(1 / cast.length);
     for (const w of cast) { const a = actors[w]; if (!a?.group) continue; const others = cast.filter(x => x !== w); if (!others.length) continue; posOf(others[0], cv1); faceTo(a, cv1.x, cv1.z); }
     for (const n of npcs) { if (n.tag) n.tag.visible = false; if (n.mk) n.mk.visible = false; } beacon.visible = false;
-    const busy0 = busy; busy = true; player.vel?.set(0, 0, 0); player.locomote?.(0); document.body.classList.add('cine-on');
+    holdOn(); player.vel?.set(0, 0, 0); player.locomote?.(0); document.body.classList.add('cine-on');
     const cp = new THREE.Vector3().copy(camera.position), ct = new THREE.Vector3(), want = new THREE.Vector3(), wantT = new THREE.Vector3(); let shotT = 0, shot = 'est', cur = 'you', prev = 'you', first = true;
     camera.getWorldDirection(ct); ct.multiplyScalar(6).add(camera.position);
     const baseYaw = Math.atan2(camera.position.x - mid.x, camera.position.z - mid.z);
@@ -974,13 +980,13 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         const a = actors[nw]; if (a?.play && nw !== 'you' && Math.random() < .5) a.play(Math.random() < .5 ? 'Wave' : 'Interact', .25, { once: true });
       } });
     } finally {
-      cineCam = null; camera.fov = fov0; camera.updateProjectionMatrix(); snap = true; document.body.classList.remove('cine-on'); busy = busy0; for (const n of npcs) { if (n.tag) n.tag.visible = true; if (n.mk) n.mk.visible = true; } goalT = 0;
+      cineCam = null; camera.fov = fov0; camera.updateProjectionMatrix(); snap = true; document.body.classList.remove('cine-on'); holdOff(); for (const n of npcs) { if (n.tag) n.tag.visible = true; if (n.mk) n.mk.visible = true; } goalT = 0;
       for (const m of moved) { m.n.x = m.x; m.n.z = m.z; m.n.ch.group.position.set(m.x, H(m.x, m.z), m.z); m.n.ch.group.rotation.y = m.ry; }
     }
   }
 
   /* ---------- story glue */
-  let storyBusy = false;
+  let storyBusy = false, interacting = 0;
   function storyEvent(type, d) {
     const before = QS.Q().ch, moved = QS.event(type, d);
     if (moved) { hooks.onStep?.(QS.stepNow()); if (QS.Q().ch !== before) chapterDone(before); else setTimeout(runStoryAuto, 300); }
@@ -992,7 +998,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     hooks.onChapter?.(ch, chIdx); refreshNPCs(); setTimeout(runStoryAuto, 600);
   }
   async function runStoryAuto() { // steps that play by themselves
-    if (paused || document.body.classList.contains('at-title') || ((location.hash.slice(1) || 'world').split('/')[0] !== 'world')) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
+    if (paused || mode === 'battle' || interacting > 0 || uiBlocked() || document.body.classList.contains('at-title') || ((location.hash.slice(1) || 'world').split('/')[0] !== 'world')) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
     if (storyBusy || mode !== 'explore') return; const st = QS.stepNow(); if (!st) return;
     if (st.kind === 'scene') { storyBusy = true; await cineTalk(st.lines, { title: QS.chapterNow().title }); storyBusy = false; storyEvent('scene', {}); }
     else if (st.kind === 'starter') { storyBusy = true; const i = await hooks.chooseStarter?.(); storyBusy = false; if (i != null) { storyEvent('starter', { i }); spawnCompanions(); } }
@@ -1021,7 +1027,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (res.result === 'win') { const first = !QS.beaten(np.key); QS.markBeaten(np.key); np.tag.material.map.dispose(); const t2 = label(np.name || npcName(np.id), 'Trainer · beaten'); np.tag.material.map = t2.material.map;
       if (first) storyEvent('win', { id: np.id }); }
   }
-  function teleport(x, z) { const pp = player.group.position; pp.set(x, H(x, z), z); player.vel.set(0, 0, 0); if (pet) pet.group.position.set(x + 1.2, H(x + 1.2, z), z); snap = true; streamChunks(x, z, true); savePos(); }
+  function teleport(x, z) { const pp = player.group.position; pp.set(x, H(x, z), z); player.vel.set(0, 0, 0); vy = 0; airT = 0; onGround = true; if (pet) pet.group.position.set(x + 1.2, H(x + 1.2, z), z); snap = true; streamChunks(x, z, true); savePos(); }
 
   /* ---------- collisions: circles + oriented boxes (spatial hash) */
   function collide(p, rad = .42) {
@@ -1058,19 +1064,22 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const why = QS.blockedAt(nx, nz);
       if (why) { player.vel.multiplyScalar(0); if (blockMsgT <= 0) { blockMsgT = 3; const G = GATES.find(g => g.route === why); hooks.toast?.(why === 'starter' ? 'Rho: "Whoa — not without a partner Echo! Dr. Vale is at the Lab."' : G ? G.text : 'You can\'t go that way yet.'); } }
       else if (hn > -.55 && (hn - ho) / st < 1.25) { pp.x = nx; pp.z = nz; }
-      else if (hn > -.55 && (hn - ho) / st < 4) { pp.x += (nx - pp.x) * .38; pp.z += (nz - pp.z) * .38; } // steep ground: scramble up slowly — every mountain can be climbed
+      else if (hn > -.55 && (hn - ho) / st < 4) { pp.x += (nx - pp.x) * .38; pp.z += (nz - pp.z) * .38; climbT = .25; } // steep ground: scramble up slowly — every mountain can be climbed
       else player.vel.multiplyScalar(.2);
       blockMsgT -= dt;
       collide(pp);
       const gy = Math.max(H(pp.x, pp.z), -.45);
-      vy -= 18 * dt; if (gliding) vy = Math.max(vy, -1.9); pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; glideOn = false; }
+      const wasAir = !onGround; vy -= 18 * dt; if (gliding) vy = Math.max(vy, -1.9); pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; glideOn = false; if (wasAir && airT > .35) player.play('Jump_Land', .08, { once: true, speed: 1.3 }); }
+      airT = onGround ? 0 : airT + dt; climbT -= dt;
       // wind glider (press jump again in the air): a toon wing above the player while gliding
       if (!glider && player) { glider = new THREE.Group(); const wm = new THREE.MeshStandardMaterial({ color: '#4fb3ff', roughness: .7, side: THREE.DoubleSide });
         const wing = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, .5), new THREE.Vector3(-1.9, -.25, -.4), new THREE.Vector3(0, .05, -.7), new THREE.Vector3(0, 0, .5), new THREE.Vector3(0, .05, -.7), new THREE.Vector3(1.9, -.25, -.4)]), wm);
         wing.geometry.computeVertexNormals(); const bar = new THREE.Mesh(new THREE.CylinderGeometry(.02, .02, 3.6, 5), new THREE.MeshStandardMaterial({ color: '#2e3440' })); bar.rotation.z = Math.PI / 2; bar.position.set(0, -.15, -.35);
         glider.add(wing, bar); glider.position.y = 2.55; glider.visible = false; player.group.add(glider); applyComic(glider); }
       if (glider) { glider.visible = glideOn && !onGround; if (glider.visible) glider.rotation.z = Math.sin(t * 2) * .05; }
-      player.locomote(onGround ? player.vel.length() : 0);
+      const swimming = onGround && H(pp.x, pp.z) < -.3;
+      player.locomote(onGround ? player.vel.length() : 0, !onGround && airT > .12 ? 'air' : swimming ? 'swim' : climbT > 0 ? 'climb' : null);
+      player.group.children[0] && (player.group.children[0].position.y += ((swimming ? SWIM_Y : 0) - player.group.children[0].position.y) * Math.min(1, dt * 6)); // float at the surface while swimming
     }
     player.update(dt);
     { sun.position.set(pp.x + sunDir.x * 60, pp.y + sunDir.y * 60, pp.z + sunDir.z * 60); sun.target.position.copy(pp); }
@@ -1142,14 +1151,14 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     drawMinimap(pp);
   }
   async function spotted(n) { // route trainer sees you: "!" then walks over
-    busy = true; hooks.sfx?.('whoosh', .4); const ex = label('!', null, '#ffd257'); ex.scale.set(1.2, 1.2, 1); ex.position.y = 3.6; n.ch.group.add(ex);
+    holdOn(); hooks.sfx?.('whoosh', .4); const ex = label('!', null, '#ffd257'); ex.scale.set(1.2, 1.2, 1); ex.position.y = 3.6; n.ch.group.add(ex);
     const pp = player.group.position; faceTo(player, n.x, n.z);
     await new Promise(r => setTimeout(r, 700)); n.ch.group.remove(ex);
     const g = n.ch.group.position, tx = pp.x + (g.x - pp.x) / Math.hypot(g.x - pp.x, g.z - pp.z) * 2.2, tz = pp.z + (g.z - pp.z) / Math.hypot(g.x - pp.x, g.z - pp.z) * 2.2;
     const t0 = performance.now(), x0 = g.x, z0 = g.z; faceTo(n.ch, pp.x, pp.z);
     await new Promise(res => { const step = () => { const k = Math.min(1, (performance.now() - t0) / 700); g.x = lerp(x0, tx, k); g.z = lerp(z0, tz, k); g.y = H(g.x, g.z); n.ch.locomote(k < 1 ? 3 : 0); if (k < 1) requestAnimationFrame(step); else res(); }; step(); });
     n.x = g.x; n.z = g.z; removeCollider(n.col); n.col = addCollider({ x: g.x, z: g.z, r: .55 });
-    busy = false; await talkTo(n);
+    holdOff(); await talkTo(n);
   }
   function updateGoal(pp) {
     const tg = QS.target(); const st = QS.stepNow();
@@ -1238,7 +1247,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, decorLog, villagers: allVillagers }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, get flags() { return { busy, mode, paused, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },
   };

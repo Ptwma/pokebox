@@ -13,7 +13,8 @@ import { cardImg } from './core.js';
 import * as QS from './quests.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const wait = ms => new Promise(r => setTimeout(r, ms));
+const FAST = () => window.__pbxFast || 1; // automated tests run battles faster
+const wait = ms => new Promise(r => setTimeout(r, ms / FAST()));
 const ease = k => k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
 const RN = ['C', 'U', 'R', 'H', 'UR', 'IR', 'SR'];
 
@@ -355,7 +356,7 @@ export function createFieldBattle(ctx) {
       let enemy;
       if (spec.kind === 'wild') enemy = [fighter(DB.cards[spec.wild.card.i], .8 + Math.max(QS.Q().ch, QS.tierAt(spec.wild.x, spec.wild.z)) * .05 + QS.dangerAt(spec.wild.x, spec.wild.z) * .09 + Math.random() * .08)];
       if (spec.kind === 'wild' && storyCapture(spec.wild.card)) enemy[0].minHp = 1; // a story capture can't be wasted by knocking the Echo out
-      else if (spec.mirror) enemy = mine.map(f => fighter(f.card, 1.15));
+      else if (spec.mirror) enemy = mine.map(f => fighter(f.card, 1.08)); // GLYPH copies your team: a little stronger, beatable with Guard, switching and type play
       else enemy = trainerTeam(spec.npc.key, spec.npc.trainer);
       if (!enemy.length) return { result: 'none' };
       B = new Battle(mine, enemy);
@@ -371,7 +372,7 @@ export function createFieldBattle(ctx) {
     },
     update(dt, t) {
       if (freeze > 0) { freeze -= dt; dt = 0; } // hit-stop: the whole fight holds its breath on impact
-      for (let i = tweens.length - 1; i >= 0; i--) { const w = tweens[i]; w.t += dt * 1000; const k = Math.min(1, w.t / w.ms); w.fn(k); if (k >= 1) { tweens.splice(i, 1); w.res(); } }
+      for (let i = tweens.length - 1; i >= 0; i--) { const w = tweens[i]; w.t += dt * 1000 * FAST(); const k = Math.min(1, w.t / w.ms); w.fn(k); if (k >= 1) { tweens.splice(i, 1); w.res(); } }
       if (!state) return;
       for (const s of ['p', 'e']) { const m = state.mon[s]; if (m && m.group.visible) m.update(dt, 0, t, camera);
         const rg = state.ring?.[s]; if (rg) { rg.flare = Math.max(0, rg.flare - dt * 1.6); const pulse = rg.on ? .55 + .25 * Math.sin(t * 5) : .22;
