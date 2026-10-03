@@ -300,10 +300,24 @@ document.addEventListener('pointermove', e => {
 });
 let tiltEl = null;
 
+/* ------------------------------------------------------------------ page groups: one rail entry, tabs at the top
+   Cards = your cards, binder, team and market (all about the cards you own); Journey = story + ranking. Fewer places to look. */
+const GROUPS = {
+  cards: [['collection', 'Cards'], ['binder', 'Binder'], ['battle', 'Team'], ['market', 'Market']],
+  journey: [['journey', 'Story'], ['ranking', 'Ranking']],
+};
+const GROUP_OF = Object.fromEntries(Object.entries(GROUPS).flatMap(([g, l]) => l.map(([n]) => [n, g])));
+function subnav(name) {
+  const g = GROUP_OF[name]; if (!g || name === 'world') return; view.querySelector(':scope > .subnav')?.remove();
+  const nav = document.createElement('nav'); nav.className = 'subnav'; nav.setAttribute('aria-label', 'Section');
+  nav.innerHTML = GROUPS[g].map(([n, t]) => `<a href="#${n}" class="${n === name ? 'on' : ''}">${t}</a>`).join('');
+  view.prepend(nav);
+}
+
 /* ------------------------------------------------------------------ views */
 const VIEWS = {};
 let current = '';
-function rerender() { const h = location.hash.slice(1) || 'home'; const [name, arg] = h.split('/'); (VIEWS[name] || VIEWS.home)(arg, true); updateTop(); }
+function rerender() { const h = location.hash.slice(1) || 'home'; const [name, arg] = h.split('/'); (VIEWS[name] || VIEWS.home)(arg, true); subnav(name); updateTop(); }
 /* smooth, context-aware transitions (View Transitions API; CSS fallback) */
 const ORDER = ['home', 'shop', 'binder', 'collection', 'market', 'battle', 'ranking', 'profile'];
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -329,9 +343,10 @@ function route() {
     if ((location.hash.slice(1) || 'world') !== h) return; // a newer navigation already happened — never render a stale view
     if (name !== 'world') { hideWorld(); closeLattice(); }
     $('#backWorld')?.classList.toggle('on', name !== 'world');
-    $$('.rail a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + name && !a.classList.contains('rlogo')));
+    const grp = GROUP_OF[name];
+    $$('.rail a').forEach(a => a.classList.toggle('on', !a.classList.contains('rlogo') && (a.getAttribute('href') === '#' + name || (grp && a.dataset.group === grp))));
     if (changed) view.scrollTop = 0; current = h;
-    (VIEWS[name] || VIEWS.home)(arg); updateTop();
+    (VIEWS[name] || VIEWS.home)(arg); subnav(name); updateTop();
   };
   if (!changed) { apply(); return; }
   sfx.tick();
@@ -764,7 +779,7 @@ function playScene(lines, { title, cine, onLine } = {}) {
       }
       el.onclick = () => { const pEl = $('#scP'); if (typing) { clearInterval(typing); typing = null; pEl.textContent = text; return; } if (++i < lines.length) show(); else finish(); };
     };
-    const key = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); el.onclick?.(); } /* the key that advances a dialogue must not also act in the world */ else if (e.code === 'Escape' && cine) { e.preventDefault(); e.stopImmediatePropagation(); finish(); } };
+    const key = e => { if (cine && !document.body.classList.contains('game')) return; /* a waiting world cutscene never eats keys on the menu pages */ if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); el.onclick?.(); } /* the key that advances a dialogue must not also act in the world */ else if (e.code === 'Escape' && cine) { e.preventDefault(); e.stopImmediatePropagation(); finish(); } };
     addEventListener('keydown', key, true); el.classList.toggle('cine', !!cine); el.innerHTML = ''; el.hidden = false; show();
   });
 }
@@ -1011,17 +1026,13 @@ async function firstSteps(W) {
 
 
 /* ------------------------------------------------------------------ Lattice device: the Ranger's card device, the hub between Veyra and the card game */
-const LAT_APPS = [
+const LAT_APPS = [ // the same five places as the main menu, plus the map and settings
   { k: 'resume', ic: '🌍', t: 'Veyra', s: 'Back to the world' },
-  { k: '#journey', ic: '📜', t: 'Journey', s: 'Story & challenges' },
-  { k: '#collection', ic: '🃏', t: 'Echo Cards', s: 'Every card you hold' },
-  { k: '#binder', ic: '📒', t: 'Binder', s: 'Complete the sets' },
-  { k: '#battle', ic: '⚔️', t: 'Team & Sim', s: 'Your 3 partners · training' },
-  { k: '#shop', ic: '🎁', t: 'Supply Drops', s: 'Open card packs' },
-  { k: '#market', ic: '📈', t: 'Market', s: 'Card values & selling' },
   { k: 'map', ic: '🗺️', t: 'Map & Travel', s: 'Relay Ferry' },
-  { k: '#ranking', ic: '🏆', t: 'Ranking', s: 'Ranger Rank & leaderboard' },
-  { k: '#profile', ic: '🧢', t: 'Trainer', s: 'Look, titles, stats' },
+  { k: '#journey', ic: '📜', t: 'Journey', s: 'Story · challenges · ranking' },
+  { k: '#collection', ic: '🃏', t: 'Cards', s: 'Cards · binder · team · market' },
+  { k: '#shop', ic: '🎁', t: 'Shop', s: 'Card packs & clothes' },
+  { k: '#profile', ic: '🧢', t: 'Trainer', s: 'Your look, titles, stats' },
   { k: 'settings', ic: '⚙️', t: 'Settings', s: 'Graphics · sound · controls' },
 ];
 function openLattice() {
@@ -1066,7 +1077,7 @@ function openMenu(tab) {
 function closeMenu() { const m = $('#gMenu'); if (m.hidden) return; m.hidden = true; if (document.body.classList.contains('game')) { world?.setPaused(false); $('#worldCanvas').focus(); } }
 function renderMenu() {
   const m = $('#gMenu'), inWorld = document.body.classList.contains('game'), g = gfx(), S2 = st().settings, pets = ensurePets();
-  const tabs = [['resume', inWorld ? 'Resume' : 'Close'], ...(inWorld ? [['map', 'Map'], ['pets', 'Partner']] : []), ['settings', 'Settings'], ['controls', 'Controls'], ['fs', document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'], ['quit', inWorld ? 'Leave world' : 'Lobby']];
+  const tabs = [['resume', inWorld ? 'Resume' : 'Close'], ...(inWorld ? [['map', 'Map'], ['pets', 'Partner']] : []), ['settings', 'Settings'], ['controls', 'Controls'], ['fs', document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'], ['quit', inWorld ? 'Leave world' : 'Home']];
   let body = '';
   if (menuTab === 'pets') {
     const cur = companionCard(), q = (pets.q || '').toLowerCase();
@@ -1237,7 +1248,7 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
   clearInterval(ft); bar.style.width = '100%'; msg.textContent = `${fmt(DB.cards.length)} cards · ${DB.sets.length} sets${DB.hd ? ' · HD' : ''}`;
   setSound(st().settings.sound); setMusic(st().settings.music !== false); $('#sndBtn').classList.toggle('off', !st().settings.sound);
   C.snapshotValue(); P.ensure(); P.newlyUnlocked(); lastReady = P.readyCount(); route(); achievements();
-  const start = () => { $('#splash').classList.add('out'); sfx.burst(); const d = C.dailyState(); if (d.ready) setTimeout(() => toast('🎁 Your daily reward is ready in the Lobby.'), 700); if (!P.ensure().story.done[1] && !location.hash.startsWith('#journey')) setTimeout(() => toast('📜 Your Journey in Veyra begins — <a href="#journey" class="gold">open Journey ▸</a>'), 1600); };
+  const start = () => { $('#splash').classList.add('out'); sfx.burst(); const d = C.dailyState(); if (d.ready) setTimeout(() => toast('🎁 Your daily reward is ready — <a href="#home" class="gold">Home ▸</a>'), 700); if (!P.ensure().story.done[1] && !location.hash.startsWith('#journey')) setTimeout(() => toast('📜 Your Journey in Veyra begins — <a href="#journey" class="gold">open Journey ▸</a>'), 1600); };
   const qp = new URLSearchParams(location.search);
   if (qp.has('nosplash')) start(); // tests
   else { // title screen / main menu (Pokebox.exe and the Android app land here too); the world keeps loading behind it
@@ -1272,3 +1283,6 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
 /* liquid glass: specular highlight follows the pointer */
 addEventListener('pointermove', e => { const t = e.target.closest?.('.ibtn,.res,.wb,.btn.ghost,.gtab,.mv,.lg'); if (!t) return; const r = t.getBoundingClientRect();
   t.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(0) + '%'); t.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(0) + '%'); }, { passive: true });
+
+/* grouped pages keep their tabs even when a page redraws itself (claim buttons, filters…) */
+for (const n of Object.keys(GROUP_OF)) { const f = VIEWS[n]; if (f) VIEWS[n] = (...a) => { const r = f(...a); subnav(n); return r; }; }

@@ -1,16 +1,12 @@
 {
-  "version": "3.12.0",
+  "version": "3.13.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Battles fixed: wild battles no longer freeze (it hit Echoes whose type didn't match your current capture goal, often the purple Psychic/Darkness ones); HP bars change at the moment of each hit with Your turn / Foe's turn banners",
-    "Catch with a Poké Ball: a timing ring (Nice / Great / Excellent) raises the odds. Pokémon have levels now, stronger the further you travel; rare and Alpha Echoes glow red, and wild Echoes can challenge you (Fight or Run, 10 s calm after each battle)",
-    "Bigger towns, each one different: 30–40 larger buildings per town in its own style, garden fences, fences along the routes, and film-inspired landmarks (windmills and a lighthouse, the Great Tree, lantern arches, an ice rink, wind turbines, a walled bazaar with an oasis)",
-    "Walk into the Relay Center (rest your team, save, respawn point) and the Card Shop. New: clothes to buy at the shop or find in treasure chests",
-    "New full-screen map (drag, pinch, zoom, objective, routes, ferry travel — tap the minimap), a compass and faint guide dashes on the ground toward your objective",
-    "New players get a narrated prologue over Veyra and a step-by-step tutorial; first-visit town flyovers, VS reveals before big battles, chapter title cards, more story",
-    "World: unclimbable mountain ranges (you slip back down), fruit trees, neater trees and rocks, boats on the sea, lighter weather that changes which Echoes appear, softer chest glow",
-    "Phone: no RUN or map buttons (push the stick, tap the minimap), faster camera turning, small notifications beside the minimap, your 3D character in the HUD, smoother pack openings, the bottom bar stays put between pages"
+    "Simpler menus: five places — Home, Veyra, Cards, Shop, Journey, Trainer. Cards, Binder, Team and Market are now tabs of one page, Story and Ranking tabs of Journey; the phone menu shows labels",
+    "People of Veyra dress for who they are and where they live: coordinated outfits per job (fishers, traders, scholars, smiths…), wool and beanies in Frostline, light linen and sun hats in Sandreach, indigo in Starfall, workwear in Voltspire; slightly bigger, friendlier heads",
+    "Lumen Harbor: the walk from the ferry landing to the docks is clear (no rocks in the way), no cactus on the beach, the windmills stand on the hills behind the town",
+    "Piers are walkable; story scenes no longer cover the menu pages"
   ]
 }

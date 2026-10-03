@@ -499,3 +499,26 @@ body.indoors .wcompass{display:none}
 .opening .otop #oClose{min-width:44px}
 html.touch .opening .ohint{font-size:12px;letter-spacing:.1em}
 @media (max-height:480px){.opening .otitle{font-size:16px;padding:5px 12px}}
+
+/* ---------- simpler navigation: 5 places (Veyra · Cards · Shop · Journey · Trainer); grouped pages get tabs at the top */
+.subnav{position:sticky;top:0;z-index:4;display:flex;gap:6px;width:max-content;max-width:calc(100% - 24px);margin:10px auto 14px;padding:5px;border-radius:999px;background:rgba(14,11,24,.82);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 10px 24px -12px #000;backdrop-filter:blur(10px);overflow-x:auto;scrollbar-width:none}
+.subnav::-webkit-scrollbar{display:none}
+.subnav a{flex:none;padding:8px 18px;border-radius:999px;color:var(--muted);font:800 14px var(--ui);letter-spacing:.06em;text-transform:uppercase;text-decoration:none;transition:background var(--m-fast) var(--m-ease),color var(--m-fast)}
+.subnav a.on{color:#1b1530;background:linear-gradient(180deg,#fff7da,#ffd257);box-shadow:0 3px 0 #a86a00}
+.subnav a:not(.on):active{transform:scale(.95)}
+/* phones in landscape: 390 px of height is precious — compact page headers, labelled rail, quieter toasts */
+@media (max-height:480px){
+  .sech{margin-bottom:10px;gap:8px}.sech h2{font-size:26px;margin-top:2px}.sech>p.muted,.sech .muted:not(.small):not(button){display:none}
+  .wrap{padding-inline:14px}main#view>section.wrap:first-of-type{padding-top:4px}
+  .rail a:not(.rlogo){width:60px;height:56px;font-size:9.5px;letter-spacing:.04em;gap:3px}.rail a svg{width:21px;height:21px}.rail{gap:4px;padding:8px 0}
+  .subnav{margin:6px auto 10px}.subnav a{padding:6px 14px;font-size:12px}
+}
+html.touch .toasts{left:auto;right:12px;top:max(56px,env(safe-area-inset-top));transform:none;align-items:flex-end;max-width:min(360px,60vw);gap:6px}
+html.touch .toast{font-size:12.5px;padding:7px 12px;border-radius:11px}
+body:not(.game) #scene.cine{display:none!important} /* a world cutscene waits while you browse the menus; it shows again when you return to Veyra */
+@media (max-height:520px) and (orientation:landscape){
+  .rail{justify-content:center;gap:6px}
+  .rail a:not(.rlogo){width:54px;height:54px}.rail a span{display:block;font-size:9px;letter-spacing:.03em}
+  .rail .rlogo{display:grid;place-items:center;width:40px;height:40px;flex:none;margin-bottom:4px}.rail .rlogo .orb{transform:scale(.7)}
+}
+@media (max-height:520px) and (orientation:landscape){.rail .rlogo{display:none}}

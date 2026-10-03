@@ -27,7 +27,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const npcLook = id => P.CAST[id]?.look;
 const npcName = id => P.CAST[id]?.name || id;
 const TOPS = ['tee', 'hoodie', 'jacket', 'ranger', 'summer', 'crew', 'scarf'], TC = ['tc0', 'tc1', 'tc2', 'tc3', 'tc4', 'tc5', 'tc6', 'tc7', 'tc8'], HC = ['hc0', 'hc1', 'hc2', 'hc3', 'hc4'];
-function villagerLook(R, top) { return { body: R() < .5 ? 'm' : 'f', skin: 'sk' + (R() * 6 | 0), hairColor: HC[R() * HC.length | 0], hat: R() < .25 ? ['cap', 'beanie', 'wide', 'beret'][R() * 4 | 0] : 'none', top: top || TOPS[R() * TOPS.length | 0], topColor: TC[R() * TC.length | 0], acc: R() < .15 ? 'glasses' : 'none' }; }
+function villagerLook(R, top) { const cs = costume('casual', R, null); return { colors: cs.colors, body: R() < .5 ? 'm' : 'f', skin: 'sk' + (R() * 6 | 0), hairColor: NATURAL_HAIR[R() * NATURAL_HAIR.length | 0], hat: R() < .25 ? ['cap', 'beanie', 'wide', 'beret'][R() * 4 | 0] : 'none', top: top || TOPS[R() * TOPS.length | 0], topColor: TC[R() * TC.length | 0], acc: R() < .15 ? 'glasses' : 'none' }; }
 /* people of Veyra: who they are decides their body (Blender models chars/anime/*), height, job and what they say */
 const ARCH = {
   fisher:     { model: 'm_dock', h: 1.02, hat: ['cap', 'wide', 'none'], job: 'fish', names: ['Fisher Hal', 'Old Bram', 'Fisher Nico'], lines: ['Tide brings the Water Echoes in at dawn. Bring a strong card.', 'Thirty years on this dock and I never saw the sea glow like last week.'] },
@@ -57,10 +57,47 @@ const JOBS = { // loop: Universal Animation Library clip; work/rest seconds give
   sit: { loop: 'Sitting_Talking_Loop', idle: 'Sitting_Idle_Loop', work: [6, 12], rest: [4, 8], bench: true },
   garden: { prop: 'can', loop: 'Farm_Watering', work: [6, 12], rest: [3, 6] },
 };
-function archLook(a, R) {
-  const A = ARCH[a], pick = (arr, d) => arr ? arr[R() * arr.length | 0] : d;
-  return { model: A.model, h: A.h * (.97 + R() * .06), body: /^f_|kid_f/.test(A.model) ? 'f' : 'm', skin: 'sk' + (R() * 6 | 0), hairColor: pick(A.hair, HC[R() * HC.length | 0]),
-    hat: pick(A.hat, 'none'), top: 'tee', topColor: TC[R() * TC.length | 0], acc: pick(A.acc, 'none') };
+/* coordinated outfits instead of random colours: [outfit, inner, pants, shoes] per role, and a regional wardrobe
+   (wool in Frostline, light linen in Sandreach, indigo in Starfall, workwear in Voltspire) used by most adults there */
+const COSTUME = {
+  fisher: [['#f2c230', '#2e3a4a', '#34495e', '#4a3a2a'], ['#2f5f8a', '#e9e2cf', '#2e3440', '#5a3a22']],
+  docker: [['#d8662c', '#e9e2cf', '#3b5a7a', '#3a2a1a'], ['#3d6a4a', '#d8c8a8', '#4a4038', '#2a2a2a']],
+  elder_m: [['#8a6a4a', '#e9e2cf', '#5a5048', '#3a2a1a'], ['#4a5a6a', '#f0e8d8', '#6a6258', '#2a2a2a']],
+  elder_f: [['#a85a6a', '#f4ead2', '#5a4a5a', '#3a2a2a'], ['#6a8a6a', '#f0e8d8', '#5a5048', '#4a3a2a']],
+  merchant: [['#8a2f3a', '#f4ead2', '#3a3030', '#2a1a1a'], ['#c9862c', '#fff4e0', '#4a3a2a', '#2a1a1a']],
+  merchant_f: [['#d86a8a', '#fff4e0', '#4a3a4a', '#3a2a2a'], ['#2fa8a0', '#f4ead2', '#3a4a4a', '#2a2a2a']],
+  scholar: [['#4a3d7a', '#e6e2f0', '#2e2a3a', '#1e1a2a'], ['#2f4a6a', '#e9e2cf', '#3a3a44', '#1e1e24']],
+  worker_f: [['#5a8a4a', '#e9e2cf', '#4a5a6a', '#3a2a1a'], ['#c9a24a', '#fff4e0', '#4a4038', '#2a2a2a']],
+  gardener: [['#6a9a4a', '#f4ead2', '#7a6a4a', '#4a3a2a'], ['#b8a06a', '#ffffff', '#5a6a4a', '#3a2a1a']],
+  smith: [['#4a5560', '#c9a24a', '#3a3a3a', '#1e1e1e'], ['#8a3a2a', '#3a3a3a', '#2e3440', '#1e1e1e']],
+  athlete: [['#3d8fd6', '#ffffff', '#2e3440', '#f2f2f2'], ['#e2483c', '#ffffff', '#2e2e3a', '#f2f2f2']],
+  athlete_f: [['#ff7aa8', '#ffffff', '#2e3440', '#f2f2f2'], ['#2fb3a5', '#ffffff', '#3a3a4a', '#f2f2f2']],
+  bearded: [['#7a5a3a', '#d8c8a8', '#3b4a5a', '#3a2a1a'], ['#3a5a4a', '#e9e2cf', '#4a4038', '#2a2a2a']],
+  kid_m: [['#3d8fd6', '#ffffff', '#f2c230', '#e2483c'], ['#e2683c', '#ffffff', '#3b5a8a', '#2e2e3a'], ['#5fae4f', '#ffffff', '#2e3440', '#f2f2f2']],
+  kid_f: [['#ff8ab0', '#ffffff', '#7a5ac8', '#ffffff'], ['#f2c230', '#ffffff', '#3d8fd6', '#e2483c']],
+  casual: [['#3d8fd6', '#ffffff', '#2e3440', '#2a2a2a'], ['#e2683c', '#f4ead2', '#3b4a5a', '#3a2a1a'], ['#5fae4f', '#ffffff', '#4a4038', '#2a2a2a'], ['#8a5ac8', '#f4ead2', '#2e3440', '#1e1e1e'], ['#e9e2cf', '#3d8fd6', '#3b5a7a', '#3a2a1a']],
+};
+const REGION_WEAR = {
+  frostline: { p: .7, hat: ['beanie', 'beanie', 'none'], set: [['#b8323a', '#f4ead2', '#3a3a44', '#4a3a2a'], ['#2f5a4a', '#e9e2cf', '#3a3a44', '#3a2a1a'], ['#3a4a7a', '#f4ead2', '#2e3440', '#2a2a2a'], ['#e9e2cf', '#b8323a', '#3a3a44', '#3a2a1a']] },
+  sandreach: { p: .6, hat: ['wide', 'none', 'wide'], set: [['#f1d2a2', '#fff4e0', '#c9a06a', '#8a5a3a'], ['#e2683c', '#fff4e0', '#d8c8a8', '#6a3a1e'], ['#2f9ac8', '#fff4e0', '#d8c8a8', '#6a3a1e'], ['#fff4e0', '#e2683c', '#c9a06a', '#6a3a1e']] },
+  starfall: { p: .5, hat: ['none', 'beret'], set: [['#3d4a8a', '#e6e2f0', '#2e2a3a', '#1e1a2a'], ['#5a4a9a', '#f0eefa', '#3a3a4a', '#1e1e24'], ['#c4c8dc', '#3d4a8a', '#2e2a3a', '#1e1a2a']] },
+  voltspire: { p: .55, hat: ['cap', 'none'], set: [['#f2c230', '#3a4450', '#3a4450', '#1e1e1e'], ['#9fb0c0', '#f2c230', '#2e3440', '#1e1e1e'], ['#3a4450', '#5ad8ff', '#2e3440', '#1e1e1e']] },
+  mistvale: { p: .4, hat: ['wide', 'none'], set: [['#5d6b3a', '#e6d8b8', '#5b3d26', '#3a2a1a'], ['#7a5a32', '#e6d8b8', '#4a5a3a', '#3a2a1a']] },
+  harbor: { p: .35, hat: ['cap', 'none', 'wide'], set: [['#ffffff', '#3d8fd6', '#2f4a6a', '#3a2a1a'], ['#3d8fd6', '#ffffff', '#e9e2cf', '#3a2a1a'], ['#2fb3a5', '#ffffff', '#3b4a5a', '#3a2a1a']] },
+};
+let lookN = 0;
+const NATURAL_HAIR = ['hc0', 'hc0', 'hc1', 'hc1', 'hc1', 'hc2'];
+function costume(a, R, region, kid) {
+  const W = REGION_WEAR[region], useRegion = !kid && W && R() < W.p, set = useRegion ? W.set : COSTUME[a] || COSTUME.casual, c = set[R() * set.length | 0];
+  return { colors: { Outfit: c[0], Inner: c[1], Pants: c[2], Skirt: c[2], Shoes: c[3] }, hat: useRegion ? W.hat[R() * W.hat.length | 0] : null };
+}
+function archLook(a, R, region) {
+  // small integer seeds give correlated first draws: stir the generator with a counter and the region name first
+  let hsh = (R() * 4294967296) >>> 0; for (const ch of (region || '') + a) hsh = Math.imul(hsh ^ ch.charCodeAt(0), 16777619) >>> 0; hsh = (hsh + Math.imul(++lookN, 2654435761)) >>> 0;
+  R = rng(hsh); R(); R();
+  const A = ARCH[a], pick = (arr, d) => arr ? arr[R() * arr.length | 0] : d, cs = costume(a, R, region, !!A.kid);
+  return { model: A.model, h: A.h * (.97 + R() * .06), body: /^f_|kid_f/.test(A.model) ? 'f' : 'm', skin: 'sk' + (R() * 6 | 0), hairColor: pick(A.hair, pick(NATURAL_HAIR)),
+    hat: cs.hat || pick(A.hat, 'none'), top: 'tee', topColor: TC[R() * TC.length | 0], colors: cs.colors, acc: pick(A.acc, 'none') };
 }
 const TOWN_FOLK = { // who walks around each town
   harbor: ['kid_m', 'kid_f', 'elder_m', 'bearded', 'athlete_f', 'kid_m'], mistvale: ['elder_f', 'kid_f', 'bearded', 'elder_m'], starfall: ['bearded', 'athlete', 'kid_m'],
@@ -294,7 +331,7 @@ export function createWorld(canvas, hooks = {}) {
     const R = rng(seed); if (quality !== 'high') n = Math.ceil(n * .5);
     for (let i = 0; i < n; i++) {
       const folk = TOWN_FOLK[areaId] || [], a = R() < .7 && folk.length ? folk[(seed + i) % folk.length] : null, A = a && ARCH[a];
-      const ch = makeRigged(a ? archLook(a, rng(seed * 7 + i)) : villagerLook(rng(99 + (seed + i) % 10))); if (!ch) continue;
+      const ch = makeRigged(a ? archLook(a, rng(seed * 7 + i), areaId) : villagerLook(rng(99 + (seed + i) % 10))); if (!ch) continue;
       const pts = route.map(([x, z]) => [x + (R() - .5) * 2, z + (R() - .5) * 2]); if (R() < .5) pts.reverse();
       const k = R() * pts.length | 0; const [x, z] = pts[k]; put(ch.group, x, z);
       villagers.push({ ch, pts, i: (k + 1) % pts.length, wait: R() * 4, speed: (A?.walker || 1.3) + R() * .5, name: A ? A.names[i % A.names.length] : null, line: A ? A.lines[i % A.lines.length] : VILLAGER_LINES[(seed + i) % VILLAGER_LINES.length], x, z });
@@ -312,7 +349,7 @@ export function createWorld(canvas, hooks = {}) {
   };
   function addWorker(a, x, z, face, seed) {
     const A = ARCH[a]; if (!A) return null; const R = rng(seed);
-    const ch = makeRigged(archLook(a, R)); if (!ch) return null;
+    const lk = archLook(a, R, areaId), ch = makeRigged(lk); if (!ch) return null; ch.look = lk;
     put(ch.group, x, z); ch.group.rotation.y = face; ch.update(0);
     const J = JOBS[A.job]; if (J?.prop) attachProp(ch, J.prop);
     // the work place itself (props2 kit): [name, side, forward, rot] in the worker's own frame — anvil in front of the smith,
@@ -321,7 +358,7 @@ export function createWorld(canvas, hooks = {}) {
     for (const [n, sd, fw, r, sc, bl] of (JOB_SET[A.job] || []).slice(0, quality === 'low' ? 2 : 9)) if (has(n)) kit(n, x + sx * sd + fx * fw, z + sz * sd + fz * fw, { rot: face + r, scale: sc || 1, block: bl });
     if (JOB_SET[A.job]) clearGrass(root.position.x + x, root.position.z + z, 3);
     if (J?.bench && has('TT_Bench')) { kit('TT_Bench', x - Math.sin(face) * .25, z - Math.cos(face) * .25, { rot: face }); ch.play(J.idle, 0); }
-    const v = { ch, pts: [[x, z]], i: 0, wait: 0, speed: 0, job: A.job, face, jt: R() * 3, name: A.names[seed % A.names.length], line: A.lines[seed % A.lines.length], x, z };
+    const v = { ch, pts: [[x, z]], i: 0, wait: 0, speed: 0, job: A.job, face, jt: R() * 3, name: A.names[(seed + allVillagers.length + villagers.length) % A.names.length], line: A.lines[(seed + villagers.length) % A.lines.length], x, z };
     villagers.push(v); block(x, z, .45); return v;
   }
   function glyphEntity(g0) {
@@ -363,8 +400,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const boat = kit('Ship_Small', 26.5, 41, { y: -.25, rot: Math.PI / 2, scale: 1.3 }); tickers.push(k => { if (boat) { boat.position.y = -.25 + Math.sin(k * 1.1) * .08; boat.rotation.z = Math.sin(k * .9) * .03; } });
       const ship = kit('Ship_Large', 62, 58, { y: -.6, rot: 2.2, scale: 1.4 }); tickers.push(k => { if (ship) { ship.position.y = -.6 + Math.sin(k * .6) * .15; ship.rotation.x = Math.sin(k * .5) * .02; } });
       for (const [x, z, n] of [[20.2, 27, 'Prop_Barrel'], [21.8, 29.6, 'Prop_Bucket_Fishes'], [20.4, 33, 'Prop_Chest_Closed'], [22, 41, 'Prop_Anchor'], [28, 36.4, 'Prop_Barrel']]) kit(n, x, z, { y: .68, rot: x * 3, scale: 1.2 });
-      scatter(PALMS, 26, 12, (x, z, y) => y > .05 && y < .9 && offPath(x, z) && clearOf(x, z, 1.5), { rMin: 30, rMax: 52, sMin: 1.4, sMax: 2.1, blockR: .5 });
-      scatter(['FL_Rock_Sand', 'FL_Rock_Sand', 'FL_Rock_Sand'], 30, 14, (x, z, y) => y > -.6 && y < .5, { rMin: 32, rMax: 56, sMin: 1.5, sMax: 3.2 });
+      // the beach by the piers stays open: the walk from the ferry landing to the docks and the plaza is never blocked
+      const nearDock = (x, z) => segDist(x, z, [[21, 18], [21, 47]]) < 5.5 || segDist(x, z, [[21, 36], [33, 36]]) < 5.5 || Math.hypot(x - 16, z - 22) < 9 || segDist(x, z, [[16, 22], [6, 10], [0, 2]]) < 4;
+      scatter(['FL_Palm'], 22, 12, (x, z, y) => y > .05 && y < .9 && offPath(x, z) && !nearDock(x, z) && clearOf(x, z, 2), { rMin: 30, rMax: 54, sMin: 1.4, sMax: 2.1, blockR: .5 });
+      scatter(['FL_Rock_Sand', 'FL_Rock_Sand'], 16, 14, (x, z, y) => y > -.6 && y < .5 && offPath(x, z) && !nearDock(x, z) && clearOf(x, z, 2.5), { rMin: 34, rMax: 58, sMin: 1.1, sMax: 2.2, blockR: .9 });
       scatter(has('TT_Tree_Round') ? ['TT_Tree_Round', 'TT_Tree_Round2', 'TT_Tree_Round', 'FL_Tree_A', 'FL_Tree_C'] : [...TREES, ...BIRCH, 'FL_Tree_B'], 52, 21, (x, z, y) => y > .9 && offPath(x, z) && clearOf(x, z, 3.5) && Math.hypot(x, z - 2) > 16, { rMin: 16, rMax: 48, sMin: .7, sMax: 1.05, blockR: .6 });
       scatter(BUSH, 60, 22, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, 1.2), { rMin: 8, rMax: 44, sMin: .8, sMax: 1.3, shadow: false });
       scatter(FLOWERS, 90, 23, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, .8) && Math.hypot(x, z - 2) > 11.5, { rMin: 6, rMax: 44, sMin: .7, sMax: 1.2, shadow: false });
@@ -572,7 +611,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       nightFx.push(day => ls.mat.color.copy(ls.base).multiplyScalar(lerp(2.6, .9, day))); };
     if (id === 'harbor') {
       // windmills on the hills above the port (a wind-festival town), sails always turning
-      for (const [x, z] of spots(cands(28, 58, 11), 3, 3, 14, ([x, z]) => -h(x, z))) {
+      // …a row of three on the inland ridge behind the town (outside the streets, away from the roads, facing the sea)
+      const ridge = cands(64, 96, 11, 500).filter(([x, z]) => z < -6 && h(x, z) > 2 && roadDist(x + R0().x, z + R0().z) > 10);
+      for (const [x, z] of spots(ridge, 3, 3, 15, ([x, z]) => -h(x, z) + Math.abs(x) * .02)) {
         const wm = windmill(); wm.group.position.set(x, h(x, z) - .2, z); wm.group.rotation.y = Math.atan2(-x, -(z - 2)); root.add(wm.group); block(x, z, 2.1);
         const sp = .5 + (x * 7 % 3) * .1; animated.push(k => { wm.blades.rotation.z = k * sp; }); decorLog.push(['lm', id, 'windmill', x + R0().x, z + R0().z]); }
       // a lighthouse on the rocks at the end of the harbour, its beam sweeping at night

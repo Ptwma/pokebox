@@ -155,7 +155,7 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   const obj = SkeletonUtils.clone(gltf.scene);
   const skin = P.item('skin', L.skin).c, hair = P.item('hairColor', L.hairColor).c;
   const outfit = L.top === 'labcoat' ? '#f1f1ee' : P.item('topColor', L.topColor).c, main = outfitMaterial(path, gltf.scene);
-  const key = [path, skin, hair, outfit].join('|');
+  const COL = L.colors || {}, key = [path, skin, hair, outfit, COL.Outfit, COL.Inner, COL.Pants, COL.Shoes].join('|');
   obj.traverse(o => {
     if (!o.isMesh) return; if (HIDE.test(o.name + ' ' + (o.parent?.name || ''))) { o.visible = false; return; }
     const src = o.material, mk = key + '|' + src.name;
@@ -166,6 +166,8 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
       if (/^Skin/i.test(src.name)) { m.color.set(skin).multiplyScalar(/Darker/i.test(src.name) ? .92 : 1); m.color.offsetHSL(0, -.04, .02); m.roughness = 1; }
       else if (/Hair|Eyebrow|Moustache/i.test(src.name)) { m.color.set(hair).multiplyScalar(/Eyebrow/i.test(src.name) ? .6 : 1); m.roughness = .5; }
       else if (/^Eye$/i.test(src.name)) { m.color.multiplyScalar(.7); m.roughness = .3; }
+      else if (src.name === 'Inner' && COL.Inner && COL.Outfit) { m.color.set(COL.Outfit).lerp(new THREE.Color(COL.Inner), .55); m.roughness = .9; } // the shirt under a vest: a softer tone, never a bright patch
+      else if (COL[src.name] && src.name !== 'Hair') { m.color.set(COL[src.name]); m.roughness = /Shoes/.test(src.name) ? .6 : .9; } // a coordinated outfit (role / region wardrobe)
       else if (src.name === main) { m.color.set(outfit); m.color.offsetHSL(0, -.03, .03); m.roughness = .9; }
       else { m.color.offsetHSL(0, -.06, .04); m.roughness = .9; }
       m.flatShading = false; m.userData.actor = true;
@@ -194,10 +196,11 @@ export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   if (head) {
     obj.updateMatrixWorld(true); head.getWorldScale(tmpS); const an = ANIME(path), hs = .285 * (an ? 1.43 : 1) * height / 2.3 / tmpS.x; // head units -> bone space (1 unit ≈ head width)
     const mount = new THREE.Group(); mount.scale.setScalar(hs); mount.position.set(0, (an ? .29 : .2) * height / 2.3 / tmpS.y, (an ? .02 : .01) / tmpS.z); head.add(mount);
-    if (HAT[hatId] && !/King|Witch|Worker|Farmer|Swat|Spacesuit/.test(path)) mount.add(HAT[hatId](L.top === 'labcoat' ? '#3d8fd6' : outfit));
+    if (HAT[hatId] && !/King|Witch|Worker|Farmer|Swat|Spacesuit/.test(path)) mount.add(HAT[hatId](L.top === 'labcoat' ? '#3d8fd6' : hatId === 'beanie' && COL.Inner ? COL.Inner : hatId === 'wide' && COL.Pants ? '#d8c08a' : COL.Outfit || outfit));
     if (L.acc && L.acc !== 'none' && !/Spacesuit|Swat/.test(path)) { const a = accessory(L.acc); a.position.y = -.38; mount.add(a); }
   }
   // anime / Pokémon-trainer proportions: bigger head (hats & accessories ride along), slightly bigger feet
+  if (ANIME(path) && head && !L.kidHead) head.scale.setScalar(L.model?.startsWith('kid') ? 1.05 : 1.14); // a touch more Pokémon-trainer: bigger, friendlier heads
   if (!ANIME(path)) { // the anime trainers are modelled with these proportions already
     if (head) head.scale.setScalar(STYLE.head);
     obj.traverse(o => { if (o.isBone && /^Foot\./.test(o.name)) o.scale.setScalar(STYLE.feet); });
