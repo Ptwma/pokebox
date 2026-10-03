@@ -88,7 +88,7 @@ export const TOWN_BASE = {
   rift: (x, z) => { const r = Math.hypot(x, z); return 1 + (fbm(x * .08, z * .08) - .5) * 2.2 + Math.max(0, r - 30) * .18 - Math.max(0, 1 - r / 9) * 1.6; },
 };
 export const FLATS = { // flat pads for buildings / plazas: [x, z, radius, height] (local)
-  harbor: [[0, 2, 12, 1.25], [-10, -11, 9, 1.25], [10, -12, 5.5, 1.25], [18, -2, 4.5, 1.2], [-20, 6, 5, 1.2], [5, -23, 6, 1.2], [-5, -24, 4, 1.2], [-24, -6, 4.5, 1.15], [22, 18, 3.5, .95]],
+  harbor: [[0, 2, 12, 1.25], [-10, -11, 9, 1.25], [10, -12, 5.5, 1.25]], // the other houses stand on planned lots (TOWN_LOTS)
   mistvale: [[16, 5, 5, 1.1], [-22, -12, 5, 1.2]], sandreach: [[-4, -6, 7, 1.6]], starfall: [[-4, -14, 9, 3.2], [8, -4, 5, 2.4]],
   voltspire: [[0, 0, 8, 1.8]], frostline: [[2, -4, 7, 2.2], [-14, 8, 5, 2.2]], rift: [[0, -18, 11, 1.4], [0, 4, 7, .9]],
 };
@@ -101,6 +101,38 @@ export const TOWN_PATHS = { // local
   frostline: [{ pts: [[0, 34], [0, 20], [2, 6], [2, -4]] }, { pts: [[2, 6], [-10, 8], [-14, 10]] }],
   rift: [{ pts: [[0, 34], [0, 20], [0, 4], [0, -8]] }],
 };
+/* ------------------------------------------------------------------ town planning: building lots along the streets
+   Every lot sits beside a street with its door facing it, gets a flat pad (no grass) and a short footpath to the street.
+   Computed once, deterministically, so the terrain worker (pads, paths) and the world (buildings) agree. */
+const LOT = { gap: 10.5, set: 6.8, pad: 4.3, plaza: 14, edge: 41, apart: 9.5 };
+// how many houses each town gets (closest to the plaza first); the Rift is a ruin, not a town
+const LOT_N = { harbor: 12, mistvale: 9, starfall: 8, frostline: 9, voltspire: 11, sandreach: 11, rift: 0 };
+// every town gets a ring lane and a cross avenue besides its original streets, so houses can line real streets
+for (const id in TOWN_PATHS) { if (!LOT_N[id]) continue;
+  const ring = Array.from({ length: 17 }, (_, i) => { const a = i / 16 * Math.PI * 2; return [Math.cos(a) * 24, 2 + Math.sin(a) * 24]; });
+  TOWN_PATHS[id].push({ pts: ring, lane: true }, { pts: [[-34, 2], [-12, 2]], lane: true }, { pts: [[12, 2], [34, 2]], lane: true }); }
+export const TOWN_LOTS = {};
+for (const id in TOWN_PATHS) {
+  const lots = [], base = TOWN_BASE[id], hand = (FLATS[id] || []).slice(), streets = TOWN_PATHS[id].slice();
+  for (const p of streets) for (let i = 0; i < p.pts.length - 1; i++) {
+    const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
+    for (let d = 4; d <= L - 3; d += LOT.gap) for (const side of [-1, 1]) {
+      const sx = ax + dx * d, sz = az + dz * d, x = sx - dz * side * LOT.set, z = sz + dx * side * LOT.set;
+      if (Math.hypot(x, z - 2) < LOT.plaza || Math.hypot(x, z) > LOT.edge) continue;                 // keep the plaza and the town edge free
+      if (lots.some(l => Math.hypot(l.x - x, l.z - z) < LOT.apart)) continue;
+      if (streets.some(q => segDist(x, z, q.pts) < LOT.set - .6)) continue;                          // not on top of another street
+      if (hand.some(([fx, fz, r]) => Math.hypot(fx - x, fz - z) < r + 4.5)) continue;                // not on the hand-built pads (lab, shop, plaza…)
+      const y0 = base(x, z), y1 = Math.min(base(x + 3, z), base(x - 3, z), base(x, z + 3), base(x, z - 3)); if (y1 < .35) continue; // dry land only
+      lots.push({ x, z, sx, sz, rot: Math.atan2(sx - x, sz - z), y: Math.max(.95, y0) });
+    }
+  }
+  lots.sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2)); lots.length = Math.min(lots.length, LOT_N[id] || 0);
+  for (const l of lots) {
+    FLATS[id].push([l.x, l.z, LOT.pad, l.y]);
+    const k = (LOT.set - 2.6) / LOT.set; TOWN_PATHS[id].push({ spur: true, pts: [[l.x + (l.sx - l.x) * .42, l.z + (l.sz - l.z) * .42], [l.x + (l.sx - l.x) * k, l.z + (l.sz - l.z) * k]] });
+  }
+  TOWN_LOTS[id] = lots;
+}
 const TOWN_R = 44, TOWN_BLEND = 72;
 
 /* ------------------------------------------------------------------ biomes */

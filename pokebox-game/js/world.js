@@ -13,7 +13,7 @@ import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
 import { createFieldBattle } from './fieldbattle.js';
 import { GFX, clamp, lerp, smooth, rng, fbm, col, makeSky, makeWater, grassField as grassFieldImpl, particles, makePost, envFromSky } from './world_env.js';
-import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K } from './terrain.js';
+import { H, REGIONS, ROUTES, GATES, TOWN_PATHS, TOWN_LOTS, BIOMES, BIOME_LIST, regionWeights, nearestRegion, roadDist, routePoint, WORLD, segDist, K } from './terrain.js';
 
 export const TYPE_COL = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
 // a popup the player is using (travel map, starter pick, Lattice, menu, update dialog): story scenes wait for it to close
@@ -218,7 +218,8 @@ export function createWorld(canvas, hooks = {}) {
   }
   const nearPath = (x, z, d = 2.2) => (TOWN_PATHS[areaId] || []).some(p => segDist(x, z, p.pts) < d);
   const clearOf = (x, z, d) => !colliders.some(c => Math.hypot(c.x - x, c.z - z) < (c.box ? Math.max(c.hw, c.hd) : c.r) + d);
-  const offPath = (x, z) => !nearPath(x, z, 2.6);
+  const onLot = (x, z, pad = 6.5) => (TOWN_LOTS[areaId] || []).some(l => Math.hypot(l.x - x, l.z - z) < pad); // planned building lots stay clear of trees & rocks
+  const offPath = (x, z) => !nearPath(x, z, 2.6) && !onLot(x, z);
 
   function lamp(x, z) {
     if (has('TT_Lamp')) { const o = kit('TT_Lamp', x, z, { rot: Math.atan2(-x, -z) }); block(x, z, .25);
@@ -336,14 +337,13 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       for (const [x, z, n] of [[-15.2, -6.4, 'Prop_Crate'], [-14, -6.2, 'Prop_Barrel1'], [-5, -6.6, 'Prop_Crate_Tarp'], [-4, -7.2, 'Prop_Barrel2_Closed']]) kit(n, x, z, { rot: x, scale: .75, block: .6 });
       kit('Prop_Light_Floor', -10, -6.8, { scale: .8 });
       const HS = [[10, -12, 3, 3, 2, 'Plaster', 3], [18, -2, 2, 3, 1, 'Plaster', 5], [-20, 6, 3, 3, 1, 'Brick', 7], [5, -23, 3, 4, 2, 'Plaster', 9], [-5, -24, 2, 2, 1, 'Plaster', 13], [-24, -6, 2, 3, 2, 'Brick', 17], [22, 18, 2, 2, 1, 'Plaster', 19]];
-      for (const [x, z, w, d, f, wall, seed] of HS) { const rot = Math.atan2(-x, -z + 2);
-        if (x === 10 && z === -12 && has('TT_Shop')) { kit('TT_Shop', x, z, { rot, scale: 1.05 }); blockBox(x, z, 3.9, 3.4, rot); continue; } // the card shop
-        house(root, x, h(x, z), z, { w, d, floors: f, wall, seed, rot, balcony: f > 1 }); blockBox(x, z, w + .3, d + .3, rot); }
+      for (const [x, z] of HS.slice(0, 1)) { const rot = Math.atan2(-x, -z + 2); // the card shop faces the plaza; the other houses come from the town plan (lots)
+        if (has('TT_Shop')) { kit('TT_Shop', x, z, { rot, scale: 1.05 }); blockBox(x, z, 3.9, 3.4, rot); } else { house(root, x, h(x, z), z, { w: 3, d: 3, floors: 2, wall: 'Plaster', seed: 3, rot, balcony: true }); blockBox(x, z, 3.3, 3.3, rot); } }
       const shopTag = label('CARD SHOP', 'Packs & Vault', '#ffd257'); shopTag.scale.set(3.2, .8, 1); shopTag.position.set(9.3, h(10, -12) + (has('TT_Shop') ? 5.4 : 7.8), -9.4); root.add(shopTag);
       fountain(0, 2);
       const plaza = new THREE.Mesh(new THREE.CircleGeometry(11.8, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: cobbleTex(), roughness: .9, polygonOffset: true, polygonOffsetFactor: -2 }));
       plaza.position.set(0, h(0, 2) + .03, 2); plaza.receiveShadow = true; root.add(plaza);
-      for (const [x, z] of [[-6, -4], [6, -4], [-8, 8], [8, 8], [2, 14], [3, 24], [-3, 24], [14, 12], [18, 16.5], [-14, 5.5], [-22, 1.5], [5.6, -12], [12, -18.5], [22, -16]]) lamp(x, z);
+      for (const [x, z] of [[-6, -4], [6, -4], [-8, 8], [8, 8], [2, 14], [3, 24], [-3, 24], [14, 12], [18, 16.5], [-14, 5.5], [-22, 1.5], [5.6, -12], [12, -18.5], [22, -16]]) if (Math.hypot(x, z - 2) < 12) lamp(x, z); // plaza lamps; street lamps come from the plan
       for (const [x, z, r] of [[7, 5, .4], [-7, 6, -.3]]) { kit('Prop_Wagon', x, z, { rot: r, scale: .9, block: 1.6 }); kit('Prop_Crate', x + 1.6, z - 1, { rot: r, scale: .8, block: .6 }); kit('Prop_Barrel', x - 1.4, z + .8, { scale: 1.1 }); }
       for (let i = 0; i < 8; i++) kit('Prop_WoodenFence_Single', -30 + i * 2.05, 16 + Math.sin(i) * .3, { rot: .05 });
       dockLine(21, 22, 21, 44); dockLine(21, 36, 31, 36);
@@ -390,7 +390,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       scatter(DEAD, 10, 34, (x, z, y) => offPath(x, z) && clearOf(x, z, 4), { rMin: 12, rMax: 46, sMin: .4, sMax: .6, blockR: .6 });
       scatter(['FL_TallGrass_Dry'], 60, 35, (x, z, y) => offPath(x, z), { rMin: 6, rMax: 48, sMin: .7, sMax: 1.2, shadow: false, tint: null });
       const crys = new THREE.MeshPhysicalMaterial({ color: '#c8f7ff', transmission: .6, thickness: .5, roughness: .05, emissive: col('#1f6c7a'), emissiveIntensity: .4 });
-      const RC = rng(36); const cl = []; for (let i = 0; i < 40; i++) { const a = RC() * 6.28, r = 6 + RC() * 44, x = Math.cos(a) * r, z = Math.sin(a) * r; if (nearPath(x, z)) continue; cl.push([x, z, .4 + RC() * .9]); }
+      const RC = rng(36); const cl = []; for (let i = 0; i < 40; i++) { const a = RC() * 6.28, r = 6 + RC() * 44, x = Math.cos(a) * r, z = Math.sin(a) * r; if (nearPath(x, z) || onLot(x, z)) continue; cl.push([x, z, .4 + RC() * .9]); }
       const cm = new THREE.InstancedMesh(new THREE.OctahedronGeometry(.6, 0), crys, cl.length), o3 = new THREE.Object3D(); cl.forEach(([x, z, s], i) => { o3.position.set(x, h(x, z) + .3 * s, z); o3.rotation.set(RC(), RC() * 6, RC()); o3.scale.set(s, s * 1.8, s); o3.updateMatrix(); cm.setMatrixAt(i, o3.matrix); }); cm.castShadow = true; root.add(cm);
       kit('Prop_Wagon', -6, -8, { rot: .8, block: 1.8 }); kit('Prop_Crate', -2.5, -7.5, { scale: .8, block: .6 }); kit('Prop_Barrel', -3.5, -5.5, { scale: 1.2 });
        
@@ -426,7 +426,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       scatter(['FL_Pine_Snow', 'FL_Pine_Snow', 'FL_Pine_A'], 60, 61, (x, z, y) => offPath(x, z) && clearOf(x, z, 3), { rMin: 10, rMax: 50, sMin: .6, sMax: 1.05, blockR: .6 });
       scatter(ROCKS, 30, 62, (x, z, y) => offPath(x, z) && clearOf(x, z, 2), { rMin: 8, rMax: 48, sMin: .5, sMax: 1.3, blockR: 1 });
       const ice = new THREE.MeshPhysicalMaterial({ color: '#bfe3ff', transmission: .5, thickness: 1, roughness: .1, emissive: col('#2a6a9a'), emissiveIntensity: .25 });
-      const RI = rng(63), il = []; for (let i = 0; i < 60; i++) { const a = RI() * 6.28, r = 10 + RI() * 40, x = Math.cos(a) * r, z = Math.sin(a) * r; if (!nearPath(x, z) && clearOf(x, z, 2)) il.push([x, z, .6 + RI()]); }
+      const RI = rng(63), il = []; for (let i = 0; i < 60; i++) { const a = RI() * 6.28, r = 10 + RI() * 40, x = Math.cos(a) * r, z = Math.sin(a) * r; if (!nearPath(x, z) && !onLot(x, z) && clearOf(x, z, 2)) il.push([x, z, .6 + RI()]); }
       const im = new THREE.InstancedMesh(new THREE.ConeGeometry(.7, 4, 6), ice, il.length), o3 = new THREE.Object3D(); il.forEach(([x, z, s], i) => { o3.position.set(x, h(x, z) + 1.6 * s, z); o3.rotation.set((RI() - .5) * .4, RI() * 6, (RI() - .5) * .4); o3.scale.set(s, s, s); o3.updateMatrix(); im.setMatrixAt(i, o3.matrix); block(x, z, .6 * s); }); im.castShadow = true; root.add(im);
       house(root, -14, h(-14, 8), 8, { w: 2, d: 3, floors: 1, wall: 'Brick', seed: 21, rot: 1.2 }); blockBox(-14, 8, 2.3, 3.3, 1.2);
         addFind('glyph', 'frostline:0', 24, -16); addFind('glyph', 'frostline:1', -24, -20); sign(5, 32); 
@@ -439,7 +439,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const seams = new THREE.Mesh(new THREE.CylinderGeometry(2.25, 3.05, 26, 8, 12, true), new THREE.MeshBasicMaterial({ color: new THREE.Color('#5cf2d6').multiplyScalar(2), wireframe: true, transparent: true, opacity: .35 })); seams.position.copy(node.position); root.add(seams);
       const ring = new THREE.Mesh(new THREE.TorusGeometry(4.2, .14, 8, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color('#5cf2d6').multiplyScalar(3) })); ring.rotation.x = Math.PI / 2; ring.position.set(0, ny + 6, -18); root.add(ring); animated.push(k => { ring.position.y = ny + 6 + Math.sin(k) * 5; });
       const cry = new THREE.MeshStandardMaterial({ color: '#5cf2d6', emissive: col('#1fb89c'), emissiveIntensity: 1.2, roughness: .2, metalness: .1 });
-      const RC = rng(71), cl = []; for (let i = 0; i < 60; i++) { const a = RC() * 6.28, r = 9 + RC() * 42, x = Math.cos(a) * r, z = Math.sin(a) * r; if (!nearPath(x, z) && clearOf(x, z, 1.5)) cl.push([x, z, .5 + RC() * 1.4]); }
+      const RC = rng(71), cl = []; for (let i = 0; i < 60; i++) { const a = RC() * 6.28, r = 9 + RC() * 42, x = Math.cos(a) * r, z = Math.sin(a) * r; if (!nearPath(x, z) && !onLot(x, z) && clearOf(x, z, 1.5)) cl.push([x, z, .5 + RC() * 1.4]); }
       const cm = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0), cry, cl.length), o3 = new THREE.Object3D(); cl.forEach(([x, z, s], i) => { o3.position.set(x, h(x, z) + s * .8, z); o3.rotation.set(RC() * .5, RC() * 6, RC() * .5); o3.scale.set(s * .6, s * 1.6, s * .6); o3.updateMatrix(); cm.setMatrixAt(i, o3.matrix); if (s > 1) block(x, z, .5 * s); }); root.add(cm);
       scatter(TWIST, 8, 72, (x, z, y) => offPath(x, z) && clearOf(x, z, 6), { rMin: 20, rMax: 46, sMin: .4, sMax: .55, blockR: 1.2, tint: { leaf: '#1f5a50', other: '#3a3a44' } });
       scatter(DEAD, 16, 73, (x, z, y) => offPath(x, z) && clearOf(x, z, 3), { rMin: 12, rMax: 48, sMin: .4, sMax: .7, blockR: .6, tint: { all: '#4a4a55' } });
@@ -485,44 +485,58 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (!has('TT_RelayCenter') || id === 'rift') return;
     const R = REGIONS[id], seed = id.length * 97;
     const npcs = QS.ROSTER.filter(r => r.pos.region === id || Math.hypot(r.pos.x - R.x, r.pos.z - R.z) < 60).map(r => [r.pos.x - R.x, r.pos.z - R.z, 3.5]);
-    // Relay Center: near the middle of town, door facing the plaza
-    const rc = findSpot(0, 0, 6.8, { rMin: 14, rMax: 36, seed: seed + 1, avoid: npcs, face: [0, 0] });
-    if (rc) { decorLog.push(['relay', id, rc.x + R.x, rc.z + R.z]); kit('TT_RelayCenter', rc.x, rc.z, { y: rc.y - .1, rot: rc.rot, scale: .9 }); blockBox(rc.x, rc.z, 5.4, 4.2, rc.rot);
-      const tg = label('RELAY CENTER', 'Rest · save · card storage', '#5cf2d6'); tg.position.set(rc.x, rc.y + 8.2, rc.z); tg.scale.multiplyScalar(1.3); root.add(tg);
-      npcs.push([rc.x, rc.z, 8]); }
-    // Trial Hall next to the town's Warden
+    // ---- the town plan: every building stands on a lot beside a street, door to the street (terrain.js TOWN_LOTS)
+    const lots = (TOWN_LOTS[id] || []).map(l => ({ ...l, used: false }));
+    const near = (l, r) => npcs.some(([nx, nz, nr]) => Math.hypot(nx - l.x, nz - l.z) < nr + r) || items.some(it => Math.hypot(it.x - l.x, it.z - l.z) < r + 2.5);
+    const take = (l, rad) => { l.used = true; for (const o of lots) if (o !== l && Math.hypot(o.x - l.x, o.z - l.z) < rad + 4.5) o.used = true; npcs.push([l.x, l.z, rad + 1]); };
+    const pick = (tx, tz, rad) => lots.filter(l => !l.used && !near(l, rad * .6)).sort((a, b) => Math.hypot(a.x - tx, a.z - tz) - Math.hypot(b.x - tx, b.z - tz))[0];
+    const raise = (name, l, sc) => { const bb = bounds(name), w = (bb.max.x - bb.min.x) * sc, d = (bb.max.z - bb.min.z) * sc, rad = Math.max(w, d) / 2;
+      kit(name, l.x, l.z, { y: l.y - .12, rot: l.rot, scale: sc }); blockBox(l.x, l.z, w * .46, d * .46, l.rot); take(l, rad);
+      decorLog.push(['bld', id, name, l.x + R.x, l.z + R.z]); return { w, d }; };
+    // Relay Center: the lot nearest the plaza
+    const lr = pick(0, 2, 5.5);
+    if (lr) { raise('TT_RelayCenter', lr, .9); const tg = label('RELAY CENTER', 'Rest · save · card storage', '#5cf2d6'); tg.position.set(lr.x, lr.y + 8.2, lr.z); tg.scale.multiplyScalar(1.3); root.add(tg); }
+    // Trial Hall: the lot nearest the town's Warden
     const wid = WARDEN_OF[id], w = wid && QS.ROSTER.find(r => r.id === wid);
-    if (w) { const wx = w.pos.x - R.x, wz = w.pos.z - R.z; let gs = findSpot(wx, wz, 7.6, { rMin: 8, rMax: 30, seed: seed + 2, slope: 1.1, avoid: npcs.filter(n => Math.hypot(n[0] - wx, n[1] - wz) > 1), face: [wx, wz] });
-      if (!gs) gs = findSpot(wx, wz, 7.6, { rMin: 8, rMax: 48, seed: seed + 5, slope: 1.9, avoid: npcs.filter(n => Math.hypot(n[0] - wx, n[1] - wz) > 1), face: [wx, wz] });
-      if (gs) { decorLog.push(['gym', id, gs.x + R.x, gs.z + R.z]); kit('TT_Gym', gs.x, gs.z, { y: gs.y - .1, rot: gs.rot, scale: .82 }); blockBox(gs.x, gs.z, 6.1, 5.3, gs.rot);
-        const tg = label(AREAS[id].name.toUpperCase() + ' TRIAL HALL', (P.CAST[wid]?.name || 'Warden') + "'s Trial", '#c9a4ff'); tg.position.set(gs.x, gs.y + 9, gs.z); tg.scale.multiplyScalar(1.3); root.add(tg);
-        npcs.push([gs.x, gs.z, 9]); } }
-    // regional districts (towns2 kit made in Blender): every town gets its own architecture around the plaza
+    if (w) { const wx = w.pos.x - R.x, wz = w.pos.z - R.z, gl = pick(wx, wz, 6);
+      if (gl) { raise('TT_Gym', gl, .82); const tg = label(AREAS[id].name.toUpperCase() + ' TRIAL HALL', (P.CAST[wid]?.name || 'Warden') + "'s Trial", '#c9a4ff'); tg.position.set(gl.x, gl.y + 9, gl.z); tg.scale.multiplyScalar(1.3); root.add(tg); } }
+    // regional houses on the remaining lots, nearest the plaza first, types interleaved so streets are varied
     const DIST = {
       mistvale: [['MV_Cottage_A', 3], ['MV_Cottage_B', 3], ['MV_Stilt', 2], ['MV_Lookout', 1]],
-      starfall: [['SF_Archive', 1], ['SF_House', 5]],
-      frostline: [['FL_Lodge', 1], ['FL_Chalet_A', 3], ['FL_Chalet_B', 3]],
-      voltspire: [['VS_Station', 1], ['VS_Block_B', 2], ['VS_Block_A', 3], ['VS_Block_C', 3]],
-      sandreach: [['SR_Workshop', 1], ['SR_Adobe_B', 2], ['SR_Adobe_A', 3], ['SR_Adobe_C', 3], ['SR_Market_A', 2], ['SR_Market_B', 2]],
+      starfall: [['SF_Archive', 1], ['SF_House', 6]],
+      frostline: [['FL_Lodge', 1], ['FL_Chalet_A', 4], ['FL_Chalet_B', 4]],
+      voltspire: [['VS_Station', 1], ['VS_Block_B', 3], ['VS_Block_A', 3], ['VS_Block_C', 3]],
+      sandreach: [['SR_Workshop', 1], ['SR_Adobe_B', 3], ['SR_Adobe_A', 3], ['SR_Adobe_C', 3], ['SR_Market_A', 1], ['SR_Market_B', 1]],
       harbor: [['SR_Market_B', 1], ['SR_Market_A', 1]],
     }[id] || [];
+    const queue = []; for (let round = 0; queue.length < 40 && round < 8; round++) for (const [name, n] of DIST) if (round < n && has(name)) queue.push(name);
     let di = 0;
-    for (const [name, n] of DIST) {
-      if (!has(name)) continue; const bb = bounds(name), sc = name.includes('Market') ? 1 : .85, rad = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2 * sc;
-      for (let k = 0; k < n; k++) {
-        const sp = findSpot(0, 0, rad, { rMin: 12 + rad, rMax: 46, seed: seed + 40 + di++ * 7, avoid: npcs, face: [0, 0], slope: 1.3 });
-        if (!sp) continue;
-        decorLog.push(['bld', id, name, sp.x + R.x, sp.z + R.z]);
-        kit(name, sp.x, sp.z, { y: sp.y - .15, rot: sp.rot, scale: sc }); blockBox(sp.x, sp.z, (bb.max.x - bb.min.x) * sc * .46, (bb.max.z - bb.min.z) * sc * .46, sp.rot);
-        npcs.push([sp.x, sp.z, rad + 1.5]);
-        const who = BLD_JOB[name], dep = (bb.max.z - bb.min.z) * sc / 2 + 1.7;
-        if (who && (di % 3 !== 2)) { const fx = sp.x + Math.sin(sp.rot) * dep, fz = sp.z + Math.cos(sp.rot) * dep;
-          if (h(fx, fz) > .3 && !nearPath(fx, fz, .6)) addWorker(who, fx + Math.cos(sp.rot) * 1.2, fz - Math.sin(sp.rot) * 1.2, sp.rot + (ARCH[who].job === 'chat' ? 0 : Math.PI * .1), seed + di * 13); }
-      }
+    for (const l of lots.slice().sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2))) {
+      if (l.used || near(l, 2.5)) continue;
+      const name = queue.shift(), seedL = seed + 40 + di++ * 7;
+      if (name) { const sc = name.includes('Market') ? 1 : .85, { d } = raise(name, l, sc), who = BLD_JOB[name];
+        if (who && di % 3 !== 2) { const dep = d / 2 + 1.7, fx = l.x + Math.sin(l.rot) * dep, fz = l.z + Math.cos(l.rot) * dep;
+          addWorker(who, fx + Math.cos(l.rot) * 1.4, fz - Math.sin(l.rot) * 1.4, l.rot + (ARCH[who].job === 'chat' ? 0 : Math.PI * .1), seedL); } }
+      else if (id === 'harbor') { // Lumen Harbor keeps its own plaster-and-brick houses (procedural kit), now lined up on the streets
+        const Rh = rng(seedL), hw = 2 + (Rh() * 2 | 0), hd = 2 + (Rh() < .5 ? 1 : 0), fl = Rh() < .45 ? 2 : 1, wall = Rh() < .35 ? 'Brick' : 'Plaster';
+        house(root, l.x, l.y - .05, l.z, { w: hw, d: hd, floors: fl, wall, seed: seedL, rot: l.rot, balcony: fl > 1 }); blockBox(l.x, l.z, hw + .3, hd + .3, l.rot); take(l, Math.max(hw, hd) + .5);
+        decorLog.push(['bld', id, 'house', l.x + R.x, l.z + R.z]);
+        if (has('TT_Flowerbed') && Rh() < .7) { const sd = Rh() < .5 ? -1 : 1, fx = l.x + Math.sin(l.rot) * (hd + 1.4) + Math.cos(l.rot) * sd * (hw + .4), fz = l.z + Math.cos(l.rot) * (hd + 1.4) - Math.sin(l.rot) * sd * (hw + .4); kit('TT_Flowerbed', fx, fz, { rot: l.rot, block: .6 }); } }
+      else { // nothing left to build: a small pocket park, so a pad never sits empty
+        take(l, 3); if (has('TT_Bench')) kit('TT_Bench', l.x + Math.sin(l.rot) * 1.2, l.z + Math.cos(l.rot) * 1.2, { rot: l.rot, block: .7 });
+        if (has('TT_Flowerbed')) { kit('TT_Flowerbed', l.x - Math.cos(l.rot) * 2.2, l.z + Math.sin(l.rot) * 2.2, { rot: l.rot, block: .6 }); kit('TT_Flowerbed', l.x + Math.cos(l.rot) * 2.2, l.z - Math.sin(l.rot) * 2.2, { rot: l.rot, block: .6 }); }
+        kit(id === 'frostline' ? 'FL_Pine_Snow' : id === 'sandreach' ? 'FL_Palm' : 'FL_Tree_A', l.x - Math.sin(l.rot) * 2, l.z - Math.cos(l.rot) * 2, { scale: .9, block: .5 }); }
     }
+    // street lamps at a steady rhythm along the streets (not the footpaths), alternating sides
+    { let k = 0; for (const p of TOWN_PATHS[id] || []) { if (p.spur) continue; for (let i = 0; i < p.pts.length - 1; i++) {
+      const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
+      for (let d = 6; d < L - 2; d += 13) { const sd = k++ % 2 ? 1 : -1, x = ax + dx * d - dz * sd * 2.7, z = az + dz * d + dx * sd * 2.7;
+        if (Math.hypot(x, z - 2) < 13 || Math.hypot(x, z) > 42 || h(x, z) < .4 || !clearOf(x, z, 1.2) || (TOWN_PATHS[id] || []).some(q => q.spur && segDist(x, z, q.pts) < 1.6)) continue;
+        lamp(x, z); } } } }
     // benches & flowerbeds along the town paths
     const Rr = rng(seed + 3);
     for (const p of TOWN_PATHS[id] || []) for (let i = 0; i < p.pts.length - 1; i++) {
+      if (p.spur || p.lane) break;
       const [ax, az] = p.pts[i], [bx, bz] = p.pts[i + 1], L = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / L, dz = (bz - az) / L;
       for (let d = 4; d < L - 2; d += 9) {
         const side = Rr() < .5 ? -1 : 1, x = ax + dx * d - dz * side * 2.9, z = az + dz * d + dx * side * 2.9;

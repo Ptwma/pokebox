@@ -1,12 +1,12 @@
 {
-  "version": "3.10.0",
+  "version": "3.11.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Original soundtrack for every region (harbor, wetlands, Starfall, Frostline, Voltspire, Sandreach, the Rift) plus a battle theme — generated live, with waves, wind, birds and crickets; a quieter version at night. Settings → Music to turn it off",
-    "49 new props (Quaternius CC0 kits, re-coloured to Pokebox's toon style): traders stand behind market stalls, smiths at anvils, woodcutters at chopping logs, gardeners among crates, fishers by barrels and rope",
-    "Camps now have a pot on the fire, supplies and a bench; ruins have broken pottery and old flagstones; lookouts are Ranger outposts with banners, a training dummy and a weapon rack",
-    "The grass is trampled where people work and camp, so everything on the ground is readable"
+    "Towns are planned now: houses stand on proper lots along the streets with their doors to the road and a footpath to the street, instead of being scattered around the plaza",
+    "Every town has a ring lane and a cross avenue, street lamps at a steady rhythm, the Relay Center on the lot nearest the plaza and the Trial Hall next to its Warden",
+    "Trees, rocks and crystals no longer grow on building plots; spare plots become small pocket parks",
+    "Lumen Harbor's houses keep their plaster-and-brick look, now lined up on the streets with flowerbeds by the doors"
   ]
 }
