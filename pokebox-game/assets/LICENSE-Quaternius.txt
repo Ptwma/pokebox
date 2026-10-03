@@ -3,3 +3,6 @@
 Modular SciFi MegaKit, Ultimate Modular Men/Women, Cute Animated Monsters — all licensed CC0 1.0 Universal (Public Domain).
 https://creativecommons.org/publicdomain/zero/1.0/  ·  Support the author: https://www.patreon.com/quaternius
 Optimised for Pokebox (textures resized to 512px WebP, meshopt compression, animations trimmed).
+
+assets/chars/anime/ual1.glb + ual2.glb: animation clips from Quaternius Universal Animation Library 1 & 2 — CC0 1.0 (License.txt inside the official zip).
+The people in assets/chars/anime are Pokebox's own Blender-generated meshes skinned to that library's (CC0) skeleton.

@@ -197,8 +197,8 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
   for (let i = 0; i < n; i++) { off.set([(Rg() * 2 - 1) * R, 0, (Rg() * 2 - 1) * R, (.55 + Rg() * .8) * hgt], i * 4); rot.set([Rg() * 6.2832, Rg()], i * 2); }
   geo.setAttribute('ofs', new THREE.InstancedBufferAttribute(off, 4)); geo.setAttribute('rot', new THREE.InstancedBufferAttribute(rot, 2)); geo.instanceCount = n;
   const mat = new THREE.ShaderMaterial({ fog: true, side: THREE.DoubleSide,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { time: { value: 0 }, player: { value: new THREE.Vector3(0, -99, 0) }, cBase: { value: col(base) }, cTip: { value: col(tip) }, gFar: { value: GFX.grassFar }, R: { value: R }, span: { value: span } }]),
-    vertexShader: `attribute vec4 ofs; attribute vec2 rot; uniform float time, gFar, R, span; uniform vec3 player; uniform sampler2D hmask; varying float vH; varying float vShade; varying float vVar;
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { time: { value: 0 }, player: { value: new THREE.Vector3(0, -99, 0) }, arena: { value: new THREE.Vector4(0, 0, 1, 0) }, cBase: { value: col(base) }, cTip: { value: col(tip) }, gFar: { value: GFX.grassFar }, R: { value: R }, span: { value: span } }]),
+    vertexShader: `attribute vec4 ofs; attribute vec2 rot; uniform float time, gFar, R, span; uniform vec3 player; uniform vec4 arena; uniform sampler2D hmask; varying float vH; varying float vShade; varying float vVar;
       #include <fog_pars_vertex>
       void main(){
         vec2 wxz = player.xz + mod(ofs.xz - player.xz + R, 2. * R) - R;          // wrap the patch around the player
@@ -206,7 +206,7 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
         float cd = distance(cameraPosition.xz, wxz);
         if (hmv.g < .15 + rot.y * .75 || cd > gFar) { gl_Position = vec4(2., 2., 2., 1.); return; }
         vec3 base = vec3(wxz.x, hmv.r - .02, wxz.y);
-        vec3 p = position; float s = ofs.w * (1. - smoothstep(gFar * .75, gFar, cd)) * (.55 + .45 * smoothstep(.2, 1., hmv.g)); p.y *= s; float cr = cos(rot.x), sr = sin(rot.x); p = vec3(p.x*cr - p.z*sr, p.y, p.x*sr + p.z*cr);
+        vec3 p = position; float s = ofs.w * (1. - smoothstep(gFar * .75, gFar, cd)) * (.55 + .45 * smoothstep(.2, 1., hmv.g)); p.y *= s * (1. - arena.w * .78 * (1. - smoothstep(arena.z * .55, arena.z, distance(wxz, arena.xy)))); float cr = cos(rot.x), sr = sin(rot.x); p = vec3(p.x*cr - p.z*sr, p.y, p.x*sr + p.z*cr);
         vec3 wp = base + p; float bend = position.y*position.y;
         float gust = sin(time * .6 + base.x * .05) * .5 + .5;
         float wv = sin(time*1.7 + base.x*.35 + base.z*.21) * (.4 + gust * .5) + sin(time*3.1 + base.x*.9) * .15;

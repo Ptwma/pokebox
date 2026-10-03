@@ -1000,12 +1000,14 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
   /* ---------- battles in the world */
   const FB = createFieldBattle({ THREE, scene, camera, H, hooks, makeCardPet, label,
-    player: () => player, pet: () => pet, setCam: fn => { battleCam = fn; }, respawn: () => { const id = lastSafeTown(); const R = REGIONS[id]; teleport(R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)); } });
+    player: () => player, pet: () => pet, setCam: fn => { battleCam = fn; }, arena: (x, z, r, k) => grassMesh?.userData.grass.arena.value.set(x, z, r, k), respawn: () => { const id = lastSafeTown(); const R = REGIONS[id]; teleport(R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)); } });
   function lastSafeTown() { const q = QS.Q(), pp = player.group.position; let best = 'harbor', bd = 1e9; for (const id in q.visited) { const R = REGIONS[id]; if (!R) continue; const d = Math.hypot(R.x - pp.x, R.z - pp.z); if (d < bd && !QS.blockedAt(R.x, R.z)) { bd = d; best = id; } } return best; }
+  // other wild Echoes step out of the arena while a fight is on (they used to wander through the shot)
+  function clearArena(except) { const pp = player.group.position, hid = []; for (const o of wilds) if (o !== except && !o.dead && o.g.visible && Math.hypot(o.x - pp.x, o.z - pp.z) < 22) { o.g.visible = false; hid.push(o); } return () => hid.forEach(o => { if (!o.dead) o.g.visible = true; }); }
   async function wildBattle(w) {
     if (QS.Q().starter == null) { hooks.toast?.('You have no partner Echo yet — Dr. Vale at Pokébox Labs will give you one.'); w.state = 'flee'; return; }
     mode = 'battle'; w.frozen = true; savePos();
-    const res = await FB.start({ kind: 'wild', wild: w, types: [w.type] });
+    const back = clearArena(w); const res = await FB.start({ kind: 'wild', wild: w, types: [w.type] }); back();
     w.frozen = false; mode = 'explore';
     const caught = res.result === 'caught';
     if (caught || res.result === 'win') { w.dead = true; w.g.visible = false; }
@@ -1014,7 +1016,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
   async function trainerBattle(np, { mirror = false } = {}) {
     mode = 'battle'; savePos();
-    const res = await FB.start({ kind: 'trainer', npc: np, mirror, name: np.name || npcName(np.id) });
+    const back = clearArena(null); const res = await FB.start({ kind: 'trainer', npc: np, mirror, name: np.name || npcName(np.id) }); back();
     mode = 'explore';
     if (res.result === 'win') { const first = !QS.beaten(np.key); QS.markBeaten(np.key); np.tag.material.map.dispose(); const t2 = label(np.name || npcName(np.id), 'Trainer · beaten'); np.tag.material.map = t2.material.map;
       if (first) storyEvent('win', { id: np.id }); }
@@ -1236,7 +1238,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, decorLog, villagers: allVillagers }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, decorLog, villagers: allVillagers }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },
   };

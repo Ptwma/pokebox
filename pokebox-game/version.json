@@ -1,12 +1,15 @@
 {
-  "version": "3.6.0",
+  "version": "3.7.0",
   "launcher": "2.1",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "All 23 townsfolk rebuilt on a new skeleton with 84 motion-captured-style animations (free CC0 Universal Animation Library)",
-    "Elders now sit on benches and chat, gardeners water plants, woodcutters chop, smiths kneel and repair, fishers lean on the rail",
-    "Smoother walk, jog and a real sprint for the player; new hit, knock-out and wave reactions",
-    "Character and animation files are now half the size (10.6 MB → 5.1 MB) (faster loading, especially on phones)"
+    "Battles now read as turns: a 'Your move' banner each turn, the action bar slides away while moves play out, and the acting side lights up",
+    "Before you choose, the game shows the type matchup, who moves first and when the foe has its Ultimate charged — so Guard and switching are real decisions",
+    "Every hit has a wind-up, a freeze-frame impact with a flash of type-coloured light, knockback and a recovery; signature moves and Ultimates get a name cut-in",
+    "New duel camera: over your creature's shoulder, close-ups on the attacker and the target, and it no longer hides behind trees or houses (they step aside for the fight)",
+    "Guard bubble, burning embers and paralysis sparks on the creatures, buff/debuff tags and status turns on the name plates",
+    "The world HUD hides during battles, grass is trampled flat in the arena, other wild Echoes keep out of the shot",
+    "PC: press 1-9 to pick an action"
   ]
 }
