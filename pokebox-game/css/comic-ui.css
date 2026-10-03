@@ -452,3 +452,50 @@ body.cine-on .coach{display:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 body:has(.wmapfs) .cx-area{display:none}
 .ftext.dmg.hurt{color:#ff6a5a}.ftext.dmg.hurt.crit{color:#ff3a2a}
+.pav{display:block;border-radius:13px;background:radial-gradient(circle at 50% 35%,#4a3a7a,#1b1530);object-fit:cover}
+
+/* ---------- phone HUD: the stick runs when pushed far (no RUN button), the minimap opens the map (no map button) */
+html.touch .wtbtns .tb.run,html.touch #wMap{display:none!important}
+/* progress notifications in the world: small, stacked beside the minimap instead of over the middle of the screen */
+body.game:not(.in-battle) .toasts{left:auto;right:calc(clamp(96px,26vh,180px) + 26px);top:max(10px,env(safe-area-inset-top));transform:none;align-items:flex-end;max-width:min(340px,42vw);gap:6px}
+body.game:not(.in-battle) .toast{font-size:13px;padding:7px 12px;border-radius:11px;line-height:1.25;text-align:right}
+html.touch body.game:not(.in-battle) .toasts{right:calc(clamp(92px,26vh,124px) + 20px)}
+html.touch body.game:not(.in-battle) .toast{font-size:11.5px;padding:6px 10px}
+/* the bottom bar and the header stay put while pages change (their own view-transition layer, never animated) */
+.rail{view-transition-name:rail}.hud{view-transition-name:hudbar}
+::view-transition-group(rail),::view-transition-group(hudbar),::view-transition-old(rail),::view-transition-new(rail),::view-transition-old(hudbar),::view-transition-new(hudbar){animation:none!important}
+::view-transition-old(rail),::view-transition-old(hudbar){display:none}
+
+/* ---------- capture aim: a shrinking ring over the foe (colour = base odds); tap when it is small */
+.fb-aim{position:absolute;width:0;height:0;pointer-events:none;z-index:5}
+.fb-aim i{position:absolute;left:0;top:0;width:120px;height:120px;border-radius:50%;transform:translate(-50%,-50%)}
+.fb-aim .tgt{width:84px;height:84px;border:3px dashed rgba(255,255,255,.85);box-shadow:0 0 0 2px rgba(0,0,0,.4)}
+.fb-aim .shr{border:6px solid var(--c);box-shadow:0 0 18px var(--c),inset 0 0 12px var(--c)}
+.fb-aim b{position:absolute;left:0;top:80px;transform:translateX(-50%);white-space:nowrap;font:900 18px var(--display);letter-spacing:.04em;color:#fff;text-shadow:0 2px 0 #000,0 0 12px #000;animation:capPulse 1s infinite}
+.fb-aim.out{opacity:0;transition:opacity .25s}
+.fb-lv{margin-left:6px;padding:1px 6px;border-radius:6px;background:#1b1530;color:#ffd257;font:800 11px var(--ui)}
+
+/* ---------- compass strip (top centre of the world view) */
+.wcompass{position:absolute;left:50%;top:max(8px,env(safe-area-inset-top));transform:translateX(-50%);width:min(360px,46vw);height:30px;overflow:hidden;border-radius:10px;background:linear-gradient(90deg,rgba(14,11,24,0),rgba(14,11,24,.62) 18%,rgba(14,11,24,.62) 82%,rgba(14,11,24,0));pointer-events:none;z-index:2;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent)}
+.cstrip{position:absolute;left:50%;top:0;height:100%;will-change:transform}
+.cstrip span{position:absolute;top:0;height:100%;transform:translateX(-50%);display:grid;place-items:center;font:800 12px var(--ui);color:rgba(255,255,255,.75)}
+.cstrip span.card{color:#fff;font-size:14px}.cstrip span.card:first-letter{}.cstrip span.tick::after{content:"";width:1px;height:7px;background:rgba(255,255,255,.4);align-self:end;margin-bottom:4px}
+.wcompass::after{content:"";position:absolute;left:50%;bottom:0;width:2px;height:8px;background:#ffd257;transform:translateX(-50%)}
+.cgoal{position:absolute;left:50%;top:1px;margin-left:-8px;font-style:normal;color:#ffd257;font-size:15px;line-height:1;text-shadow:0 0 6px rgba(0,0,0,.8);display:flex;flex-direction:column;align-items:center}
+.cgoal small{font:800 9px var(--ui);color:#ffe9a8}.cgoal.edge{opacity:.6}
+body.cine-on .wcompass,body.in-battle .wcompass{opacity:0}
+html.touch .wcompass{width:min(260px,34vw);height:26px}
+#fadeBlack{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:90;transition:opacity .3s}#fadeBlack.on{opacity:1}
+body.indoors .wcompass{display:none}
+.outfits{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.ofit{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:14px;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);text-align:center}
+.ofit.own{opacity:.6}.ofav{width:64px;height:64px;display:grid;place-items:center}.ofav i{width:46px;height:46px;border-radius:50%;box-shadow:0 0 0 3px rgba(255,255,255,.3)}
+.ofit small{color:var(--muted);font-size:11px}
+
+/* ---------- pack opening on phones: readable controls on the light studio, safe areas, big touch targets */
+.opening .otop{padding:max(10px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 10px max(14px,env(safe-area-inset-left))}
+.opening .otop .btn.ghost{background:rgba(27,21,48,.82);color:#fff;box-shadow:0 4px 0 rgba(0,0,0,.35);min-height:40px}
+.opening .otop #oClose{min-width:44px}
+html.touch .opening .ohint{font-size:12px;letter-spacing:.1em}
+@media (max-height:480px){.opening .otitle{font-size:16px;padding:5px 12px}}

@@ -105,7 +105,7 @@ export const TOWN_PATHS = { // local
 /* ------------------------------------------------------------------ town planning: building lots along the streets
    Every lot sits beside a street with its door facing it, gets a flat pad (no grass) and a short footpath to the street.
    Computed once, deterministically, so the terrain worker (pads, paths) and the world (buildings) agree. */
-const LOT = { gap: 9.2, set: 6.3, pad: 4.2, plaza: 14, apart: 8.1, clear: 4.9 };
+const LOT = { gap: 10.2, set: 7.2, pad: 5, plaza: 15, apart: 9.6, clear: 5.6 };
 // every town has its own street pattern and size (inspired by film towns: a port grid of canal-side streets, a forest village
 // of winding rings, a fan of terraces under the observatory, a winter ring around the lodge square, a diagonal tech grid,
 // a walled bazaar with four gates). n = number of buildings (the hub and the cities are bigger), edge = town radius.
@@ -114,13 +114,13 @@ const radial = (a, r0, r1) => [[Math.cos(a) * r0, 2 + Math.sin(a) * r0], [Math.c
 const grid = (sp, rot, ext) => { const out = [], c = Math.cos(rot), s = Math.sin(rot), T = (u, v) => [u * c - v * s, 2 + u * s + v * c];
   for (let k = -3; k <= 3; k++) { if (!k) continue; out.push([T(k * sp, -ext), T(k * sp, ext)], [T(-ext, k * sp), T(ext, k * sp)]); } return out; };
 export const TOWN_PLAN = {
-  harbor:    { n: 46, edge: 58, style: 'tropical', streets: [...grid(22, 0, 56), radial(-Math.PI / 2, 12, 50)] },
-  mistvale:  { n: 32, edge: 56, style: 'wetland', reserve: [[-31, 9, 8]], streets: [ring(22, .12, 1), ring(42, .08, 2), ...[0, 1, 2, 3, 4, 5].map(i => radial(i / 6 * Math.PI * 2 + .3, 12, 50))] },
-  starfall:  { n: 32, edge: 56, style: 'stargaze', streets: [ring(22, 0, 0, Math.PI * .9, Math.PI * 2.1), ring(42, 0, 0, Math.PI * .85, Math.PI * 2.15),
-    ...[0, 1, 2, 3, 4].map(i => radial(Math.PI + (i + .5) / 5 * Math.PI, 12, 52)), radial(Math.PI / 2, 12, 36)] },
-  frostline: { n: 34, edge: 56, style: 'winter', reserve: [[14, 14, 11]], streets: [ring(22, .05, 4), ring(42, .05, 1), ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => radial(i / 8 * Math.PI * 2 + .2, 12, 50))] },
-  voltspire: { n: 42, edge: 58, style: 'tech', streets: [...grid(21, Math.PI / 4, 56)] },
-  sandreach: { n: 38, edge: 54, style: 'desert', walls: 56, streets: [ring(21), ring(41, 0, 0, 0, Math.PI * 2, 36), ...[0, 1, 2, 3].map(i => radial(i / 4 * Math.PI * 2 + Math.PI / 4, 12, 52)), ...[0, 1, 2, 3].map(i => radial(i / 4 * Math.PI * 2, 12, 44))] },
+  harbor:    { n: 42, edge: 64, style: 'tropical', streets: [...grid(23, 0, 64), radial(-Math.PI / 2, 12, 58)] },
+  mistvale:  { n: 38, edge: 62, style: 'wetland', reserve: [[-31, 9, 8]], streets: [ring(22, .12, 1), ring(46, .06, 2), ...[0, 1, 2, 3, 4, 5].map(i => radial(i / 6 * Math.PI * 2 + .3, 12, 58))] },
+  starfall:  { n: 40, edge: 62, style: 'stargaze', streets: [ring(22, 0, 0, Math.PI * .9, Math.PI * 2.1), ring(46, 0, 0, Math.PI * .85, Math.PI * 2.15),
+    ...[0, 1, 2, 3, 4, 5, 6].map(i => radial(Math.PI + (i + .5) / 7 * Math.PI, 12, 58)), radial(Math.PI / 2, 12, 40), radial(Math.PI * .25, 14, 50), radial(Math.PI * .75, 14, 50)] },
+  frostline: { n: 38, edge: 62, style: 'winter', reserve: [[14, 14, 11]], streets: [ring(22, .05, 4), ring(46, .05, 1), ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => radial(i / 8 * Math.PI * 2 + .2, 12, 58))] },
+  voltspire: { n: 40, edge: 64, style: 'tech', streets: [...grid(23, Math.PI / 4, 64)] },
+  sandreach: { n: 40, edge: 60, style: 'desert', walls: 60, streets: [ring(21), ring(45, 0, 0, 0, Math.PI * 2, 40), ...[0, 1, 2, 3].map(i => radial(i / 4 * Math.PI * 2 + Math.PI / 4, 12, 56)), ...[0, 1, 2, 3].map(i => radial(i / 4 * Math.PI * 2, 12, 56))] },
 };
 for (const id in TOWN_PLAN) for (const pts of TOWN_PLAN[id].streets) TOWN_PATHS[id].push({ pts, lane: true });
 export const TOWN_LOTS = {};
@@ -139,7 +139,7 @@ for (const id in TOWN_PATHS) {
       if (streets.some(q => segDist(x, z, q.pts) < LOT.clear)) { no('street'); continue; }                         // not on top of another street
       if (hand.some(([fx, fz, r]) => Math.hypot(fx - x, fz - z) < r + 4.5) || (TOWN_PLAN[id]?.reserve || []).some(([fx, fz, r]) => Math.hypot(fx - x, fz - z) < r + 3)) { no('pad'); continue; }               // not on the hand-built pads (lab, shop, plaza…)
       const y0 = base(x, z), y1 = Math.min(base(x + 3, z), base(x - 3, z), base(x, z + 3), base(x, z - 3)); if (y1 < .35) { no('wet'); continue; } // dry land only
-      lots.push({ x, z, sx, sz, rot: Math.atan2(sx - x, sz - z), y: Math.max(.95, y0), opts: { maxW: LOT.apart - 1.1, maxD: 7 } });
+      lots.push({ x, z, sx, sz, rot: Math.atan2(sx - x, sz - z), y: Math.max(.95, y0), opts: { maxW: LOT.apart - 1.1, maxD: 8 } });
     }
   }
   lots.sort((a, b) => Math.hypot(a.x, a.z - 2) - Math.hypot(b.x, b.z - 2)); lots.length = Math.min(lots.length, TOWN_PLAN[id]?.n || 0);
@@ -149,7 +149,7 @@ for (const id in TOWN_PATHS) {
   }
   TOWN_LOTS[id] = lots; if (typeof process !== 'undefined' && process.env?.LOTDBG) console.log(id, lots.length, stations.length, JSON.stringify(why));
 }
-const TOWN_R = 60, TOWN_BLEND = 88; // bigger towns since v3.12 (30–46 buildings)
+const TOWN_R = 66, TOWN_BLEND = 94; // bigger towns since v3.12 (30–46 buildings)
 
 /* ------------------------------------------------------------------ biomes */
 export const BIOMES = {
@@ -206,6 +206,8 @@ function landMask(x, z) {
  * Returns only the number; use sample() when colours / masks are needed too.
  */
 export function H(x, z) { return sample(x, z, false).y; }
+/** 0..1: how much of a mountain range this point belongs to (the player can't climb high into them) */
+export function mountainAt(x, z) { const rd = roadDist(x, z), { d: td } = townDist(x, z); return smooth(34, 90, rd) * smooth(70, 120, td) * smooth(.5, .7, fbm(x * .006 / K + 2, z * .006 / K + 7, 3)); }
 
 /** full sample: height + biome weights + road distance + grass amount + town info */
 export function sample(x, z, full = true) {
@@ -215,7 +217,7 @@ export function sample(x, z, full = true) {
   // mountains away from roads & towns (guides you along the routes), with gaps for meadows/side valleys
   const mask = smooth(.5, .7, fbm(x * .006 / K + 2, z * .006 / K + 7, 3));
   const mountain = smooth(34, 90, rd) * smooth(70, 120, td) * mask;
-  if (mountain > 0) { const rg = 1 - Math.abs(fbm(x * .02 + 4, z * .02, 4) * 2 - 1); y += mountain * (8 + rg * rg * 26); }
+  if (mountain > 0) { const rg = 1 - Math.abs(fbm(x * .02 + 4, z * .02, 4) * 2 - 1); y += mountain * (10 + rg * rg * 40); } // big ridges: walls of the routes, not climbable (world.js)
   // roads: gently flattened
   if (rd < 9) y = lerp(y, 1.4 + (y - 1.4) * .35, smooth(9, 2.5, rd) * (1 - (w.snow ?? 0) * .3));
   // land / sea

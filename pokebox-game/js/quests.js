@@ -91,6 +91,7 @@ export const STORY = [
       S('Choose your partner card', { kind: 'starter' }),
       S('Catch your first wild Echo in the tall grass north of town', { kind: 'capture', n: 1, pos: onRoute('r1', .17, 0), r: 40, lines: [['vale', 'Wild Echoes gather in tall grass. Weaken one in battle, then press CAPTURE to bind it to a blank Lattice card.']] }),
       S('Rho wants a battle — meet him at the north gate', { kind: 'battle', npc: 'rho', lines: [['rho', 'You caught one already? Okay, okay. Let\'s see if it can take a hit. Rival battle!']] }),
+      S('Rest your team at the Lumen Harbor Relay Center', { kind: 'room', room: 'relay', lines: [['rho', 'Ow. Okay — rule one of being a Ranger: the Relay Center. Walk in, talk to the nurse, and your team is rested and your journey saved.'], ['rho', 'Black out in the wild and you wake up at the last Relay Center you rested in. Trust me. I know.']] }),
     ],
     outro: [['rho', 'Not bad, Ranger. Not bad at all.'], ['vale', 'The Circuit Wardens certify every Ranger. Eight Trials, eight seals. The first Warden is right here: Captain Maren, on the docks.']],
     reward: { coins: 300, xp: 150, flag: 'gate-r1' } },
@@ -102,8 +103,10 @@ export const STORY = [
       S('Beat Dockhand Sol', { kind: 'battle', npc: 'deckB' }),
       S('Catch a Water Echo on the west beach', { kind: 'capture', n: 1, type: 'Water', pos: at('harbor', -90, 20), r: 50, lines: [['maren', 'Water Echoes wash up on the beach west of town. Weaken one, then CAPTURE it.']] }),
       S('Tide Trial: battle Captain Maren', { kind: 'battle', npc: 'maren', lines: [['maren', 'The sea keeps nothing still. Neither will I!']] }),
+      S('Visit the Card Shop by the plaza', { kind: 'room', room: 'shop', lines: [['maren', 'One more thing, Ranger. The Card Shop just got in Ranger outfits — a new coat for a new Seal. Go see the clerk.'], ['maren', 'And keep an eye on the chests out in the wild. Sailors stash all sorts of things in them. Clothes included.']] }),
     ],
-    outro: [['maren', 'The Tide Seal is yours. Take Route 1 west to Mistvale — the fog there has been acting strange.'], ['vale', 'Strange how?'], ['maren', 'It follows people.']],
+    outro: [['maren', 'The Tide Seal is yours. Take Route 1 west to Mistvale — the fog there has been acting strange.'], ['vale', 'Strange how?'], ['maren', 'It follows people.'],
+      ['rho', 'Fog that follows people. Great. Love that. I will carry the snacks.'], ['vale', 'Ranger — Echoes gather where the land matches their type. Expect Water and Grass in the wetlands, and keep your Poké Balls ready.']],
     reward: { coins: 500, xp: 250, seal: 'Tide Seal' } },
 
   { title: 'What the Fog Keeps', region: 'mistvale', color: '#57c28f',
@@ -138,7 +141,7 @@ export const STORY = [
       S('Record 2 glyph stones in the snow', { kind: 'find', ids: ['frostline:0', 'frostline:1'] }),
       S('Rime Trial: battle Elite Orin', { kind: 'battle', npc: 'orin', lines: [['orin', 'The ice keeps what the relay throws away. So do I. Show me what you keep.']] }),
     ],
-    outro: [['orin', 'The Rime Seal — and the thaw-key. The Stormrise Road east to Voltspire is yours.']],
+    outro: [['orin', 'The Rime Seal — and the thaw-key. The Stormrise Road east to Voltspire is yours.'], ['orin', 'One warning. The fused Echo you saw below the ice… it looked at you as if it knew your name.'], ['you', '…'], ['orin', 'Go. The storm will not wait for either of us.']],
     reward: { coins: 1100, xp: 550, seal: 'Rime Seal', flag: 'gate-r4' } },
 
   { title: 'Voltspire Blackout', region: 'voltspire', color: '#f2c230',
@@ -209,6 +212,7 @@ export function target() {
   if (st.pos) return { ...st.pos, label: st.text };
   if (st.npc) { const n = npcNow(st.npc); if (n) return { x: n.pos.x, z: n.pos.z, label: st.text }; }
   if (st.kind === 'find') { const left = st.ids.filter(id => !P.ensure().world.found[id]); if (left.length) return { findIds: left, label: st.text }; }
+  if (st.kind === 'room') return { room: st.room, label: st.text };
   if (st.kind === 'starter' || st.kind === 'talk') { const n = npcNow('vale'); if (n) return { x: n.pos.x, z: n.pos.z, label: st.text }; }
   return null;
 }
@@ -234,6 +238,7 @@ export function event(type, d = {}) {
   if (type === 'find' && st.kind === 'find' && st.ids.every(id => P.ensure().world.found[id])) { advance(); return true; }
   if (type === 'starter' && st.kind === 'starter') { q.starter = d.i; advance(); return true; }
   if (type === 'scene' && st.kind === 'scene') { advance(); return true; }
+  if (type === 'room' && st.kind === 'room' && (!st.room || st.room === d.room)) { advance(); return true; }
   return false;
 }
 /** lines an NPC says right now (story first, then idle chatter) */

@@ -43,6 +43,12 @@ const FS = /* glsl */`uniform sampler2D map; uniform float time, echo, back, fla
     #include <colorspace_fragment>
   }`;
 
+/* ---- rare / strong creature: a pulsing neon rim that follows the sticker's silhouette */
+const GLOW_FS = /* glsl */`uniform sampler2D map; uniform vec3 col; uniform float time, on; varying vec2 vUv; varying float vFogDepth;
+  void main(){ vec2 uv = vec2((vUv.x - .5) * 1.12 + .5, vUv.y * 1.08); float a = 0.;
+    for (int i = 0; i < 12; i++) { float t = float(i) / 12. * 6.2832; a = max(a, texture2D(map, uv + vec2(cos(t), sin(t)) * .028).a); }
+    float inner = texture2D(map, uv).a; float rim = clamp(a - inner * .85, 0., 1.);
+    float pulse = .65 + .35 * sin(time * 3.2); if (rim * on < .02) discard; gl_FragColor = vec4(col * (1.6 + pulse), rim * on * pulse); }`;
 /* ---- type aura: a few dozen additive points with per-type motion */
 const AURA = { Fire: [0, '#ffb04a'], Water: [1, '#9fdcff'], Grass: [2, '#9df07a'], Lightning: [3, '#fff27a'], Psychic: [4, '#e1a6ff'], Fighting: [5, '#ffc08a'],
   Darkness: [6, '#b49aff'], Metal: [7, '#ffffff'], Dragon: [4, '#ffd780'], Colorless: [5, '#fff6e0'], Fairy: [7, '#ffc2ea'] };
@@ -63,7 +69,7 @@ function aura(type, n = 26) {
         else if (mode < 5.5) { p = vec3(sin(s * 44.) * W * .9, ph * .5, cos(s * 17.) * .4); vA = (1. - ph) * .6; }                     // ground dust
         else if (mode < 6.5) { p = vec3(sin(s * 40. + t * .5) * W * .8, ph * H, cos(s * 30.) * .35); vA = sin(ph * 3.14) * .7; }        // shadow wisps
         else { p = vec3((fract(s * 11.) - .5) * W * 1.6, fract(s * 5.) * H, (fract(s * 3.) - .5) * .4); vA = pow(max(0., sin(t * 3. + s * 30.)), 12.); } // glints
-        vA *= k; vec4 mv = modelViewMatrix * vec4(p, 1.); gl_PointSize = (mode > 5.5 && mode < 6.5 ? 60. : 26.) * (.5 + s) / -mv.z; gl_Position = projectionMatrix * mv; }`,
+        vA *= k; vec4 mv = modelViewMatrix * vec4(p, 1.); gl_PointSize = min((mode > 5.5 && mode < 6.5 ? 60. : 26.) * (.5 + s) / max(-mv.z, .5), 34.); gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `uniform vec3 c; uniform float mode; varying float vA; void main(){ vec2 q = gl_PointCoord - .5; float d = length(q);
       float a = mode > 6.5 ? max(1. - smoothstep(0., .05, abs(q.x)) , 1. - smoothstep(0., .05, abs(q.y))) * (1. - d * 2.) : smoothstep(.5, 0., d);
       if (a * vA < .01) discard; gl_FragColor = vec4(c * (mode > 5.5 && mode < 6.5 ? .35 : 1.), a * vA); }` });
@@ -87,11 +93,14 @@ export function makeCardPet(card, url, { size = 1.25, echo = false } = {}) {
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.42, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .25, depthWrite: false }));
   blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   const au = aura(type); g.add(au);
+  const GU = { map: U.map, col: { value: new THREE.Color('#ff2a3a') }, time: U.time, on: { value: 0 } };
+  const glow = new THREE.Mesh(front.geometry, new THREE.ShaderMaterial({ uniforms: GU, vertexShader: VS, fragmentShader: GLOW_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glow.position.z = -.01; glow.scale.set(1.12, 1.08, 1); glow.renderOrder = 2; glow.visible = false; body.add(glow);
   let w = size * .8, hgt = size, living = false;
   const setMap = (tex, aspect, isCard) => {
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; U.map.value = tex; living = isCard;
     hgt = isCard ? size * 1.05 : size; w = hgt * aspect; if (w > size * 1.25) { w = size * 1.25; hgt = w / aspect; }
-    front.geometry.dispose(); const geo = new THREE.PlaneGeometry(w, hgt); geo.translate(0, hgt / 2, 0); front.geometry = rear.geometry = geo;
+    front.geometry.dispose(); const geo = new THREE.PlaneGeometry(w, hgt); geo.translate(0, hgt / 2, 0); front.geometry = rear.geometry = geo; if (typeof glow !== 'undefined') glow.geometry = geo;
     front.material.uniforms.round.value = rear.material.uniforms.round.value = isCard ? 1 : 0;
     au.material.uniforms.H.value = hgt; au.material.uniforms.W.value = w * .6; blob.scale.setScalar(Math.max(.7, w * .9));
     body.visible = true;
@@ -130,6 +139,8 @@ export function makeCardPet(card, url, { size = 1.25, echo = false } = {}) {
       if (stab) this._stab(dt);
     },
     setFlash(v) { U.flash.value = v; },
+    /** neon rim for rare / high-level creatures (red by default) */
+    setGlow(v, color) { GU.on.value = v ? 1 : 0; glow.visible = !!v; if (color) GU.col.value.set(color); },
     get size() { return { w, h: hgt }; },
     setEcho(v) { U.echo.value = v; front.material.uniforms.echo.value = rear.material.uniforms.echo.value = v; },
     setFog(fog) { if (!fog) return; for (const m of [front.material, rear.material]) { m.uniforms.fogColor.value.copy(fog.color); m.uniforms.fogNear.value = fog.near; m.uniforms.fogFar.value = fog.far; } },

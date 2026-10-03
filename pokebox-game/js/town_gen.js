@@ -86,28 +86,28 @@ function cone(B, T, cx, y, cz, r, h, col, seg = 8) {
 export const STYLES = {
   // Lumen Harbor — sunny port in the spirit of a canal city by the sea: pastel stucco, terracotta & teal roofs, balconies, awnings
   tropical: { walls: ['#fbe8c8', '#ffd7c2', '#d6f0ea', '#fff3d6', '#ffe1ea', '#e3ecff'], roofs: ['#e2683c', '#d9553b', '#2fb3a5', '#3d8fd6', '#f2a03d'],
-    trim: '#ffffff', door: '#7a4a2a', glass: '#3a7ec8', roof: ['gable', 'hip', 'hip', 'flat'], floors: [1, 2, 2, 3], w: [5, 8], d: [5, 7], balcony: .55, awning: .35, chimney: .15, plinth: '#c9b79a' },
+    trim: '#ffffff', door: '#7a4a2a', glass: '#3a7ec8', roof: ['gable', 'hip', 'hip', 'flat'], floors: [1, 2, 2, 3], w: [6.2, 9], d: [6, 8], balcony: .55, awning: .35, chimney: .15, plinth: '#c9b79a' },
   // Mistvale — a village among ponds and reeds, houses raised on stilts with dark timber and mossy roofs
   wetland: { walls: ['#d9c7a3', '#c9b48c', '#e6d8b8', '#bfa77e'], roofs: ['#4f7a3a', '#5d6b3a', '#7a5a32', '#3f6a4a'], trim: '#f4ead2', door: '#5a3a22', glass: '#5a8a9a',
-    roof: ['gable', 'gable', 'steep'], floors: [1, 1, 2], w: [4.5, 7], d: [4.5, 6], stilts: .7, timber: '#5b3d26', chimney: .3, plinth: '#5b3d26' },
+    roof: ['gable', 'gable', 'steep'], floors: [1, 2, 2], w: [5.6, 8], d: [5.4, 7], stilts: .7, timber: '#5b3d26', chimney: .3, plinth: '#5b3d26' },
   // Starfall — a stone town of lanterns and slate under the night sky; round towers, blue slate, warm windows
   stargaze: { walls: ['#d6d4e6', '#c4c8dc', '#e6e2ee', '#b8bdd6'], roofs: ['#3d4a8a', '#4a3d7a', '#2f5a8a', '#5a4a9a'], trim: '#f0eefa', door: '#4a3a5a', glass: '#ffd27a',
-    roof: ['steep', 'hip', 'tower'], floors: [1, 2, 2], w: [4.5, 7], d: [4.5, 6.5], chimney: .2, lantern: .7, plinth: '#8a8aa8' },
+    roof: ['steep', 'hip', 'tower'], floors: [2, 2, 3], w: [5.8, 8.4], d: [5.6, 7.6], chimney: .2, lantern: .7, plinth: '#8a8aa8' },
   // Frostline — alpine winter village: timber chalets, steep roofs heavy with snow, smoking chimneys
   winter: { walls: ['#8a5a3a', '#a06a42', '#7a4e32', '#e8dccb', '#b47a4a'], roofs: ['#6a3a2a', '#3a4a6a', '#5a2a2a', '#2f3f4f'], trim: '#ffffff', door: '#4a2e1c', glass: '#ffcf80',
-    roof: ['steep', 'steep', 'gable'], floors: [1, 2, 2], w: [5, 8], d: [5, 7], snow: '#f6fbff', chimney: .8, plinth: '#8f9aa8' },
+    roof: ['steep', 'steep', 'gable'], floors: [1, 2, 2], w: [6.2, 9], d: [6, 8], snow: '#f6fbff', chimney: .8, plinth: '#8f9aa8' },
   // Voltspire — a storm-powered tech city: concrete and steel blocks, flat roofs with antennas, pipes and signal lights
   tech: { walls: ['#d8dde4', '#b8c2cc', '#e8ecf0', '#9fb0c0', '#f0e6c8'], roofs: ['#4a5560', '#3a4450', '#5a6470'], trim: '#ffd23c', door: '#3a4450', glass: '#5ad8ff',
-    roof: ['flat', 'flat', 'flat', 'hip'], floors: [2, 3, 4, 5], w: [5.5, 8.5], d: [5.5, 8], antenna: .6, pipes: .5, plinth: '#5a6470' },
+    roof: ['flat', 'flat', 'flat', 'hip'], floors: [3, 4, 5, 6], w: [6.6, 9], d: [6.4, 8], antenna: .6, pipes: .5, plinth: '#5a6470' },
   // Sandreach — a walled oasis bazaar: adobe cubes, domes and arches, striped awnings, rooftop terraces
   desert: { walls: ['#f1d2a2', '#e8bf86', '#f6dfb8', '#e2b07a', '#f4c99a'], roofs: ['#f1d2a2', '#e8bf86', '#2f9ac8', '#e2683c'], trim: '#fff4e0', door: '#6a3a1e', glass: '#3a5a7a',
-    roof: ['flat', 'flat', 'dome', 'flat'], floors: [1, 1, 2, 2], w: [4.5, 7.5], d: [4.5, 7], awning: .55, plinth: '#c99a62' },
+    roof: ['flat', 'flat', 'dome', 'flat'], floors: [1, 2, 2, 3], w: [5.8, 8.6], d: [5.6, 8], awning: .55, plinth: '#c99a62' },
 };
 
 /* ---------- one building */
 function building(B, W, x, y, z, ry, st, R, opts = {}) {
   const pick = a => a[(R() * a.length) | 0], rng = (a, b) => a + R() * (b - a);
-  const w = Math.min(opts.maxW || 99, opts.w || rng(st.w[0], st.w[1])), d = Math.min(opts.maxD || 99, opts.d || rng(st.d[0], st.d[1])), floors = opts.floors || pick(st.floors), fh = st === STYLES.tech ? 3.2 : 2.9;
+  const w = Math.min(opts.maxW || 99, opts.w || rng(st.w[0], st.w[1])), d = Math.min(opts.maxD || 99, opts.d || rng(st.d[0], st.d[1])), floors = opts.floors || pick(st.floors), fh = st === STYLES.tech ? 3.8 : 3.5; // generous storeys: the buildings read big next to a 2 m character, like in the games
   let roof = opts.roof || pick(st.roof); const wall = C(opts.wall || pick(st.walls)), roofC = C(opts.roofC || pick(st.roofs)), trim = C(st.trim), glass = C(st.glass), door = C(st.door);
   const lift = st.stilts ? 1.3 : 0, T = frame(x, y + lift, z, ry), Ty = frame(x, y, z, ry), H = floors * fh;
   if (st.stilts) { for (const [sx, sz] of [[-w / 2 + .3, -d / 2 + .3], [w / 2 - .3, -d / 2 + .3], [-w / 2 + .3, d / 2 - .3], [w / 2 - .3, d / 2 - .3]]) box(B, Ty, sx, -1.2, sz, .32, lift + 1.2, .32, C(st.timber));
@@ -123,15 +123,15 @@ function building(B, W, x, y, z, ry, st, R, opts = {}) {
     box(B, T, 0, H - .22, 0, w + .3, .22, d + .3, pc);
     if (floors > 1 && st !== STYLES.tech) for (let f = 1; f < floors; f++) box(B, T, 0, f * fh - .08, 0, w + .12, .14, d + .12, pc); }
   // door (front, +z) with frame and a small canopy
-  box(B, T, 0, 0, d / 2 + .02, 1.25, 2.25, .12, trim); box(B, T, 0, 0, d / 2 + .08, 1.0, 2.05, .1, door);
-  box(B, T, 0, 2.3, d / 2 + .35, 1.6, .12, .7, roofC);
+  box(B, T, 0, 0, d / 2 + .02, 1.7, 2.85, .12, trim); box(B, T, 0, 0, d / 2 + .08, 1.4, 2.65, .1, door);
+  box(B, T, 0, 2.95, d / 2 + .4, 2.1, .14, .8, roofC);
   // windows on every floor, front and sides (glass goes to the night-glow mesh)
-  const win = (lx, ly, lz, face) => { const ww = .85, wh = 1.05;
+  const win = (lx, ly, lz, face) => { const ww = 1.05, wh = 1.35;
     if (face === 'f') { box(B, T, lx, ly - .1, lz + .03, ww + .24, wh + .24, .08, trim); box(W, T, lx, ly - .02, lz + .08, ww, wh, .05, glass); if (st.shutters) {} }
     else { const sx = face === 'r' ? 1 : -1; box(B, T, lx + sx * .03, ly - .1, lz, .08, wh + .24, ww + .24, trim); box(W, T, lx + sx * .08, ly - .02, lz, .05, wh, ww, glass); } };
-  for (let f = 0; f < floors; f++) { const wy = f * fh + 1.1;
-    const nF = Math.max(1, Math.floor(w / 2.2)); for (let i = 0; i < nF; i++) { const lx = -w / 2 + (i + .5) * w / nF; if (f === 0 && Math.abs(lx) < 1.1) continue; win(lx, wy, d / 2, 'f'); }
-    const nS = Math.max(1, Math.floor(d / 2.6)); for (let i = 0; i < nS; i++) { const lz = -d / 2 + (i + .5) * d / nS; win(w / 2, wy, lz, 'r'); win(-w / 2, wy, lz, 'l'); } }
+  for (let f = 0; f < floors; f++) { const wy = f * fh + 1.25;
+    const nF = Math.max(1, Math.floor(w / 2.5)); for (let i = 0; i < nF; i++) { const lx = -w / 2 + (i + .5) * w / nF; if (f === 0 && Math.abs(lx) < 1.5) continue; win(lx, wy, d / 2, 'f'); }
+    const nS = Math.max(1, Math.floor(d / 2.9)); for (let i = 0; i < nS; i++) { const lz = -d / 2 + (i + .5) * d / nS; win(w / 2, wy, lz, 'r'); win(-w / 2, wy, lz, 'l'); } }
   // style details
   if (st.balcony && floors > 1 && R() < st.balcony) { box(B, T, 0, fh, d / 2 + .55, Math.min(w - .6, 3.2), .14, 1.1, trim); box(B, T, 0, fh + .14, d / 2 + 1.05, Math.min(w - .6, 3.2), .55, .08, trim); }
   if (st.awning && R() < st.awning) { const stripe = pick(['#e2683c', '#2fb3a5', '#3d8fd6', '#f2c03d', '#d9553b']); for (let k = 0; k < 4; k++) box(B, T, -1.2 + k * .8, 2.6 - k * 0, d / 2 + .7, .8, .1, 1.3, C(k % 2 ? '#ffffff' : stripe)); }
@@ -202,5 +202,38 @@ export function lightString(points, color = '#ffd27a', sag = .9, per = 1.4) { //
 export function wallSegment(B0, x0, z0, x1, z1, y, col = '#e2b07a', h = 3.2) { // town wall with crenellations (desert)
   const B = B0 || new Builder(), L = Math.hypot(x1 - x0, z1 - z0), ry = Math.atan2(x1 - x0, z1 - z0), T = frame((x0 + x1) / 2, y, (z0 + z1) / 2, ry + Math.PI / 2);
   box(B, T, 0, -.6, 0, L, h + .6, 1, C(col)); for (let k = -L / 2 + .5; k < L / 2; k += 1.4) box(B, T, k, h, 0, .7, .6, 1, shade(C(col), 1.05)); return B;
+}
+/** garden fences around the house lots, in the town's own style (front left open to the street). Returns { mesh, walls: [{x,z,hw,hd,rot}] } */
+const FENCE = { tropical: { kind: 'picket', c: '#ffffff', c2: '#f2e6d0', h: .9 }, wetland: { kind: 'rail', c: '#6b4a2e', c2: '#5b3d26', h: 1 }, stargaze: { kind: 'wall', c: '#b8bdd6', c2: '#9aa0bf', h: .8 },
+  winter: { kind: 'rail', c: '#7a4e32', c2: '#f6fbff', h: 1.05, snow: true }, desert: { kind: 'wall', c: '#e2b07a', c2: '#d9a066', h: .9 }, tech: { kind: 'hedge', c: '#4f8a3a', c2: '#3f7030', h: .8 } };
+export function yardFences(styleName, lots, cols) {
+  const F = FENCE[styleName] || FENCE.tropical, B = new Builder(), walls = [], c = C(F.c), c2 = C(F.c2);
+  lots.forEach((l, i) => { const co = cols[i]; if (!co) return; const hw = Math.max(co.hw + .7, 3.6), back = -(Math.max(co.hd + .7, 3.6)), front = Math.min(hw * .6, 2.6), T = frame(l.x, l.y - .05, l.z, l.rot);
+    const run = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), ry = Math.atan2(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      // local frame of the run, expressed inside the lot frame
+      const RT = (lx, ly, lz) => { const ca = Math.cos(ry), sa = Math.sin(ry); return T(cx + lx * ca + lz * sa, ly, cz - lx * sa + lz * ca); };
+      if (F.kind === 'wall' || F.kind === 'hedge') { box(B, RT, 0, 0, 0, .34, F.h, L, c, F.kind === 'hedge' ? shade(c, 1.12) : c2); if (F.kind === 'wall') for (let k = -L / 2; k <= L / 2; k += 2.2) box(B, RT, 0, F.h, k, .42, .12, .42, c2); }
+      else { const n = Math.max(2, Math.round(L / (F.kind === 'picket' ? .62 : 1.6)));
+        for (let k = 0; k <= n; k++) { const z = -L / 2 + L * k / n; box(B, RT, 0, 0, z, F.kind === 'picket' ? .09 : .14, F.kind === 'picket' ? F.h : F.h + .1, F.kind === 'picket' ? .09 : .14, c, F.snow ? C('#f6fbff') : null); }
+        for (const y of F.kind === 'picket' ? [.3, .65] : [.35, .75]) box(B, RT, F.kind === 'picket' ? -.06 : 0, y, 0, .05, .08, L, c2, F.snow && y > .5 ? C('#f6fbff') : null); }
+      // collider in the town frame
+      const wx = l.x + (cx * Math.cos(l.rot) + cz * Math.sin(l.rot)), wz = l.z + (-cx * Math.sin(l.rot) + cz * Math.cos(l.rot));
+      walls.push({ x: wx, z: wz, hw: .22, hd: L / 2, rot: l.rot + ry }); };
+    run(-hw, back, hw, back); run(-hw, back, -hw, front); run(hw, back, hw, front); });
+  const mesh = new THREE.Mesh(B.geometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 })); mesh.castShadow = true; mesh.receiveShadow = true;
+  return { mesh, walls, tris: B.p.length / 9 };
+}
+export function fishingBoat(seed = 1) { // a small fishing boat: tapered hull, wheelhouse, mast with a flag (all one mesh)
+  const R = (() => { let s = seed >>> 0 || 1; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); })();
+  const hullC = C(['#e2483c', '#2f7fd6', '#2fb3a5', '#f2c03d', '#ffffff'][(R() * 5) | 0]), trim = C('#f6f3ee'), wood = C('#8a6440'), B = new Builder(), T = frame(0, 0, 0, 0);
+  const P = (x, y, z) => T(x, y, z);
+  // hull: a prism, wide at the stern (−z), pointed bow (+z)
+  const L = 4.2, W = 1.7, Hh = .8; const s0 = [-W / 2, 0, -L / 2], s1 = [W / 2, 0, -L / 2], b = [0, 0, L / 2 + .6], k0 = [-W * .3, -Hh, -L / 2 + .2], k1 = [W * .3, -Hh, -L / 2 + .2], kb = [0, -Hh * .6, L / 2];
+  const tri = (a, b2, c, col) => B.tri(P(...a), P(...b2), P(...c), col);
+  tri(s0, b, s1, shade(wood, 1.05)); tri(s0, k0, b, hullC); tri(k0, kb, b, shade(hullC, .9)); tri(s1, b, k1, shade(hullC, .8)); tri(k1, b, kb, shade(hullC, .75)); tri(s0, s1, k1, shade(hullC, .7)); tri(s0, k1, k0, shade(hullC, .7));
+  box(B, T, 0, -.02, 0, W * .98, .12, .1, trim);
+  box(B, T, 0, 0, -.7, 1.0, .9, 1.0, C('#f6f3ee'), C('#3a4450')); box(B, T, 0, .45, -.2, .9, .3, .04, C('#5ad8ff'));
+  cyl(B, T, 0, 0, .7, .05, 2.4, wood, 5); box(B, T, .3, 2.0, .7, .55, .35, .03, C(['#ffd23c', '#e2483c', '#ffffff'][(R() * 3) | 0]));
+  const g = new THREE.Group(), m = new THREE.Mesh(B.geometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7, side: THREE.DoubleSide })); m.castShadow = true; g.add(m); return g;
 }
 export { Builder, box, cyl, cone, dome, frame, C as col };

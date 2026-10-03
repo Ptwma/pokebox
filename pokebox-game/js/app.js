@@ -13,7 +13,7 @@ import * as RK from './rank.js';
 import { openWorldMap } from './worldmap.js';
 import { runPrologue, startCoach } from './prologue.js';
 import { autoCheck, manualCheck } from './updater.js';
-import { createPreview, PETS } from './chars.js';
+import { createPreview, PETS, portrait } from './chars.js';
 import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
 import { Battle, TRAINERS, fighter, enemyTeam, bestTeam, power, mult, SIG, MOVES, ENERGY_MAX, estimate } from './battle.js';
 
@@ -39,7 +39,7 @@ function updateTop() {
     coinAnim = requestAnimationFrame(step);
   } else $('#coins').textContent = fmt(target);
   $('#tokens').textContent = st().tokens; $('#tokenPill').hidden = !st().tokens; $('#uniq').textContent = fmt(C.uniqueCount());
-  const av = $('#hudAv'), key = JSON.stringify(st().look || {}); if (av && av.dataset.k !== key) { av.innerHTML = P.avatarSVG(P.ensure().look, { size: 40, bg: false }); av.dataset.k = key; }
+  const av = $('#hudAv'), key = JSON.stringify(st().look || {}); if (av && av.dataset.k !== key) { liveAvatar(av, P.ensure().look, 40); av.dataset.k = key; }
   const jn = P.readyCount(), jb = $('#jBadge'); if (jb) { jb.hidden = !jn; jb.textContent = jn; }
   const L = C.levelInfo(); $('#hudLv').textContent = L.lv; $('#hudXp').style.width = (L.pct * 100).toFixed(1) + '%'; $('#hudXpT').textContent = `${fmt(L.cur)} / ${fmt(L.need)} XP`;
 }
@@ -338,7 +338,7 @@ function route() {
   const vt = name !== 'world' && !prev.startsWith('world'); // never snapshot the 3D canvas (slow GPUs freeze on it)
   if (!(vt && document.startViewTransition && !reduceMotion.matches && transition(apply, routeType(prev, h)))) { apply(); view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); clearTimeout(route.t); route.t = setTimeout(() => view.classList.remove('enter'), 700); }
 }
-addEventListener('hashchange', route);
+addEventListener('hashchange', () => { if (!opening.hidden && typeof closeOpening === 'function') closeOpening(); route(); }); // leaving the page (Android back) also closes a pack opening
 
 let lobbyIdx = 0;
 VIEWS.home = () => {
@@ -394,7 +394,16 @@ VIEWS.shop = () => {
     <div class="vault"><div class="vhead"><div><div class="eyebrow gold">The Vault</div><h3 class="display">Premium packs</h3></div><p class="muted">10 cards · 3 guaranteed hits · limited daily stock · signature openings</p></div>
       <div class="vgrid">${C.VAULT.map(vaultTile).join('')}</div></div>
     <div class="chipsrow">${series.map(s => `<button class="fchip ${s === shopFilter.series ? 'on' : ''}" data-ser="${esc(s)}" type="button">${esc(s)}</button>`).join('')}</div>
-    <div class="grid packs" id="shopGrid"></div></section>`;
+    <div class="grid packs" id="shopGrid"></div></section>
+  <section class="wrap"><div class="sech"><div><div class="eyebrow">Ranger Outfitters</div><h2 class="display">Clothes</h2></div><p class="muted">Buy any outfit piece early, or find them in treasure chests out in Veyra. Wear them in <a href="#profile" class="gold">Trainer ▸</a></p></div>
+    <div class="outfits" id="outfits"></div></section>`;
+  const drawOutfits = () => { const box = $('#outfits'); if (!box) return; const L = P.outfitShop(), look = P.ensure().look;
+    box.innerHTML = L.map(it => `<div class="ofit ${it.owned ? 'own' : ''}"><div class="ofav">${it.c ? `<i style="background:${it.c}"></i>` : P.avatarSVG({ ...look, [it.slot]: it.id }, { size: 64, bg: false })}</div>
+      <b>${esc(it.name)}</b><small>${esc(P.SLOTS.find(x => x.id === it.slot)?.name || '')}</small>
+      ${it.owned ? '<span class="muted small">Owned</span>' : `<button class="btn sm gold" type="button" data-buy="${it.slot}:${it.id}">${fmt(it.price)} coins</button>`}</div>`).join('');
+    $$('[data-buy]').forEach(b => b.onclick = () => { const [sl, id] = b.dataset.buy.split(':'), r = P.buyOutfit(sl, id);
+      if (r === false) toast('Not enough coins.', 'err'); else if (r) { sfx.coin?.(); toast(`Bought <b>${esc(r.name)}</b>! Wear it in <a href="#profile" class="gold">Trainer ▸</a>`); updateTop?.(); drawOutfits(); } }); };
+  drawOutfits();
   const draw = () => {
     const q = shopFilter.q.toLowerCase();
     const list = DB.sets.filter(s => s.sellable && (shopFilter.series === 'All' || s.series === shopFilter.series) && (!q || s.name.toLowerCase().includes(q))).reverse();
@@ -755,7 +764,7 @@ function playScene(lines, { title, cine, onLine } = {}) {
       }
       el.onclick = () => { const pEl = $('#scP'); if (typing) { clearInterval(typing); typing = null; pEl.textContent = text; return; } if (++i < lines.length) show(); else finish(); };
     };
-    const key = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); el.onclick?.(); } else if (e.code === 'Escape' && cine) { e.preventDefault(); e.stopImmediatePropagation(); finish(); } };
+    const key = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); el.onclick?.(); } /* the key that advances a dialogue must not also act in the world */ else if (e.code === 'Escape' && cine) { e.preventDefault(); e.stopImmediatePropagation(); finish(); } };
     addEventListener('keydown', key, true); el.classList.toggle('cine', !!cine); el.innerHTML = ''; el.hidden = false; show();
   });
 }
@@ -819,6 +828,12 @@ function afterProgress() {
 }
 P.onProgress(() => setTimeout(afterProgress, 50));
 
+/* your real 3D character as a little portrait (HUD, Lattice, menu); the drawn avatar shows until it is rendered */
+function liveAvatar(el, look, size) {
+  if (!el) return; const k = JSON.stringify(look); if (el.dataset.pk === k && el.querySelector('img')) return; el.dataset.pk = k;
+  if (!el.firstChild) el.innerHTML = P.avatarSVG(look, { size, bg: false });
+  portrait(look, size * 2).then(u => { if (u && el.dataset.pk === k) el.innerHTML = `<img class="pav" src="${u}" width="${size}" height="${size}" alt="">`; });
+}
 /* ------------------------------------------------------------------ World (3D Veyra) */
 let world = null, worldCh = -1;
 const AREA_REQ = { harbor: 0, mistvale: 1, sandreach: 2, starfall: 3, voltspire: 4, frostline: 5, rift: 6 };
@@ -829,6 +844,7 @@ function worldConfirm(q, yes, no) {
 }
 function worldTravel() {
   const W = world; if (!W) return; if (!$('#wModal').hidden && $('#wModal').classList.contains('fs')) return;
+  if (W.indoors) { toast('You are inside — step out of the door to see the map.'); return; }
   sfx.whoosh?.(.25); document.querySelector('.cx-area')?.remove();
   openWorldMap($('#wModal'), { W, q: QS.Q(), req: AREA_REQ, target: QS.target(), onTravel: id => { sfx.whoosh(.5); W.travelTo(id); } });
 }
@@ -899,6 +915,8 @@ function ensureWorld() {
       const c = pool[Math.floor(R() * pool.length)]; return { i: c.i, img: cardImg(c), n: c.n, f: c.f, t: c.t }; },
     talk: (lines, o) => playScene(lines, o), confirm: worldConfirm, chooseStarter, goal: worldGoal,
     onStep: st => { if (st) toast(`<b>New objective:</b> ${esc(st.text)}`); worldHud(); },
+    compass: (head, goal, dist) => compassHud(head, goal, dist),
+    fade: on => new Promise(res => { let f = $('#fadeBlack'); if (!f) { f = document.createElement('div'); f.id = 'fadeBlack'; document.body.append(f); } f.classList.toggle('on', !!on); setTimeout(res, 320); }),
     reveal: o => vsCard(o), arrival: (id, a) => { sfx.rare?.(1); },
     onChapter: (ch, idx) => { whenFree(() => chapterCard(idx + 1)); xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
@@ -924,7 +942,7 @@ function ensureWorld() {
 /* in-world HUD: trainer plate, current objective, pet card */
 function worldHud() {
   const s = P.ensure(), L = C.levelInfo();
-  $('#wAv').innerHTML = P.avatarSVG(s.look, { size: 46 }); $('#wNameP').textContent = s.name; $('#wLv').textContent = L.lv; $('#wXp').style.width = (L.pct * 100).toFixed(1) + '%'; $('#wCoins').textContent = fmt(st().coins);
+  liveAvatar($('#wAv'), s.look, 46); $('#wNameP').textContent = s.name; $('#wLv').textContent = L.lv; $('#wXp').style.width = (L.pct * 100).toFixed(1) + '%'; $('#wCoins').textContent = fmt(st().coins);
   { const r = RK.rankOf(), el = $('#wRank'); if (el) { el.textContent = r.name; el.style.setProperty('--rc', r.col); } }
   const ch = P.chapter(), done = P.storyDone();
   if (QS) { renderQuestHud(); } else $('#wQuest').innerHTML = done ? `<div class="eyebrow">Journey complete</div><b>Veyra is stable — for now.</b>` : `<div class="eyebrow">Chapter ${ch.n} · ${esc(ch.title)}</div>${ch.goals.map(g => { const c = g.cur(), ok = c >= g.need; return `<div class="wq ${ok ? 'ok' : ''}"><i>${ok ? '✓' : ''}</i><span>${esc(g.text)}</span><small>${Math.min(c, g.need)}/${g.need}</small></div>`; }).join('')}${P.chapterReady() ? '<a class="wqgo" href="#journey">Chapter ready — open Journey ▸</a>' : ''}`;
@@ -947,6 +965,18 @@ VIEWS.world = () => {
   if (pendingEcho) { pendingEcho = false; setTimeout(() => W.echoWon?.(), 700); }
   W.setPaused(false); W.start(); $('#worldCanvas').focus(); window.__world = W; worldHud();
 };
+/* compass strip at the top of the world view: where you look, and where the objective is */
+let cStripBuilt = false;
+function compassHud(head, goal, dist) {
+  const strip = $('#wCStrip'), g = $('#wCGoal'); if (!strip) return; const PX = 2.6; // px per degree
+  if (!cStripBuilt) { cStripBuilt = true; const L = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' }; let h = '';
+    for (let d = -360; d <= 720; d += 15) { const dd = ((d % 360) + 360) % 360; h += `<span style="left:${d * PX}px" class="${L[dd] ? (dd % 90 ? 'mid' : 'card') : 'tick'}">${L[dd] || ''}</span>`; } strip.innerHTML = h; }
+  const deg = ((head * 180 / Math.PI) % 360 + 360) % 360; strip.style.transform = `translateX(${-deg * PX}px)`;
+  if (goal == null || dist < 4) { g.hidden = true; return; }
+  let rel = ((goal - head) * 180 / Math.PI) % 360; if (rel > 180) rel -= 360; if (rel < -180) rel += 360;
+  g.hidden = false; const half = ($('#wCompass').clientWidth || 300) / 2 - 12, x = Math.max(-half, Math.min(half, rel * PX)); g.style.transform = `translateX(${x}px)`; g.classList.toggle('edge', Math.abs(rel * PX) > half);
+  g.querySelector('small').textContent = Math.round(dist) + ' m';
+}
 /* cinematic cards: the VS reveal before Warden / rival / GLYPH battles and the title card of each new chapter */
 function vsCard({ name, role, glyph }) {
   document.querySelector('.vsrev')?.remove(); const d = document.createElement('div'); d.className = 'vsrev' + (glyph ? ' glyph' : '');

@@ -1,6 +1,6 @@
 // Pokebox — sticker cutouts of card art (main-thread side): worker queue + IndexedDB cache.
 // sticker(card, url) -> Promise<{ ok, bitmap?, w, h }>. ok=false means "use the living-card fallback".
-const VER = 'st2';
+const VER = 'st3'; // st3: full-art retry + oval fallback (no more flat cards)
 let worker = null, seq = 0, busy = false; const waiting = new Map(), mem = new Map(), queue = [];
 function pump() { if (busy || !queue.length) return; const w = getWorker(); if (!w) { queue.splice(0).forEach(j => j.res({ ok: false })); return; }
   const j = queue.shift(); busy = true; const id = ++seq; waiting.set(id, r => { busy = false; j.res(r); pump(); }); w.postMessage({ id, url: j.url }); }

@@ -317,3 +317,21 @@ export function attachProp(ch, kind) {
   const ws = new THREE.Vector3(); hand.getWorldScale(ws); prop.scale.setScalar(1 / ws.x * (ch.group.scale.x || 1));
   prop.position.set(0, .06 / ws.y, 0); hand.add(prop); return prop;
 }
+
+/* ---------- a still portrait of a 3D character (HUD, menus): rendered once per look, cached as a data URL */
+let pR = null; const pCache = new Map();
+export async function portrait(look, size = 112) {
+  const k = JSON.stringify(look) + '|' + size; if (pCache.has(k)) return pCache.get(k);
+  const job = (async () => {
+    await prepare([look]); const ch = makeRigged(look); if (!ch) return null;
+    pR ||= new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    pR.setPixelRatio(1); pR.setSize(size, size, false); pR.outputColorSpace = THREE.SRGBColorSpace; pR.toneMapping = THREE.ACESFilmicToneMapping; pR.setClearColor(0x000000, 0);
+    const s = new THREE.Scene(); s.add(new THREE.HemisphereLight('#ffffff', '#5a4a70', 2.4)); const d = new THREE.DirectionalLight('#fff4e0', 2.8); d.position.set(1.5, 3, 3); s.add(d);
+    const rim = new THREE.DirectionalLight('#9f7bff', 1.6); rim.position.set(-2, 2, -2); s.add(rim);
+    ch.group.rotation.y = .38; s.add(ch.group); ch.locomote?.(0); ch.update?.(0);
+    const bb = new THREE.Box3().setFromObject(ch.group), top = bb.max.y, cam = new THREE.PerspectiveCamera(24, 1, .05, 20);
+    cam.position.set(.12, top - .28, 1.75); cam.lookAt(0, top - .36, 0); pR.render(s, cam);
+    const url = pR.domElement.toDataURL('image/png'); s.remove(ch.group); return url;
+  })().catch(() => null);
+  pCache.set(k, job); return job;
+}

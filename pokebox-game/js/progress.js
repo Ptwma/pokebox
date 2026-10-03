@@ -60,6 +60,11 @@ export const ITEMS = [
     ['tc4', '#5fae4f', 'Reed', { t: 'chapter', n: 2 }], ['tc5', '#e8903c', 'Dune', { t: 'chapter', n: 3 }], ['tc6', '#7b5cff', 'Pokebox violet', { t: 'stars', n: 20 }],
     ['tc7', '#f2c230', 'Volt', { t: 'chapter', n: 5 }], ['tc8', '#9fd8f0', 'Ice', { t: 'chapter', n: 6 }], ['tc9', '#161218', 'Obsidian', { t: 'chapter', n: 7 }]]
     .map(([id, c, name, u]) => ({ id, slot: 'topColor', name, c, u })),
+  // outfit & hair colours sold at the Card Shop (Ranger Outfitters) or found in treasure chests
+  ...[['tc10', '#ff7a3c', 'Sunset'], ['tc11', '#7fe3c0', 'Mint'], ['tc12', '#ff8fb1', 'Rose'], ['tc13', '#24346b', 'Navy'], ['tc14', '#2f6a3d', 'Forest'], ['tc15', '#b9a2ff', 'Lavender'], ['tc16', '#a8182a', 'Crimson'], ['tc17', '#f6ead0', 'Cream']]
+    .map(([id, c, name]) => ({ id, slot: 'topColor', name, c, u: { t: 'wardrobe' } })),
+  ...[['hc10', '#2fb3a5', 'Lagoon teal'], ['hc11', '#c86a3a', 'Copper'], ['hc12', '#f2efe6', 'Platinum'], ['hc13', '#1c2a5a', 'Midnight']]
+    .map(([id, c, name]) => ({ id, slot: 'hairColor', name, c, u: { t: 'wardrobe' } })),
   // accessories
   { id: 'none', slot: 'acc', name: 'None', u: F }, { id: 'glasses', slot: 'acc', name: 'Round glasses', u: F }, { id: 'goggles', slot: 'acc', name: 'Courier goggles', u: { t: 'chapter', n: 2 } },
   { id: 'bandaid', slot: 'acc', name: 'Bandage', u: { t: 'level', n: 3 } }, { id: 'earring', slot: 'acc', name: 'Lattice earring', u: { t: 'stars', n: 25 } },
@@ -82,6 +87,7 @@ export const item = (slot, id) => ITEMS.find(x => x.slot === slot && x.id === id
 export function unlockReason(u) {
   switch (u.t) {
     case 'free': return 'Available';
+    case 'wardrobe': return 'Buy it at the Card Shop or find it in a treasure chest';
     case 'level': return `Reach trainer level ${u.n}`;
     case 'chapter': return `Finish Journey chapter ${u.n}`;
     case 'stars': return `Earn ${u.n} challenge stars`;
@@ -94,8 +100,9 @@ export function unlockReason(u) {
   return '';
 }
 export function isUnlocked(it) {
-  const s = ensure(), u = it.u;
+  const s = ensure(), u = it.u; if (s.wardrobe?.[it.slot + ':' + it.id]) return true; // bought at the shop or found in a chest
   switch (u.t) {
+    case 'wardrobe': return false;
     case 'free': return true;
     case 'level': return C.levelInfo().lv >= u.n;
     case 'chapter': return (s.story.ch || 0) >= u.n;
@@ -108,6 +115,13 @@ export function isUnlocked(it) {
   }
   return false;
 }
+/* ---------- wardrobe: clothes you own beyond the unlock rules (shop purchases, chest finds) */
+const PRICE = { topColor: 650, hairColor: 650, hat: 1800, top: 2400, acc: 1500 };
+export function outfitShop() { return ITEMS.filter(it => PRICE[it.slot] && it.u.t !== 'free' && !(it.u.t === 'choice') && it.id !== 'none').map(it => ({ ...it, price: PRICE[it.slot] * (it.u.t === 'chapter' ? 1 + (it.u.n || 0) * .15 : 1) | 0, owned: isUnlocked(it) })); }
+export function buyOutfit(slot, id) { const it = outfitShop().find(x => x.slot === slot && x.id === id); if (!it || it.owned) return null; if ((C.S.coins || 0) < it.price) return false; C.addCoins(-it.price, 'outfit');
+  const s = ensure(); s.wardrobe ||= {}; s.wardrobe[slot + ':' + id] = Date.now(); s.unlocks[slot + ':' + id] = Date.now(); C.save(); return it; }
+export function chestOutfit(R = Math.random) { const pool = outfitShop().filter(x => !x.owned); if (!pool.length) return null; const it = pool[(R() * pool.length) | 0];
+  const s = ensure(); s.wardrobe ||= {}; s.wardrobe[it.slot + ':' + it.id] = Date.now(); C.save(); return it; }
 export function newlyUnlocked() { // items unlocked since the player last looked (for the red dot + toast)
   const s = ensure(), seen = s.unlocks, fresh = [];
   for (const it of ITEMS) { const k = it.slot + ':' + it.id; if (it.u.t !== 'free' && isUnlocked(it) && !seen[k]) { seen[k] = Date.now(); fresh.push(it); } }

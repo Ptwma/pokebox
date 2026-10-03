@@ -4,12 +4,13 @@
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Bigger towns, each one different: 30–46 buildings per town in its own architecture — pastel port houses, stilt cottages, star-lantern stone houses, snowy chalets, storm-tech towers and a walled desert bazaar",
-    "Landmarks inspired by the films' towns: harbour windmills and a lighthouse, Mistvale's Great Tree and fishing piers, Starfall's lantern arches, a festival ice rink in Frostline, wind turbines over Voltspire, Sandreach's walls, gates, bazaar and oasis",
-    "New full-screen map: drag, pinch and zoom, readable town names, where you are and which way you face, the objective with a guide line, routes, and ferry travel from each town's card. Tap the minimap to open it",
-    "New players get a narrated prologue over Veyra and a short step-by-step tutorial (Trainer → Replay intro)",
-    "Battles: HP bars change at the moment of each hit, with Your turn / Foe's turn banners — the foe's reply no longer looks like damage from your own attack; damage you take is shown in red",
-    "Cinematics: a flyover the first time you reach a town, VS reveals before Warden, rival and GLYPH battles, and a title card for each new chapter",
-    "Feel: momentum when you start and stop, slippery ice on the Frostline rink, barrels and crates you can push, windows that light up at night"
+    "Battles fixed: wild battles no longer freeze (it hit Echoes whose type didn't match your current capture goal, often the purple Psychic/Darkness ones); HP bars change at the moment of each hit with Your turn / Foe's turn banners",
+    "Catch with a Poké Ball: a timing ring (Nice / Great / Excellent) raises the odds. Pokémon have levels now, stronger the further you travel; rare and Alpha Echoes glow red, and wild Echoes can challenge you (Fight or Run, 10 s calm after each battle)",
+    "Bigger towns, each one different: 30–40 larger buildings per town in its own style, garden fences, fences along the routes, and film-inspired landmarks (windmills and a lighthouse, the Great Tree, lantern arches, an ice rink, wind turbines, a walled bazaar with an oasis)",
+    "Walk into the Relay Center (rest your team, save, respawn point) and the Card Shop. New: clothes to buy at the shop or find in treasure chests",
+    "New full-screen map (drag, pinch, zoom, objective, routes, ferry travel — tap the minimap), a compass and faint guide dashes on the ground toward your objective",
+    "New players get a narrated prologue over Veyra and a step-by-step tutorial; first-visit town flyovers, VS reveals before big battles, chapter title cards, more story",
+    "World: unclimbable mountain ranges (you slip back down), fruit trees, neater trees and rocks, boats on the sea, lighter weather that changes which Echoes appear, softer chest glow",
+    "Phone: no RUN or map buttons (push the stick, tap the minimap), faster camera turning, small notifications beside the minimap, your 3D character in the HUD, smoother pack openings, the bottom bar stays put between pages"
   ]
 }

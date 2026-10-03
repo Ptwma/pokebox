@@ -21,7 +21,7 @@ const RN = ['C', 'U', 'R', 'H', 'UR', 'IR', 'SR'];
 export function createFieldBattle(ctx) {
   const { THREE, scene, camera, H, hooks, makeCardPet } = ctx;
   let B = null, ui = null, busy = false, resolveFn = null, state = null;
-  const tweens = [];
+  const tweens = []; let busyT = 0;
   const tween = (ms, fn) => new Promise(res => tweens.push({ t: 0, ms, fn, res }));
   const tmp = new THREE.Vector3(), proj = new THREE.Vector3();
 
@@ -29,14 +29,22 @@ export function createFieldBattle(ctx) {
     const S = C.S, ids = (S.team || []).filter(i => S.owned[i]).slice(0, 3);
     if (!ids.length) { const q = QS.Q(); if (q.starter != null && S.owned[q.starter]) ids.push(q.starter); }
     if (ids.length < 3) for (const c of C.ownedCards().filter(isMon).sort((a, b) => b.hp + b.atk - a.hp - a.atk)) { if (ids.length >= 3) break; if (!ids.includes(c.i)) ids.push(c.i); }
-    return ids.map(i => fighter(DB.cards[i]));
+    return ids.map(i => { const c = DB.cards[i], lv = monLv(c).lv, f = fighter(c, lvMult(lv)); f.lv = lv; return f; });
   }
+  // levels, Pokémon-style: every card you own has a level that grows with battles; stats scale with it
+  const lvMult = lv => .72 + lv * .0125, multLv = m => Math.max(1, Math.round((m - .72) / .0125));
+  function monLv(card) { const S = C.S; S.mlv ||= {}; let m = S.mlv[card.i];
+    if (!m) { m = S.mlv[card.i] = { lv: Math.min(60, Math.max(12 + (card.r || 0) * 2, Math.round(10 + QS.Q().ch * 3.5))), xp: 0 }; C.save(); } return m; }
+  function gainXp(amount) { const out = [];
+    for (const f of B.p.team) { const m = monLv(f.card); if (m.lv >= 60) continue; m.xp += amount;
+      while (m.xp >= m.lv * 12 && m.lv < 60) { m.xp -= m.lv * 12; m.lv++; out.push([f.name, m.lv]); } }
+    C.save(); for (const [n, lv] of out.slice(-3)) hooks.toast?.(`<b>${esc(n)}</b> grew to <b>Lv ${lv}</b>!`); }
   function trainerTeam(key, spec) {
     let s = 0; for (const ch of key) s = (s * 31 + ch.charCodeAt(0)) >>> 0; const R = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
     const pool = DB.cards.filter(c => isMon(c) && spec.types.includes(c.t) && c.r >= spec.r[0] && c.r <= spec.r[1] && DB.setBy[c.s]?.sellable);
     const team = [], used = new Set(); let guard = 0;
     while (team.length < spec.n && pool.length && guard++ < 200) { const c = pool[(R() * pool.length) | 0]; if (!used.has(c.n)) { used.add(c.n); team.push(c); } }
-    return team.map(c => fighter(c, spec.lvl));
+    return team.map(c => { const f = fighter(c, spec.lvl); f.lv = multLv(spec.lvl) + (team.indexOf(c) === team.length - 1 ? 2 : 0); return f; });
   }
 
   /* ---------- staging */
@@ -149,7 +157,7 @@ export function createFieldBattle(ctx) {
     // the foe telegraphs what it can do next turn — that is what makes Guard and switching real decisions
     const intent = side === 'e' && !B.over ? (f.energy >= MOVES.ult.cost ? `<div class="fb-intent ult">⚠ Ultimate charged — it may unleash it</div>` : f.energy >= MOVES.sig.cost ? `<div class="fb-intent">${esc((SIG[f.type] || SIG.Colorless).name)} ready</div>` : '') : '';
     el.style.setProperty('--tc', TC[f.type] || '#ccc');
-    el.innerHTML = `<div class="fb-top"><b>${esc(f.name)}</b><span class="fb-type">${esc(f.type)}</span>${f.status ? `<span class="fb-st ${f.status}">${f.status === 'burn' ? 'BRN' : 'PAR'} ${f.statusT}</span>` : ''}${buffs}<span class="fb-r">${RN[f.card.r] || ''}</span></div>
+    el.innerHTML = `<div class="fb-top"><b>${esc(f.name)}</b>${f.lv ? `<span class="fb-lv">Lv ${f.lv}</span>` : ''}<span class="fb-type">${esc(f.type)}</span>${f.status ? `<span class="fb-st ${f.status}">${f.status === 'burn' ? 'BRN' : 'PAR'} ${f.statusT}</span>` : ''}${buffs}<span class="fb-r">${RN[f.card.r] || ''}</span></div>
       <div class="fb-hp"><i style="width:${pct}%" class="${pct < 30 ? 'low' : pct < 55 ? 'mid' : ''}"></i></div>
       <div class="fb-bot"><small>${hp} / ${f.maxHp} HP</small><span class="fb-en" title="Energy">${Array.from({ length: ENERGY_MAX }, (_, i) => `<i class="${i < en ? 'on' : ''}"></i>`).join('')}</span><span class="fb-team">${team}</span></div>${intent}`;
   }
@@ -161,7 +169,7 @@ export function createFieldBattle(ctx) {
     const chance = Math.round(captureChance(foe) * 100);
     box.innerHTML = btn('attack', 'Attack', `≈${estimate(me, foe, 'attack')} dmg · +1⚡`) + btn('sig', sig.name, `≈${estimate(me, foe, 'sig')} · ${sig.note} · ⚡${MOVES.sig.cost}`, 'sig') + btn('ult', 'Ultimate', `≈${estimate(me, foe, 'ult')} dmg · ⚡${MOVES.ult.cost}`, 'ult') + btn('guard', 'Guard', '−55% dmg this turn · +1⚡', 'guard')
       + B.p.team.map((f, i) => i !== B.p.act && f.hp > 0 ? `<button class="mv lg sw" data-sw="${i}" type="button" ${busy ? 'disabled' : ''} style="--tc:${TC[f.type] || '#ccc'}">${key()}<b>Switch</b><small>${esc(f.name)} · ${esc(f.type)}${mult(foe.type, f.type) < 1 ? ' · resists' : mult(foe.type, f.type) > 1 ? ' · weak' : ''}</small></button>` : '').join('')
-      + (wild ? `<button class="mv lg cap" data-cap type="button" ${busy ? 'disabled' : ''}>${key()}<b>Capture</b><small>${chance}% chance</small></button><button class="mv lg run" data-run type="button" ${busy ? 'disabled' : ''}>${key()}<b>Run</b><small>escape</small></button>` : '');
+      + (wild ? `<button class="mv lg cap" data-cap type="button" ${busy ? 'disabled' : ''}>${key()}<b>Poké Ball</b><small>${chance}% · time it for more</small></button><button class="mv lg run" data-run type="button" ${busy ? 'disabled' : ''}>${key()}<b>Run</b><small>escape</small></button>` : '');
     box.querySelectorAll('[data-m]').forEach(x => x.onclick = () => act({ kind: x.dataset.m }));
     box.querySelectorAll('[data-sw]').forEach(x => x.onclick = () => act({ kind: 'switch', to: +x.dataset.sw }));
     box.querySelector('[data-cap]')?.addEventListener('click', capture); box.querySelector('[data-run]')?.addEventListener('click', run);
@@ -293,7 +301,7 @@ export function createFieldBattle(ctx) {
     // otherwise your own HP dropped the moment YOU attacked (it already contained the foe's reply)
     const all = [...B.p.team, ...B.e.team]; for (const f of all) { f._hp = f.hp; f._en = f.energy; }
     const ev = B.round(a);
-    for (const e of ev) {
+    try { for (const e of ev) {
       if (!ui) return;
       if (e.t === 'hit') { const att = B.active(e.side), def = B.active(e.side === 'p' ? 'e' : 'p'); att._en = att.energy;
         e._apply = () => { def._hp = Math.max(def.minHp || 0, (def._hp ?? def.hp) - e.d); }; await strike(e); }
@@ -308,28 +316,65 @@ export function createFieldBattle(ctx) {
       else if (e.t === 'debuff' || e.t === 'buff') { floatText(state.mon[e.side].group, e.stat + (e.t === 'buff' ? ' ↑' : ' ↓'), 'lbl ' + (e.t === 'buff' ? 'up' : 'dn')); await wait(320); }
       else if (e.t === 'end') { await wait(450); return finish(e.result); }
       plate('p'); plate('e');
-    }
+    } } catch (err) { console.warn('[battle] round animation', err); if (B.over) return finish(B.over); } // never leave the fight stuck half-way
     for (const f of all) { f._hp = f.hp; f._en = f.energy; } // end of the round: plates catch up with the real state
     guardBubble('p', false); guardBubble('e', false); acting(null);
     busy = false; if (ui) { plate('p'); plate('e'); moves(); captureHint(); phase(true); }
   }
+  /* ---- capture: aim (timing mini-game) → Poké Ball throw → wobbles. A well-timed throw raises the odds. */
+  function pokeball() {
+    const g = new THREE.Group(), r = .2, red = new THREE.MeshStandardMaterial({ color: '#e8382f', roughness: .35, metalness: .1 }), white = new THREE.MeshStandardMaterial({ color: '#f6f3ee', roughness: .4 }),
+      black = new THREE.MeshStandardMaterial({ color: '#1b1b20', roughness: .5 });
+    const lid = new THREE.Group(), top = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), red); lid.add(top);
+    const bot = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), white);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(r * 1.005, r * .09, 6, 28), black); band.rotation.x = Math.PI / 2;
+    const btn = new THREE.Mesh(new THREE.CylinderGeometry(r * .32, r * .32, r * .12, 16), white); btn.rotation.x = Math.PI / 2; btn.position.z = r * 1.02;
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(r * .42, r * .42, r * .08, 16), black); ring.rotation.x = Math.PI / 2; ring.position.z = r * .99;
+    lid.position.y = 0; g.add(lid, bot, band, ring, btn); g.userData = { lid, btn }; return g;
+  }
+  function aimThrow(foe, chance) { // a shrinking ring over the foe: tap when it is small — Nice / Great / Excellent
+    return new Promise(res => {
+      const fx = ui.querySelector('#fbFx'), p = screenOf(state.mon.e.group, (state.mon.e.size?.h || 1.4) * .55), d = document.createElement('div');
+      const col = chance > .6 ? '#5fe08a' : chance > .3 ? '#ffd23c' : '#ff6a4a';
+      d.className = 'fb-aim'; d.style.cssText = `left:${p.x}px;top:${p.y}px;--c:${col}`; d.innerHTML = `<i class="tgt"></i><i class="shr"></i><b>${TOUCHUI ? 'Tap' : 'Click / Space'} to throw!</b>`; fx.append(d);
+      const shr = d.querySelector('.shr'), t0 = performance.now(), per = 1350 / Math.min(2, FAST()); let done = false, sc = 1.9;
+      const tick = () => { if (done) return; const k = ((performance.now() - t0) % per) / per; sc = 1.9 - k * 1.45; shr.style.transform = `translate(-50%,-50%) scale(${sc})`; requestAnimationFrame(tick); }; tick();
+      const go = (e, timeout) => { if (done) return; e?.preventDefault?.(); done = true; if (timeout) sc = 9; /* no tap: a plain throw, no bonus */ removeEventListener('keydown', key, true); ui.removeEventListener('pointerdown', go, true);
+        const grade = sc < .72 ? ['Excellent!', .3] : sc < .98 ? ['Great!', .18] : sc < 1.3 ? ['Nice!', .08] : ['', 0];
+        d.classList.add('out'); setTimeout(() => d.remove(), 300); res(grade); };
+      const key = e => { if (['Space', 'Enter', 'Digit1', 'KeyE'].includes(e.code)) go(e); };
+      addEventListener('keydown', key, true); setTimeout(() => ui.addEventListener('pointerdown', go, true), 120); setTimeout(() => go(null, true), 6000 / FAST());
+    });
+  }
+  const TOUCHUI = matchMedia('(pointer: coarse)').matches;
   async function capture() {
     if (busy) return; busy = true; phase(false); moves(); acting('p');
-    const foe = B.active('e'), m = state.mon.e, ch = captureChance(foe);
-    log(`You throw a blank Lattice card!`); hooks.sfx?.('whoosh', .5);
-    const card = new THREE.Mesh(new THREE.PlaneGeometry(.5, .7), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffd257').multiplyScalar(1.8), side: THREE.DoubleSide }));
-    scene.add(card); const from = state.a.clone().setY(state.a.y + 1.4), to = m.group.position.clone().setY(m.group.position.y + 1.2);
-    await tween(520, k => { card.position.lerpVectors(from, to, ease(k)); card.position.y += Math.sin(k * Math.PI) * 1.8; card.rotation.set(k * 8, k * 6, 0); });
-    hitStop(.08); flashGlow(to, '#ffd257', 3.5, 420); await tween(360, k => { m.group.scale.setScalar(1 - k * .98); m.setFlash?.(k); });
+    const foe = B.active('e'), m = state.mon.e, base = captureChance(foe);
+    log(`Aim… a well-timed throw raises the odds.`);
+    const [grade, bonus] = await aimThrow(foe, base), ch = Math.min(.97, base + bonus);
+    log(`You throw a Poké Ball!${grade ? ` <b>${grade}</b>` : ''}`); try { ctx.player()?.play?.('OverhandThrow', .1, { once: true, speed: 1.4 }); } catch {} await wait(260); hooks.sfx?.('whoosh', .5);
+    const ball = pokeball(); scene.add(ball);
+    const from = state.a.clone().setY(state.a.y + 1.4), to = m.group.position.clone().setY(m.group.position.y + (m.size?.h || 1.4) * .55), ground = m.group.position.clone().setY(H(m.group.position.x, m.group.position.z) + .2);
+    if (grade) floatText(m.group, grade, 'lbl eff');
+    await tween(560, k => { ball.position.lerpVectors(from, to, k); ball.position.y += Math.sin(k * Math.PI) * 1.6; ball.rotation.set(-k * 14, 0, 0); });
+    // the ball opens, the Echo turns to light and is pulled in
+    hitStop(.08); hooks.sfx?.('charge', .5); ball.rotation.set(0, Math.atan2(from.x - to.x, from.z - to.z), 0);
+    await tween(160, k => { ball.userData.lid.rotation.x = -k * 1.4; });
+    flashGlow(to, '#ffffff', 3.5, 420); await tween(380, k => { m.group.scale.setScalar(1 - k * .98); m.setFlash?.(k); });
+    await tween(160, k => { ball.userData.lid.rotation.x = -(1 - k) * 1.4; });
+    await tween(320, k => { ball.position.lerpVectors(to, ground, k * k); ball.position.y += Math.sin(k * Math.PI) * .25; }); hooks.sfx?.('thud', .3);
     const shakes = Math.random() < ch ? 3 : Math.min(2, Math.floor(Math.random() * 3));
-    for (let i = 0; i < shakes; i++) { hooks.sfx?.('tick'); await tween(420, k => { card.rotation.z = Math.sin(k * Math.PI * 2) * .5; card.position.y = to.y - .6 + Math.abs(Math.sin(k * Math.PI)) * .1; }); await wait(180); }
+    for (let i = 0; i < shakes; i++) { await wait(260); hooks.sfx?.('tick'); ball.userData.btn.material.emissive?.set?.('#ff3a2a');
+      await tween(460, k => { ball.rotation.z = Math.sin(k * Math.PI * 2) * .45 * (1 - k * .3); ball.position.y = ground.y + Math.abs(Math.sin(k * Math.PI * 2)) * .04; }); }
+    const drop = () => { scene.remove(ball); ball.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); };
     if (shakes === 3) {
-      hooks.sfx?.('win'); burst(to, '#ffd257', true); scene.remove(card); card.geometry.dispose(); card.material.dispose();
+      hooks.sfx?.('win'); burst(ground.clone().setY(ground.y + .3), '#ffd257', true); await wait(250); drop();
       const isNew = C.addCard(foe.card); log(`Gotcha! <b>${esc(foe.name)}</b> was captured!`); floatText(m.group, 'CAPTURED!', 'lbl eff');
       const S = C.S; if ((S.team || []).length < 3 && !S.team.includes(foe.card.i)) { S.team.push(foe.card.i); C.save(); }
       await wait(900); return finish('caught', { card: foe.card, isNew });
     }
-    hooks.sfx?.('ko'); log(`Oh no! It broke free!`); await tween(300, k => { m.group.scale.setScalar(.02 + k * .98); m.setFlash?.(1 - k); }); scene.remove(card); card.geometry.dispose(); card.material.dispose();
+    hooks.sfx?.('ko'); log(`Oh no! It broke free!`); await tween(140, k => { ball.userData.lid.rotation.x = -k * 1.6; }); flashGlow(to, '#ffffff', 2.5, 300);
+    await tween(300, k => { m.group.scale.setScalar(.02 + k * .98); m.setFlash?.(1 - k); }); drop();
     busy = false; await act({ kind: 'guard' });
   }
   async function run() { if (busy) return; busy = true; log('Got away safely!'); await wait(500); finish('fled'); }
@@ -338,11 +383,11 @@ export function createFieldBattle(ctx) {
     const spec = state.spec, T = spec.npc?.trainer;
     if (result === 'win') {
       const xp = spec.kind === 'wild' ? 14 + QS.Q().ch * 3 : 40 + QS.Q().ch * 18, coins = spec.kind === 'wild' ? 10 : Math.round(80 + QS.Q().ch * 45 * (T?.lvl || 1));
-      C.addCoins(coins); hooks.xp?.(xp); C.S.battle.wins++; C.save();
+      C.addCoins(coins); hooks.xp?.(xp); C.S.battle.wins++; C.save(); gainXp(spec.kind === 'wild' ? 10 + (B.e.team[0]?.lv || 5) : 30 + Math.max(...B.e.team.map(f => f.lv || 10)) * 2);
       const nid = spec.npc?.id, rp = spec.kind === 'wild' ? RK.RP.wild : ['maren', 'mira', 'sable', 'orin', 'vera', 'dom', 'lyra', 'kest'].includes(nid) ? RK.RP.warden : nid === 'rho' || nid === 'kai' ? RK.RP.rival : RK.RP.trainer(T?.lvl || 1);
       RK.add(rp, spec.kind === 'wild' ? 'Wild Echo' : spec.name || 'Trainer');
       hooks.toast?.(`${spec.kind === 'wild' ? 'The wild ' + esc(spec.wild.card.n) + ' faded back into the grass.' : 'You beat ' + esc(spec.name) + '!'} <span class="gold">+${coins} coins · +${xp} XP · +${rp} RP</span>`);
-    } else if (result === 'caught') { hooks.xp?.(20); RK.add(RK.RP.capture, 'Capture'); hooks.toast?.(`<b>${esc(extra.card.n)}</b> joined your collection${extra.isNew ? ' <em class="gold">NEW</em>' : ''}. ${C.S.team.includes(extra.card.i) ? 'It joined your team!' : ''}`); }
+    } else if (result === 'caught') { hooks.xp?.(20); gainXp(8 + (B.e.team[0]?.lv || 5)); { const m = monLv(extra.card); m.lv = Math.max(m.lv, B.e.team[0]?.lv || m.lv); C.save(); } RK.add(RK.RP.capture, 'Capture'); hooks.toast?.(`<b>${esc(extra.card.n)}</b> joined your collection${extra.isNew ? ' <em class="gold">NEW</em>' : ''}. ${C.S.team.includes(extra.card.i) ? 'It joined your team!' : ''}`); }
     else if (result === 'lose') { C.S.battle.losses++; C.save(); RK.add(RK.RP.lose, 'Defeat'); hooks.toast?.('Your team fainted… you blacked out and woke up in the last town.'); }
     await cleanup(result === 'lose');
     const r = { result, ...extra }; const fn = resolveFn; resolveFn = null; fn?.(r);
@@ -363,9 +408,9 @@ export function createFieldBattle(ctx) {
     async start(spec) {
       const mine = myTeam(); if (!mine.length) { hooks.toast?.('You have no Pokémon cards yet — Dr. Vale in Lumen Harbor can help.'); return { result: 'none' }; }
       let enemy;
-      if (spec.kind === 'wild') enemy = [fighter(DB.cards[spec.wild.card.i], .8 + Math.max(QS.Q().ch, QS.tierAt(spec.wild.x, spec.wild.z)) * .05 + QS.dangerAt(spec.wild.x, spec.wild.z) * .09 + Math.random() * .08)];
-      if (spec.kind === 'wild' && storyCapture(spec.wild.card)) enemy[0].minHp = 1; // a story capture can't be wasted by knocking the Echo out
-      else if (spec.mirror) enemy = mine.map(f => fighter(f.card, 1.08)); // GLYPH copies your team: a little stronger, beatable with Guard, switching and type play
+      if (spec.kind === 'wild') { const lv = spec.wild.lv || Math.round(4 + QS.tierAt(spec.wild.x, spec.wild.z) * 4.6); enemy = [fighter(DB.cards[spec.wild.card.i], lvMult(lv))]; enemy[0].lv = lv; }
+      if (spec.kind === 'wild') { if (storyCapture(spec.wild.card)) enemy[0].minHp = 1; } // a story capture can't be wasted by knocking the Echo out
+      else if (spec.mirror) enemy = mine.map(f => { const g = fighter(f.card, lvMult(f.lv) * 1.08); g.lv = f.lv + 3; return g; }); // GLYPH copies your team: a little stronger, beatable with Guard, switching and type play
       else enemy = trainerTeam(spec.npc.key, spec.npc.trainer);
       if (!enemy.length) return { result: 'none' };
       B = new Battle(mine, enemy);
@@ -380,10 +425,11 @@ export function createFieldBattle(ctx) {
       return new Promise(res => { resolveFn = res; });
     },
     update(dt, t) {
+      if (busy && state) { busyT += dt; if (busyT > 25) { console.warn('[battle] watchdog: finishing stuck animations'); busyT = 0; for (const w of tweens.splice(0)) { try { w.fn(1); } catch {} w.res(); } } } else busyT = 0;
       if (freeze > 0) { freeze -= dt; dt = 0; } // hit-stop: the whole fight holds its breath on impact
-      for (let i = tweens.length - 1; i >= 0; i--) { const w = tweens[i]; w.t += dt * 1000 * FAST(); const k = Math.min(1, w.t / w.ms); w.fn(k); if (k >= 1) { tweens.splice(i, 1); w.res(); } }
+      for (let i = tweens.length - 1; i >= 0; i--) { const w = tweens[i]; w.t += dt * 1000 * FAST(); let k = Math.min(1, w.t / w.ms); try { w.fn(k); } catch (e) { console.warn('[battle] tween', e); k = 1; } if (k >= 1) { tweens.splice(i, 1); w.res(); } } // one broken effect must never freeze the fight
       if (!state) return;
-      for (const s of ['p', 'e']) { const m = state.mon[s]; if (m && m.group.visible) m.update(dt, 0, t, camera);
+      for (const s of ['p', 'e']) { const m = state.mon[s]; if (m && m.group.visible) try { m.update(dt, 0, t, camera); } catch (e) { console.warn('[battle] creature', e); }
         const rg = state.ring?.[s]; if (rg) { rg.flare = Math.max(0, rg.flare - dt * 1.6); const pulse = rg.on ? .55 + .25 * Math.sin(t * 5) : .22;
           rg.r.material.opacity = Math.min(1, pulse + rg.flare * .8) * (m?.group.visible ? 1 : .3); rg.d.material.opacity = (rg.on ? .14 : .05) + rg.flare * .35; rg.g.scale.setScalar(1 + rg.flare * .25); } }
       statusFx(dt);

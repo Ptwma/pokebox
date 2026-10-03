@@ -43,10 +43,16 @@ function clean(m) { // m: Float32Array N*N in 0..1 -> {keep: Uint8Array, ok, fra
 
 function silhouette(src, w, h, color) { const c = new OffscreenCanvas(w, h), g = c.getContext('2d'); g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, w, h); return c; }
 
-async function make(url, { outW = 384 } = {}) {
-  const bmp = await createImageBitmap(await (await fetch(url)).blob());
-  const W = bmp.width, H = bmp.height, fullArt = false;
-  const sx = W * .075, sy = H * .095, sw = W * .85, sh = H * .42;
+async function make(url, opts = {}) {
+  const bmp = await createImageBitmap(await (await fetch(url)).blob()), W = bmp.width, H = bmp.height;
+  // 1) the classic art window, 2) a full-art window (ex / illustration cards: the Pokémon fills the card),
+  // 3) never a flat card: an oval die-cut of the art window — the creature still reads as a 2D sticker
+  const r1 = await attempt(bmp, W * .075, H * .095, W * .85, H * .42, opts, false); if (r1.ok) return r1;
+  const r2 = await attempt(bmp, W * .04, H * .05, W * .92, H * .62, opts, false); if (r2.ok) return r2;
+  return attempt(bmp, W * .075, H * .095, W * .85, H * .42, opts, true);
+}
+async function attempt(bmp, sx, sy, sw, sh, { outW = 384 } = {}, oval = false) {
+  const fullArt = false;
   const c320 = new OffscreenCanvas(N, N), g = c320.getContext('2d', { willReadFrequently: true });
   g.drawImage(bmp, sx, sy, sw, sh, 0, 0, N, N);
   const px = g.getImageData(0, 0, N, N).data, inp = new Float32Array(3 * N * N);
@@ -56,7 +62,10 @@ async function make(url, { outW = 384 } = {}) {
   const out = await s.run(feeds), m = out[s.outputNames[0]].data;
   let lo = 1e9, hi = -1e9; for (let i = 0; i < m.length; i++) { lo = Math.min(lo, m[i]); hi = Math.max(hi, m[i]); }
   const mn = new Float32Array(N * N); for (let i = 0; i < N * N; i++) mn[i] = (m[i] - lo) / (hi - lo + 1e-6);
-  const r = clean(mn);
+  let r = clean(mn);
+  if (!r.ok && oval) { // soft oval: keep the model's strongest region inside an ellipse, the rest fades out
+    const keep = new Uint8Array(N * N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = (x / N - .5) / .47, dy = (y / N - .52) / .47; if (dx * dx + dy * dy < 1) keep[y * N + x] = 1; }
+    for (let i = 0; i < N * N; i++) mn[i] = keep[i] ? Math.max(mn[i], .75) : 0; r = { ok: true, keep, frac: .7 }; }
   if (!r.ok) return { ok: false, frac: r.frac, edge: r.edgeFrac };
   // soft alpha mask (N x N), restricted to the kept region (slightly grown so soft edges survive)
   const mask = new OffscreenCanvas(N, N), mg = mask.getContext('2d'), id = mg.createImageData(N, N);

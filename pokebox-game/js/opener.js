@@ -271,9 +271,10 @@ export function createOpener(canvas, hooks = {}) {
   const mouse = { x: 0, y: 0, sx: 0, sy: 0 };
   canvas.addEventListener('pointermove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) / r.width * 2 - 1; mouse.y = (e.clientY - r.top) / r.height * 2 - 1; });
 
+  let lowGlow = false;
   function fit() {
     const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight, a = w / h, PW = S ? S.PW : .78;
-    renderer.setSize(w, h, false); composer.setSize(w, h); { const pr = renderer.getPixelRatio(); bloom.setSize(Math.round(w * pr / 2), Math.round(h * pr / 2)); } // half-res glow: same look, ~4x cheaper
+    renderer.setSize(w, h, false); composer.setSize(w, h); { const pr = renderer.getPixelRatio(), k = lowGlow ? 4 : 2; bloom.setSize(Math.round(w * pr / k), Math.round(h * pr / k)); } // half-res glow: same look, ~4x cheaper
     camera.aspect = a; camera.updateProjectionMatrix();
     const dH = (x, f) => (x / f) / 2 / TANH, dW = (x, f) => (x / f) / 2 / (TANH * a);
     view.dWide = Math.max(dH(PH, .73), dW(PW, .62));
@@ -373,12 +374,17 @@ export function createOpener(canvas, hooks = {}) {
   function loop(now) {
     if (!running) return;
     raf = requestAnimationFrame(loop);
-    const dt = Math.max(0, (now - last) / 1000); last = now; clock += Math.min(dt, .05);
+    const dt = Math.max(0, (now - last) / 1000); last = now; clock += Math.min(dt, .07); // keeps real pace down to ~15 fps
     update(clock); composer.render();
-    // adaptive resolution: if the GPU can't hold ~50 fps, step the render scale down (never below 1x)
-    perf.sum += dt; if (++perf.n === 40) {
+    // adaptive quality when the GPU can't hold ~50 fps — cheapest losses first, so the cards stay sharp:
+    // 1) MSAA off in the post chain, 2) glow at quarter resolution, 3) render scale steps down but never below 1x
+    perf.sum += dt; if (++perf.n === 30) {
       const avg = perf.sum / perf.n; perf.n = 0; perf.sum = 0;
-      if (avg > .019 && perf.pr > .75) { perf.pr = Math.max(.75, perf.pr - .25); renderer.setPixelRatio(perf.pr); fit(); }
+      if (avg > .019) {
+        if (composer.renderTarget1.samples > 0) { composer.renderTarget1.samples = composer.renderTarget2.samples = 0; composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); fit(); }
+        else if (!lowGlow) { lowGlow = true; fit(); }
+        else if (perf.pr > 1) { perf.pr = Math.max(1, perf.pr - .25); renderer.setPixelRatio(perf.pr); fit(); }
+      }
     }
   }
 
@@ -485,7 +491,7 @@ export function createOpener(canvas, hooks = {}) {
     S.rareBurst.position.set(0, cardY, -.1); S.rareBurst.rotation.z = t * .15;
     for (const m of S.rareRays) { m.material.opacity = ra * (.35 + .35 * Math.sin(t * 9 + m.userData.seed * 5)) * (.6 + S.rareLv * .2); if (S.rareLv >= 3) m.material.color.setRGB(...m.userData.col); else m.material.color.setRGB(1.8, 1.7, 1.6); m.scale.y = .7 + .5 * seg(t, S.rareT, S.rareT + .4); }
 
-    blurPass.uniforms.uStrength.value = blur; blurPass.uniforms.uDir.value.set(dir[0], dir[1]); blurPass.uniforms.uRadial.value = radial;
+    blurPass.uniforms.uStrength.value = blur; blurPass.enabled = blur > .0005; /* a disabled pass costs nothing (phones) */ blurPass.uniforms.uDir.value.set(dir[0], dir[1]); blurPass.uniforms.uRadial.value = radial;
   }
   function cue(name, cond, fn) { S.cues ||= {}; if (cond && !S.cues[name]) { S.cues[name] = 1; fn(); } }
   function fxForReveal(k, t) {
