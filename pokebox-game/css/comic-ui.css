@@ -522,3 +522,36 @@ body:not(.game) #scene.cine{display:none!important} /* a world cutscene waits wh
   .rail .rlogo{display:grid;place-items:center;width:40px;height:40px;flex:none;margin-bottom:4px}.rail .rlogo .orb{transform:scale(.7)}
 }
 @media (max-height:520px) and (orientation:landscape){.rail .rlogo{display:none}}
+
+/* ======================================================================================================
+   ONE LOOK FOR THE WHOLE GAME — the menus now speak the same comic language as the world UI
+   (ink outlines, hard offset shadows, cream + gold highlights) instead of a separate "galaxy glass" style.
+   The animated space background is replaced by a still dusk sky with halftone dots: same mood, no GPU cost on phones.
+   ====================================================================================================== */
+:root{--ink:#0b0916;--panel:#1c1733;--panel2:#252043;--edge:rgba(255,255,255,.1);--glass:#1c1733;--glass2:#252043;--hardsh:5px 5px 0 rgba(0,0,0,.55)}
+#bgfx{display:none}
+body{background:
+  radial-gradient(rgba(255,255,255,.055) 1.2px,transparent 1.4px) 0 0/14px 14px,
+  radial-gradient(120% 80% at 80% -10%,#4a2f7a 0,transparent 60%),
+  radial-gradient(90% 70% at 0% 110%,#1f4a7a 0,transparent 60%),
+  linear-gradient(180deg,#191433,#0e0b1d)}
+.panel,.tile{background:var(--panel);border-radius:16px;box-shadow:0 0 0 3px var(--ink),var(--hardsh)}
+.tile.daily{background:linear-gradient(145deg,#4a3410,#2a1d08);box-shadow:0 0 0 3px var(--ink),5px 5px 0 rgba(255,190,50,.35)}
+.mode{box-shadow:0 0 0 3px var(--ink),var(--hardsh)}
+.worldhero{box-shadow:0 0 0 3px var(--ink),6px 6px 0 rgba(92,242,214,.35)!important}
+.rail{background:#130f24;border-right:0;box-shadow:3px 0 0 var(--ink)}
+.hud{background:#130f24;border-bottom:0;box-shadow:0 3px 0 var(--ink)}
+.res,.ibtn{background:var(--panel2);box-shadow:0 0 0 2px var(--ink),2px 2px 0 rgba(0,0,0,.5)}
+.rail a.on{background:linear-gradient(180deg,#fff7da,#ffd257);color:#1b1530;box-shadow:0 0 0 2px var(--ink),3px 3px 0 rgba(0,0,0,.55)}
+.rail a.on::before{display:none}
+.chip{background:var(--panel2);box-shadow:0 0 0 2px var(--ink)}
+.sech h2,.tile h3{text-shadow:3px 3px 0 var(--ink)}
+.eyebrow{letter-spacing:.18em}
+.subnav{background:#130f24;box-shadow:0 0 0 3px var(--ink),var(--hardsh);backdrop-filter:none}
+input,select{border-radius:12px!important;box-shadow:0 0 0 2px var(--ink)!important}
+.toast{border:2px solid var(--ink);box-shadow:4px 4px 0 rgba(0,0,0,.5)}
+@media (max-width:760px){.rail{box-shadow:0 -3px 0 var(--ink)}}
+/* a world cutscene waiting in the background must not hide the menu chrome or put world banners on the menu pages */
+body.cine-on:not(.game) .rail,body.cine-on:not(.game) header,body.cine-on:not(.game) .hud{opacity:1!important;pointer-events:auto!important}
+body:not(.game) .cx-area{display:none}
+@media (max-height:520px) and (orientation:landscape){.hud .trainer{max-height:calc(var(--hud) - 4px);overflow:hidden}}

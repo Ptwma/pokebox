@@ -344,7 +344,7 @@ function route() {
     if (name !== 'world') { hideWorld(); closeLattice(); }
     $('#backWorld')?.classList.toggle('on', name !== 'world');
     const grp = GROUP_OF[name];
-    $$('.rail a').forEach(a => a.classList.toggle('on', !a.classList.contains('rlogo') && (a.getAttribute('href') === '#' + name || (grp && a.dataset.group === grp))));
+    $$('.rail a').forEach(a => a.classList.toggle('on', !a.classList.contains('rlogo') && (a.getAttribute('href') === '#' + name || (!!grp && a.dataset.group === grp))));
     if (changed) view.scrollTop = 0; current = h;
     (VIEWS[name] || VIEWS.home)(arg); subnav(name); updateTop();
   };
@@ -1218,7 +1218,7 @@ VIEWS.profile = () => {
 };
 
 /* ------------------------------------------------------------------ ambient background */
-startSpace($('#bgfx'), () => !opening.hidden || !$('#worldWrap').hidden);
+// the animated space background was replaced by a still comic sky (css/comic-ui.css): saves battery and GPU on phones
 
 /* F3 = performance overlay (fps, frame time, GPU) — for diagnosing lag on a given machine */
 (function perfHud() {

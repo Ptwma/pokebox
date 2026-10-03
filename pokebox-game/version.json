@@ -1,12 +1,11 @@
 {
-  "version": "3.13.0",
+  "version": "3.14.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Simpler menus: five places — Home, Veyra, Cards, Shop, Journey, Trainer. Cards, Binder, Team and Market are now tabs of one page, Story and Ranking tabs of Journey; the phone menu shows labels",
-    "People of Veyra dress for who they are and where they live: coordinated outfits per job (fishers, traders, scholars, smiths…), wool and beanies in Frostline, light linen and sun hats in Sandreach, indigo in Starfall, workwear in Voltspire; slightly bigger, friendlier heads",
-    "Lumen Harbor: the walk from the ferry landing to the docks is clear (no rocks in the way), no cactus on the beach, the windmills stand on the hills behind the town",
-    "Piers are walkable; story scenes no longer cover the menu pages"
+    "One look for the whole game: the menus now use the same comic style as the world — ink outlines, hard shadows, gold highlights — on a still dusk sky (the animated space background is gone, which also saves battery on phones)",
+    "The menu shows the page you are on correctly (it could light up several buttons at once)",
+    "A story scene waiting in Veyra no longer hides the menu bar or shows town banners while you browse cards, the shop or your journey"
   ]
 }
