@@ -218,7 +218,7 @@ export const CAST = {
   rho: { name: 'Rho', role: 'Relay courier', look: { body: 'm', skin: 'sk3', hair: 'messy', hairColor: 'hc3', eyes: 'happy', hat: 'none', top: 'hoodie', topColor: 'tc5', acc: 'goggles' } },
   sable: { name: 'Warden Sable', role: 'The Archivists', look: { body: 'f', skin: 'sk4', hair: 'long', hairColor: 'hc0', eyes: 'sharp', hat: 'none', top: 'robe', topColor: 'tc9', acc: 'monocle' } },
   joey: { name: 'Youngster Joey', role: 'Circuit Warden · Route 1', look: { body: 'm', skin: 'sk0', hair: 'short', hairColor: 'hc1', eyes: 'round', hat: 'cap', topColor: 'tc2', top: 'tee', acc: 'none' } },
-  kai: { name: 'Ace Trainer Kai', role: 'Circuit Warden · Voltspire', look: { body: 'm', skin: 'sk2', hair: 'spiky', hairColor: 'hc8', eyes: 'sharp', hat: 'none', top: 'bomber', topColor: 'tc7', acc: 'paint' } },
+  kai: { name: 'Ace Trainer Kai', role: 'Circuit Warden · Ember Trial', look: { body: 'm', skin: 'sk2', hair: 'spiky', hairColor: 'hc8', eyes: 'sharp', hat: 'none', top: 'bomber', topColor: 'tc7', acc: 'paint' } },
   glyph: { name: 'GLYPH', role: '???', look: { body: 'm', skin: 'sk5', hair: 'buzz', hairColor: 'hc9', eyes: 'glyph', hat: 'none', top: 'robe', topColor: 'tc9', acc: 'mask' } },
 };
 

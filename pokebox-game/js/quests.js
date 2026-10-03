@@ -42,13 +42,13 @@ export const ROSTER = [
   { id: 'deckB', pos: at('harbor', 21, 41), face: 1.6, from: 1, to: 99, trainer: T(['Water', 'Colorless'], [0, 1], 2, .9), dock: true },
   { id: 'maren', pos: at('harbor', 29.5, 36), face: -1.6, from: 1, to: 99, trainer: T(['Water'], [1, 2], 3, .95) },
   { id: 'grunt', pos: onRoute('r1', .45, 3), face: 0, from: 2, to: 2, trainer: T(['Darkness', 'Colorless'], [0, 2], 2, .95) },
-  { id: 'rho', pos: at('mistvale', 6, 10), face: 2, from: 2, to: 2 },
+  { id: 'rho', pos: at('mistvale', 6, 10), face: 2, from: 2, to: 2, trainer: T(['Colorless', 'Water', 'Grass'], [1, 2], 2, 1.0) },
   { id: 'grunt2', pos: at('mistvale', 10, 1.5), face: -1, from: 2, to: 2, trainer: T(['Darkness', 'Water'], [0, 2], 2, 1) },
   { id: 'mira', pos: at('mistvale', -10, 2), face: 1.2, from: 2, to: 99, trainer: T(['Grass'], [1, 3], 3, 1.02) },
   { id: 'ranger', pos: onRoute('r2', .35, 3), face: 0, from: 3, to: 99, trainer: T(['Grass', 'Water'], [1, 2], 2, 1.02) },
   { id: 'archivist', pos: at('starfall', 10, 14), face: 3.2, from: 3, to: 99 },
   { id: 'sable', pos: at('starfall', 4, -4), face: 3, from: 3, to: 99, trainer: T(['Psychic', 'Metal'], [2, 3], 3, 1.08) },
-  { id: 'rho', pos: at('frostline', -10, 12), face: 1.4, from: 4, to: 4 },
+  { id: 'rho', pos: at('frostline', -10, 12), face: 1.4, from: 4, to: 4, trainer: T(['Colorless', 'Water', 'Fire'], [2, 3], 3, 1.12) },
   { id: 'vex', pos: at('frostline', 10, 10), face: -2, from: 4, to: 4, trainer: T(['Darkness', 'Water'], [2, 3], 3, 1.1) },
   { id: 'orin', pos: at('frostline', 2, -6), face: 0, from: 4, to: 99, trainer: T(['Water'], [2, 4], 3, 1.14) },
   { id: 'kai', pos: at('voltspire', -4, 6), face: .5, from: 5, to: 5 },
@@ -59,6 +59,8 @@ export const ROSTER = [
   { id: 'kai', pos: at('sandreach', 14, -14), face: -.8, from: 7, to: 99, trainer: T(['Fire'], [3, 5], 3, 1.26) },
   { id: 'vale', pos: at('harbor', -10, -6.2), face: 0, from: 8, to: 99 },
   { id: 'lyra', pos: onRoute('cw', .1, 0), face: 3.14, from: 8, to: 99, trainer: T(['Dragon', 'Psychic', 'Fire'], [4, 6], 3, 1.34) },
+  { id: 'rho', pos: onRoute('cw', .3, 3), face: 3.14, from: 8, to: 8, trainer: T(['Colorless', 'Water', 'Fire', 'Lightning'], [3, 5], 3, 1.3) },
+  { id: 'rho', pos: at('harbor', 3, 22), face: 3.1, from: 9, to: 99 },
   { id: 'glyph', pos: at('rift', 0, -8), face: 0, from: 9, to: 99, mirror: true },
 ];
 /* optional route trainers (Pokémon style: they spot you and walk up) */
@@ -117,8 +119,9 @@ export const STORY = [
       S('Record 2 glyph stones in Mistvale', { kind: 'find', ids: ['mistvale:0', 'mistvale:1'] }),
       S('Unplug the siphon: beat the grunt at the waterwheel', { kind: 'battle', npc: 'grunt2' }),
       S('Bloom Trial: battle Lass Mira', { kind: 'battle', npc: 'mira', lines: [['mira', 'You cleared the siphon? Then the fog owes you one. And so do I — a battle!']] }),
+      S('Rho wants a rematch at the waterwheel', { kind: 'battle', npc: 'rho', lines: [['rho', 'Two Seals. TWO. I have been training on the ferry every night, you know.'], ['rho', 'I am not losing twice in one week. Rival battle — round two!']] }),
     ],
-    outro: [['mira', 'The Bloom Seal. The fog will let you pass north now — Route 2 climbs to Starfall.'], ['rho', 'Starfall. The observatory people. The Archivists. They think the Echoes are memories.']],
+    outro: [['rho', 'Okay. Okay! You are good. Annoyingly good. I am still coming with you as far as Starfall.'], ['mira', 'The Bloom Seal. The fog will let you pass north now — Route 2 climbs to Starfall.'], ['rho', 'Starfall. The observatory people. The Archivists. They think the Echoes are memories.']],
     reward: { coins: 700, xp: 350, seal: 'Bloom Seal', flag: 'gate-r2' } },
 
   { title: 'Signal at Starfall', region: 'starfall', color: '#8e9aa6',
@@ -140,14 +143,15 @@ export const STORY = [
       S('Stop Admin Vex', { kind: 'battle', npc: 'vex', lines: [['vex', 'Fused Echoes print cards worth a fortune. You are bad for business, Ranger.']] }),
       S('Record 2 glyph stones in the snow', { kind: 'find', ids: ['frostline:0', 'frostline:1'] }),
       S('Rime Trial: battle Elite Orin', { kind: 'battle', npc: 'orin', lines: [['orin', 'The ice keeps what the relay throws away. So do I. Show me what you keep.']] }),
+      S('Rho is waiting by the ice caverns', { kind: 'battle', npc: 'rho', lines: [['rho', 'I went down to the fused Echo alone. It did not attack me. It just… showed me my first card. The one I lost when I was six.'], ['rho', 'I need to know if I am strong enough to go back down there. Battle me. Properly.']] }),
     ],
-    outro: [['orin', 'The Rime Seal — and the thaw-key. The Stormrise Road east to Voltspire is yours.'], ['orin', 'One warning. The fused Echo you saw below the ice… it looked at you as if it knew your name.'], ['you', '…'], ['orin', 'Go. The storm will not wait for either of us.']],
+    outro: [['rho', 'Not strong enough. Yet. Go on ahead — I am staying to watch that Echo. Someone has to.'], ['orin', 'The Rime Seal — and the thaw-key. The Stormrise Road east to Voltspire is yours.'], ['orin', 'One warning. The fused Echo you saw below the ice… it looked at you as if it knew your name.'], ['you', '…'], ['orin', 'Go. The storm will not wait for either of us.']],
     reward: { coins: 1100, xp: 550, seal: 'Rime Seal', flag: 'gate-r4' } },
 
   { title: 'Voltspire Blackout', region: 'voltspire', color: '#f2c230',
     steps: [
       S('Follow the Stormrise Road to Voltspire', { kind: 'goto', pos: at('voltspire', 0, 30), r: 20 }),
-      S('Talk to Kai at the relay tower', { kind: 'talk', npc: 'kai', lines: [['kai', 'Every pylon on the plateau is overloading. The Syndicate is draining the storm into their siphons. Stabilise the pylons — three of them!']] }),
+      S('Talk to Kai at the relay tower', { kind: 'talk', npc: 'kai', lines: [['kai', 'You are the Ranger with four Seals? I am Kai — I run the Ember Trial down in Sandreach. I came up here because my cards started sparking.'], ['kai', 'Every pylon on the plateau is overloading. The Syndicate is draining the storm into their siphons. Stabilise the pylons — three of them!']] }),
       S('Stabilise 3 relay pylons', { kind: 'find', ids: ['voltspire:0', 'voltspire:1', 'voltspire:2'] }),
       S('Catch a Lightning Echo', { kind: 'capture', n: 1, type: 'Lightning', pos: at('voltspire', 50, 30), r: 70 }),
       S('Surge Trial: battle Warden Vera', { kind: 'battle', npc: 'vera', lines: [['vera', 'You stood in my storm and kept your cards dry. Now hold a real charge!']] }),
@@ -175,19 +179,26 @@ export const STORY = [
 
   { title: 'Champion\'s Causeway', region: 'harbor', color: '#c46bff',
     steps: [
-      S('Take Route 6 home and talk to Dr. Vale', { kind: 'talk', npc: 'vale', lines: [['vale', 'Node 7 is waking up. The Echoes are merging into one mind under the relay — Sable calls it GLYPH.'], ['vale', 'The Archivists want it left alone. I want it shielded. Whoever reaches it first decides. That will be you, Ranger.'], ['vale', 'Only a Champion may cross the causeway. Lyra waits at Frostline.']] }),
+      S('Take Route 6 home and talk to Dr. Vale', { kind: 'talk', npc: 'vale', lines: [['vale', 'Node 7 is waking up. The Echoes are merging into one mind under the relay — Sable calls it GLYPH.'], ['vale', 'The Archivists want GLYPH left free — the memories belong to the Pokémon. I want the relay shielded, sealed, safe. Both of us are a little bit right.'], ['vale', 'Whoever reaches Node 7 first decides. That will be you, Ranger. I will accept whatever you choose.'], ['vale', 'Only a Champion may cross the causeway. Lyra waits at Frostline.']] }),
       S('Go to the Relay Causeway at Frostline', { kind: 'goto', pos: onRoute('cw', .06, 0), r: 16 }),
       S('Champion Trial: battle Champion Lyra', { kind: 'battle', npc: 'lyra', lines: [['lyra', 'Seven seals. Everyone who reaches Node 7 gets one match with me. Make it count.']] }),
+      S('Rho blocks the causeway — the last rival battle', { kind: 'battle', npc: 'rho', lines: [['rho', 'Champion. You. Wow.'], ['rho', 'The fused Echo at Frostline swam away last night — straight for the Rift. Whatever GLYPH is, it is calling them home.'], ['rho', 'You are not going down there with a team I have not tested. One last battle. Everything I have.']] }),
     ],
-    outro: [['lyra', 'The Crown Seal. The causeway is yours. Whatever waits in the Rift… it has been waiting for someone like you.']],
+    outro: [['rho', 'Yeah. You are ready. I will be at the harbour — come back and tell me everything.'], ['lyra', 'The Crown Seal. The causeway is yours. Whatever waits in the Rift… it has been waiting for someone like you.']],
     reward: { coins: 2500, xp: 1200, seal: 'Crown Seal', flag: 'gate-cw' } },
 
   { title: 'The Obsidian Rift', region: 'rift', color: '#5cf2d6',
     steps: [
       S('Cross the causeway to the Obsidian Rift', { kind: 'goto', pos: at('rift', 0, 30), r: 22 }),
       S('Face GLYPH under Relay Node 7', { kind: 'battle', npc: 'glyph', lines: [['glyph', '…S H O W …'], ['glyph', '…W H A T  Y O U  R E M E M B E R …']] }),
+      S('Decide the fate of Relay Node 7', { kind: 'choice', key: 'ending', lines: [['glyph', '…YOU REMEMBER THEM.'], ['glyph', '…NOW CHOOSE. OPEN THE RELAY — AND EVERY ECHO MAY WALK FREE. OR SEAL IT — AND WE SLEEP, SAFE, INSIDE THE CARDS.']],
+        q: 'What happens to Node 7?', a: ['Free the Echoes', 'free'], b: ['Seal the relay', 'seal'] }),
     ],
-    outro: [['glyph', '…YOU REMEMBER THEM. SO WE STAY.'], ['vale', 'GLYPH will guard the relay now. And from today, any card can be returned — its Echo goes home.'], ['rho', 'So the sell button is canon now. Cool. Cool cool cool.']],
+    outro: q => [['glyph', '…YOU REMEMBER THEM. SO WE STAY.'],
+      ...(q.flags.ending === 'seal'
+        ? [['vale', 'Sealed. The Echoes sleep in their cards — no siphon will ever touch them again.'], ['sable', 'Safe is not the same as free, Ranger. But they chose to trust you. So will I.']]
+        : [['sable', 'Open. The memories walk where they like now — they are not ore, and never were.'], ['vale', 'Then the Lab changes. No more printing memories. Any card can be returned — its Echo goes home.']]),
+      ['rho', 'So the sell button is canon now. Cool. Cool cool cool.'], ['rho', '…Hey. Thanks for not leaving me behind.']],
     reward: { coins: 5000, xp: 2500, seal: 'Echo Seal', flag: 'story-done' } },
 ];
 
@@ -238,6 +249,7 @@ export function event(type, d = {}) {
   if (type === 'find' && st.kind === 'find' && st.ids.every(id => P.ensure().world.found[id])) { advance(); return true; }
   if (type === 'starter' && st.kind === 'starter') { q.starter = d.i; advance(); return true; }
   if (type === 'scene' && st.kind === 'scene') { advance(); return true; }
+  if (type === 'choice' && st.kind === 'choice' && d.v) { q.flags[st.key || 'choice'] = d.v; advance(); return true; }
   if (type === 'room' && st.kind === 'room' && (!st.room || st.room === d.room)) { advance(); return true; }
   return false;
 }
@@ -247,7 +259,7 @@ export function npcLines(id) {
   if (st && st.npc === id && st.lines) return st.lines;
   const IDLE = {
     vale: [['vale', 'Every Echo in Veyra passes through Node 7 sooner or later. Keep going, Ranger.']],
-    rho: [['rho', 'The Echoes are getting bolder. They follow the relay lines like fish follow warm water.']],
+    rho: Q().ch >= STORY.length ? [['rho', 'Champion of Veyra and you still take the ferry. Respect.']] : [['rho', 'The Echoes are getting bolder. They follow the relay lines like fish follow warm water.']],
     clerk: [['clerk', 'Vault stock refreshes every night!']],
     joey: [['joey', 'My Rattata-tier cards are top percentage! Rematch any time.']],
     maren: [['maren', 'Tide goes out, tide comes in. Keep your deck wet, Ranger.']],
@@ -255,7 +267,11 @@ export function npcLines(id) {
     orin: [['orin', 'Cold keeps things. Remember that.']], vera: [['vera', 'The storm hums differently since you came.']], dom: [['dom', 'Glass remembers. So should you.']],
     kai: [['kai', 'My cards are sparking in my pocket. Perfect battle weather.']], lyra: [['lyra', 'The causeway is quiet today.']],
     archivist: [['archivist', 'The script on the stones is older than the relay.']], ranger: [['ranger', 'Stay on the trail. The fog eats people who wander.']],
-    glyph: [['glyph', '…W E  R E M E M B E R …']], kest: [['kest', 'Ore is ore.']], vex: [['vex', 'Business will recover.']],
+    glyph: [['glyph', '…W E  R E M E M B E R …']],
+    e4_orin: [['e4_orin', 'The Rift League keeps the strongest memories in Veyra. Thaw me, if you can.']],
+    e4_sable: [['e4_sable', 'GLYPH asked me to watch its door. I said yes before it finished asking.']],
+    e4_kest: [['e4_kest', 'The League offered me this post instead of a cell. Ore is ore… but I listen to the Echoes now. Prove you still do.']],
+    e4_lyra: [['e4_lyra', 'You beat me once on a causeway. The Rift League is my home ground. Again?']], kest: [['kest', 'Ore is ore.']], vex: [['vex', 'Business will recover.']],
     grunt: [['grunt', 'I am on a break. A long one.']], grunt2: [['grunt2', 'The siphon was not my idea!']], deckA: [['deckA', 'Maren trains us hard.']], deckB: [['deckB', 'Good battle!']],
   };
   return IDLE[id] || [];

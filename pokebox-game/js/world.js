@@ -35,7 +35,7 @@ const ARCH = {
   docker:     { model: 'm_dock', h: 1.06, hat: ['cap', 'beanie'], job: 'hammer', names: ['Dockhand Tor', 'Crewman Ivo'], lines: ['Crates of blank Lattice cards, every morning. Somebody is buying a lot of them.', 'Mind the planks, Ranger. I just nailed that one.'] },
   elder_m:    { model: 'm_elder', h: .94, hair: ['hc4', 'hc4', 'hc0'], acc: ['none', 'glasses'], job: 'sit', names: ['Grandpa Odo', 'Elder Fen', 'Mr. Pell'], lines: ['In my day the cards stayed in the binder. Now they walk around!', 'Sit down a minute, youngster. The Echoes are not going anywhere.'] },
   elder_f:    { model: 'f_elder', h: .9, hair: ['hc4', 'hc4', 'hc2'], acc: ['none', 'glasses'], job: 'sit', names: ['Granny Mae', 'Mrs. Ilsa', 'Aunt Rosa'], lines: ['My grandson wants to be a Ranger too. Keep an eye out for him, will you?', 'The Relay Center nurse makes the best tea in town.'] },
-  merchant:   { model: 'm_heavy', h: .97, hat: ['none', 'cap'], job: 'sell', names: ['Trader Gus', 'Merchant Abe'], lines: ['Fresh berries! Sealed packs! Everything a Ranger needs!', 'For you, a special price. Well, the normal price, but with a smile.'] },
+  merchant:   { model: 'm_heavy', h: .97, hat: ['cap', 'wide', 'beanie'], job: 'sell', names: ['Trader Gus', 'Merchant Abe'], lines: ['Fresh berries! Sealed packs! Everything a Ranger needs!', 'For you, a special price. Well, the normal price, but with a smile.'] },
   merchant_f: { model: 'f_heavy', h: .95, job: 'sell', names: ['Trader Lina', 'Madame Oda'], lines: ['Glass from the dunes, polished by hand. Look how it catches the light!', 'Buy two, the third is still full price. I am not a charity.'] },
   scholar:    { model: 'm_scholar', h: 1.0, acc: ['glasses', 'none'], job: 'read', names: ['Archivist Rel', 'Researcher Amos'], lines: ['This glyph appears in every relay log since the first transfer. Fascinating.', 'Please keep your voice down. The signal is very faint tonight.'] },
   worker_f:   { model: 'f_worker', h: .98, hat: ['none', 'beanie'], job: 'sweep', names: ['Caretaker Jo', 'Sweeper Nell'], lines: ['Sand everywhere, every day. The wind never gives up and neither do I.', 'The plaza does not clean itself, Ranger.'] },
@@ -202,7 +202,7 @@ export function createWorld(canvas, hooks = {}) {
   const hemi = new THREE.HemisphereLight('#ffffff', '#5a5040', 1.2), sun = new THREE.DirectionalLight('#fff4e0', 2.6);
   sun.castShadow = true; Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 160 }); sun.shadow.bias = -.0004; sun.shadow.normalBias = .035;
   scene.add(hemi, sun, sun.target);
-  let style = 'toon', comic = true, quality = 'medium', pr = 1, prMax = 1, prT = 0, post = null, shadows = true, viewFar = 200, frameN = 0, vegR = 150;
+  let style = 'toon', comic = true, quality = 'medium', pr = 1, prMax = 1, prT = 0, prSlow = 0, prCool = 0, prDrops = 0, post = null, shadows = true, viewFar = 200, frameN = 0, vegR = 150;
   // build-time context (the town BUILD code below uses these names)
   let root = null, areaId = 'harbor', A = AREAS.harbor, h = H;
   let colliders = [], items = [], villagers = [], animated = [], tickers = [], markers = [], lampGlows = [], nightFx = [], bolt = null;
@@ -222,7 +222,7 @@ export function createWorld(canvas, hooks = {}) {
     const scale = clamp(hooks.renderScale?.() || 1, .5, 1);
     // sharp image first: phones have dpr 2.5-3.5, rendering below ~1.3 looks smeared. Dynamic resolution (loop) keeps it smooth.
     prMax = (quality === 'high' ? Math.min(devicePixelRatio, 2) : quality === 'medium' ? Math.min(devicePixelRatio, 1.6) : Math.min(devicePixelRatio, 1.3)) * scale;
-    pr = prMax;
+    pr = prMax; prDrops = prCool = prSlow = prT = 0;
     GFX.density = quality === 'high' ? 1 : quality === 'medium' ? .8 : .5; GFX.grassFar = quality === 'high' ? 60 : quality === 'medium' ? 46 : 31;
     viewFar = quality === 'high' ? 320 : quality === 'medium' ? 210 : 150; vegR = quality === 'high' ? 230 : quality === 'medium' ? 160 : 110;
     renderer.shadowMap.autoUpdate = true;
@@ -744,14 +744,17 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const d = Math.hypot(cxm - px, czm - pz); if (d < R) want.push([d, i, j]); }
     want.sort((a, b) => a[0] - b[0]);
     let started = 0; for (const [, i, j] of want) { if (!chunks.has(i + ',' + j)) { if (pending < 3 || force) { requestChunk(i, j); started++; } } }
-    for (const c of chunks.values()) { const d = Math.hypot((c.cx + .5) * CH - px, (c.cz + .5) * CH - pz); if (d > R + CH) dropChunk(c); else if (c.vegGroup) { c.vegGroup.visible = d < vegR + CH * .7; lodChunk(c, { x: px, z: pz }); } }
-    for (const L of townLods) { const near = Math.hypot(L.x - px, L.z - pz) < lodR() + 50; for (const m of L.full) m.visible = near; for (const m of L.lod) m.visible = !near; }
+    for (const c of chunks.values()) { const d = Math.hypot((c.cx + .5) * CH - px, (c.cz + .5) * CH - pz); if (d > R + CH) dropChunk(c); else if (c.vegGroup) { c.vegGroup.visible = c.vegGroup.visible ? d < vegR + CH * .7 + 10 : d < vegR + CH * .7; lodChunk(c, { x: px, z: pz }); } }
+    for (const L of townLods) { const d = Math.hypot(L.x - px, L.z - pz), near = L.near = L.near ? d < lodR() + 62 : d < lodR() + 50; for (const m of L.full) m.visible = near; for (const m of L.lod) m.visible = !near; }
   }
   /* level of detail: full trees near you, simplified ones further away (distance to the chunk's nearest edge) */
-  const lodR = () => quality === 'high' ? 70 : quality === 'medium' ? 45 : 30;
+  const lodR = () => quality === 'high' ? 95 : quality === 'medium' ? 65 : 38;
+  const _sF = new THREE.Vector3(), _sR = new THREE.Vector3(), _sU = new THREE.Vector3(), _sC = new THREE.Vector3(), _sU0 = new THREE.Vector3(0, 1, 0);
   function lodChunk(c, p) { if (!c.fullIMs || !p) return; const R = lodR(), ox = c.cx * CH, oz = c.cz * CH;
-    for (const m of c.fullIMs) { const b = m.boundingSphere; m.visible = Math.hypot(b.center.x + ox - p.x, b.center.z + oz - p.z) - b.radius * .6 < R; }
-    for (const m of c.lodIMs) { const b = m.boundingSphere; m.visible = Math.hypot(b.center.x + ox - p.x, b.center.z + oz - p.z) - b.radius * .6 >= R; } }
+    /* hysteresis: swap to far LOD at R+12, back to full at R — no flip-flopping (was a visible blink while walking) */
+    const near = m => { const b = m.boundingSphere, d = Math.hypot(b.center.x + ox - p.x, b.center.z + oz - p.z) - b.radius * .6; return m.userData.near = m.userData.near === false ? d < R : d < R + 12; };
+    for (let k = 0; k < c.fullIMs.length; k++) { const n = near(c.fullIMs[k]); c.fullIMs[k].visible = n; }
+    for (const m of c.lodIMs) { const n = near(m); m.visible = !n; } }
   const townLods = [];
   const FRUIT_GEO = new THREE.IcosahedronGeometry(.14, 1), FRUIT_MAT = {};
   /* vegetation per chunk, from the worker's per-vertex data (biome, grass, road, town, mountain) */
@@ -1355,13 +1358,15 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
   async function chapterDone(chIdx) {
     const ch = QS.STORY[chIdx]; hooks.sfx?.('win');
-    if (ch.outro) await cineTalk(ch.outro, { title: `Chapter complete — ${ch.title}` });
+    const outro = typeof ch.outro === 'function' ? ch.outro(QS.Q()) : ch.outro; if (outro) await cineTalk(outro, { title: `Chapter complete — ${ch.title}` });
     hooks.onChapter?.(ch, chIdx); refreshNPCs(); setTimeout(runStoryAuto, 600);
   }
   async function runStoryAuto() { // steps that play by themselves
     if (paused || mode === 'battle' || interacting > 0 || uiBlocked() || document.body.classList.contains('at-title') || ((location.hash.slice(1) || 'world').split('/')[0] !== 'world')) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
     if (storyBusy || mode !== 'explore') return; const st = QS.stepNow(); if (!st) return;
     if (st.kind === 'scene') { storyBusy = true; await cineTalk(st.lines, { title: QS.chapterNow().title }); storyBusy = false; storyEvent('scene', {}); }
+    else if (st.kind === 'choice') { storyBusy = true; try { if (st.lines) await cineTalk(st.lines, { title: QS.chapterNow().title });
+        const yes = await hooks.confirm?.(st.q, st.a[0], st.b[0]); storyEvent('choice', { v: yes === false ? st.b[1] : st.a[1] }); } finally { storyBusy = false; } }
     else if (st.kind === 'starter') { storyBusy = true; const i = await hooks.chooseStarter?.(); storyBusy = false; if (i != null) { storyEvent('starter', { i }); spawnCompanions(); } }
     else if ((st.kind === 'capture' || st.kind === 'room') && st.lines && !st._told) { st._told = true; storyBusy = true; try { await cineTalk(st.lines); } finally { storyBusy = false; } }
   }
@@ -1483,9 +1488,13 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       if (blocked) { b.vx = b.vz = 0; if (Math.hypot(pp.x - b.x, pp.z - b.z) < b.r + .42) { const d = Math.hypot(pp.x - b.x, pp.z - b.z) || 1; pp.x = b.x + (pp.x - b.x) / d * (b.r + .42); pp.z = b.z + (pp.z - b.z) / d * (b.r + .42); } }
       else { b.x = q.x; b.z = q.z; const f = Math.exp(-dt * (onIce(b.x, b.z) ? .6 : 5)); b.vx *= f; b.vz *= f; if (Math.hypot(b.vx, b.vz) < .05) b.vx = b.vz = 0; }
       b.wob *= Math.exp(-dt * 4); b.m.position.set(b.x - b.ox, H(b.x, b.z) + b.y0, b.z - b.oz); b.m.rotation.z = Math.sin(t * 18) * b.wob * .08; b.m.rotation.x = Math.cos(t * 15) * b.wob * .05; }
-    { sun.position.set(pp.x + sunDir.x * 60, pp.y + sunDir.y * 60, pp.z + sunDir.z * 60); sun.target.position.copy(pp); }
+    { /* shadow map follows you, snapped to whole shadow texels in light space — otherwise shadow edges crawl/shimmer as you walk */
+      const sc = sun.shadow.camera, tx = (sc.right - sc.left) / sun.shadow.mapSize.x, f = _sF.copy(sunDir).normalize(), r = _sR.crossVectors(_sU0, f).lengthSq() < 1e-6 ? _sR.set(1, 0, 0) : _sR.normalize(), u = _sU.crossVectors(f, r);
+      const a = Math.round(pp.dot(r) / tx) * tx, b = Math.round(pp.dot(u) / tx) * tx, c = pp.dot(f);
+      _sC.copy(r).multiplyScalar(a).addScaledVector(u, b).addScaledVector(f, c);
+      sun.target.position.copy(_sC); sun.position.copy(_sC).addScaledVector(f, 60); }
     if (grassMesh) { grassMesh.userData.grass.time.value = t; grassMesh.userData.grass.player.value.copy(pp); }
-    if (water) { water.position.set(Math.round(pp.x / 32) * 32, 0, Math.round(pp.z / 32) * 32); water.userData.tick(t); }
+    if (water) { const g = water.geometry.parameters, ws = g.width / g.widthSegments * 4; /* snap on whole grid cells so the wave mesh never 'jumps' */ water.position.set(Math.round(pp.x / ws) * ws, 0, Math.round(pp.z / ws) * ws); water.userData.tick(t); }
     if (sky) { sky.position.copy(camera.position); sky.userData.tick(t); }
     if (fxP) fxP.userData.tick(t, pp); if (rainP) rainP.userData.tick(t, pp);
     // camera
@@ -1513,7 +1522,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (post?.U?.sunUv) { // screen position of the sun for the light shafts (fade when it is behind the camera or far off-screen)
       tmp.copy(camera.position).addScaledVector(sunDir, 900).project(camera); const vis = tmp.z < 1 ? 1 - clamp((Math.max(Math.abs(tmp.x), Math.abs(tmp.y)) - .9) / .8, 0, 1) : 0;
       post.U.sunUv.value.set(tmp.x * .5 + .5, tmp.y * .5 + .5); post.U.sunVis.value = vis * (sunDir.y > .02 ? 1 : 0) * (env?.look?.night ? .25 : 1); post.U.rays.value = quality === 'low' ? 0 : 1; }
-    streamT -= dt; if (streamT <= 0 && !focusOverride) { streamT = .35; streamChunks(pp.x, pp.z); for (const o of gateObjs) if (!QS.flag(o.G.flag)) o.g.visible = o.g.position.distanceTo(pp) < 160; for (const id in towns) towns[id].root.visible = Math.hypot(towns[id].x - pp.x, towns[id].z - pp.z) < viewFar + 70; for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - pp.x, lm.z - pp.z) < viewFar * .85; }
+    streamT -= dt; if (streamT <= 0 && !focusOverride) { streamT = .35; streamChunks(pp.x, pp.z); for (const o of gateObjs) if (!QS.flag(o.G.flag)) o.g.visible = o.g.position.distanceTo(pp) < 160; for (const id in towns) { const r = towns[id].root, d = Math.hypot(towns[id].x - pp.x, towns[id].z - pp.z); r.visible = r.visible ? d < viewFar + 85 : d < viewFar + 70; } for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - pp.x, lm.z - pp.z) < viewFar * .85; }
     for (const n of npcs) { const d = Math.hypot(pp.x - n.x, pp.z - n.z); n.ch.group.visible = d < 70 && n.id !== 'glyph'; if (n.glyphFx) n.glyphFx.visible = d < 120; if (d < 45) n.ch.update(dt); n.mk.rotation.y = t * 2; n.mk.position.y = 3.25 + Math.sin(t * 3) * .08;
       if (d < 6) faceSmooth(n.ch, pp.x, pp.z, dt, 4); else { let dd = n.face - n.ch.group.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); n.ch.group.rotation.y += dd * Math.min(1, dt * 1.5); }
       if (n.routeTrainer && !QS.beaten(n.key) && d < 7.5 && mode === 'explore' && !busy && !n.spotted) { n.spotted = true; spotted(n); } }
@@ -1727,8 +1736,15 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const avg = perf.s / perf.n; perf.n = perf.s = 0; hooks.fps?.(Math.round(1 / Math.max(avg, .001)));
       // dynamic resolution: drop pixel ratio when frames are slow, win it back when there is headroom (target ~55-60 fps)
       if (autoQ && !paused && mode !== 'battle-intro') {
-        if (avg > .021 && pr > .7) { pr = Math.max(.7, pr - (avg > .03 ? .15 : .07)); renderer.setPixelRatio(pr); resize(); prT = 0; }
-        else if (avg < .0175 && pr < prMax && ++prT >= 3) { pr = Math.min(prMax, pr + .05); renderer.setPixelRatio(pr); resize(); prT = 0; }
+        /* a pixel-ratio change re-allocates the canvas and every post-fx target, which shows as a one-frame blink. So: only on
+           SUSTAINED slowness (2 windows in a row, not a chunk-streaming hitch), at most once per ~12 s, raise only after a long calm
+           stretch, never bounce up/down, and re-render straight away so the cleared canvas is never shown. */
+        prCool = Math.max(0, prCool - 1); prSlow = avg > .024 ? prSlow + 1 : 0;
+        let np = pr;
+        if (prSlow >= 2 && pr > .7 && !prCool) np = Math.max(.7, pr - (avg > .033 ? .15 : .08));
+        else if (avg < .0155 && pr < prMax && ++prT >= 12 && !prCool && prDrops < 3) np = Math.min(prMax, pr + .08);
+        else if (avg >= .0155) prT = 0;
+        if (np !== pr) { if (np < pr) prDrops++; pr = np; prT = prSlow = 0; prCool = 12; renderer.setPixelRatio(pr); resize(); if (post) post.render(0); else renderer.render(scene, camera); }
       }
     }
   }

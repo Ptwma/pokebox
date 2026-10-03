@@ -3,9 +3,9 @@
 <script type="module">
 import * as THREE from 'three'; import { prepare, makeRigged, makePet } from '../js/chars.js';
 const r=new THREE.WebGLRenderer({canvas:c,antialias:true}); r.setSize(1600,640,false); r.outputColorSpace=THREE.SRGBColorSpace; r.toneMapping=THREE.ACESFilmicToneMapping; r.setClearColor('#8fb0d8');
-const s=new THREE.Scene(), cam=new THREE.PerspectiveCamera(28,1600/640,.1,100); cam.position.set(0,2.6,17); cam.lookAt(0,1.2,0);
+const Q=new URLSearchParams(location.search); const s=new THREE.Scene(), cam=new THREE.PerspectiveCamera(28,1600/640,.1,100); cam.position.set(0,Q.get('folk')?1.4:2.6,Q.get('folk')?(+Q.get('z')||17):17); cam.lookAt(+(Q.get('x')||0),Q.get('folk')?1.0:1.2,0);
 s.add(new THREE.HemisphereLight('#fff','#556',2)); const d=new THREE.DirectionalLight('#fff',2.2); d.position.set(3,5,4); s.add(d);
-const Q=new URLSearchParams(location.search), A=Q.get('a')||'Idle';
+const A=Q.get('a')||'Idle';
 const looks=[
  {body:'m',top:'tee',topColor:'tc2',hairColor:'hc3',skin:'sk0',hat:'cap'},
  {body:'f',top:'hoodie',topColor:'tc5',hairColor:'hc3',skin:'sk3',acc:'goggles'},
@@ -18,9 +18,10 @@ const looks=[
  {body:'m',top:'hoodie',topColor:'tc1',hairColor:'hc5',skin:'sk2',hat:'phones'},
  {body:'f',top:'tee',topColor:'tc3',hairColor:'hc6',skin:'sk0',hat:'beret'},
 ];
-const pets=['Panda','Penguin','Cactus','Bee','Demon','Ghost'];
+if(Q.get('folk')){looks.length=0;['m_dock','m_elder','f_elder','m_heavy','f_heavy','m_scholar','f_worker','m_athlete','f_athlete','m_beard','kid_m','kid_f'].forEach((m,i)=>looks.push({model:m,body:/^f_|kid_f/.test(m)?'f':'m',skin:'sk'+(i%6),hairColor:'hc'+(i%8),hat:'none',top:'tee',topColor:'tc'+(i%10),acc:'none'}));}
+const pets=Q.get('folk')?[]:['Panda','Penguin','Cactus','Bee','Demon','Ghost'];
 await prepare(looks, pets);
-looks.forEach((l,i)=>{ const ch=makeRigged(l); ch.group.position.x=(i-4.5)*1.55; ch.group.rotation.y=Q.get('back')?Math.PI:.25; s.add(ch.group); ch.play(A,0); ch.update(+(Q.get('t')||.5)); });
+looks.forEach((l,i)=>{ const ch=makeRigged(l); ch.group.position.x=(i-(looks.length-1)/2)*1.3; ch.group.rotation.y=Q.get('back')?Math.PI:.25; s.add(ch.group); ch.play(A,0); ch.update(+(Q.get('t')||.5)); });
 pets.forEach((k,i)=>{ const p=makePet(k,{echo:i%2?'#3d9fff':null}); p.group.position.set((i-2.5)*1.6,0,3); s.add(p.group); p.update(.4); });
 r.render(s,cam); window.done=1;
 </script></body></html>
