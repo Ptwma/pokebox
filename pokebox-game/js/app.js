@@ -1,7 +1,7 @@
 // Pokebox — game shell: home, shop, binder, collection, market, battle, profile
 import * as C from './core.js';
 import { DB, S, RARITY, RSHORT, RCOLOR, TCOLOR, fmt, esc, cardImg, setImg } from './core.js';
-import { sfx, setSound } from './audio.js';
+import { sfx, setSound, music, setMusic } from './audio.js';
 import { createOpener, T_ZOOMED } from './opener.js';
 import { createVfx } from './vfx.js';
 import { startSpace } from './space.js';
@@ -907,6 +907,8 @@ function ensureWorld() {
     prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
       if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
+    region: (id, night) => { musRegion = [id, night]; if (!battleMusic && st().settings.music !== false) music.world(id, night); },
+    music: k => { battleMusic = !!k; if (st().settings.music !== false) music.world(k || musRegion[0], k ? false : musRegion[1]); },
     onArea: (a) => { if ((location.hash.slice(1) || 'world').split('/')[0] !== 'world' || document.body.classList.contains('at-title') || document.body.classList.contains('cine-on') || !$('#scene').hidden || !$('#wModal').hidden) return; const dg = a.danger || 0; areaCard({ kicker: a.sub, name: a.name, sub: (dg ? `⚠ Danger ${'★'.repeat(Math.min(5, dg))} · Echoes here outclass your team · ` : '') + 'Wild Echoes · ' + a.echo.join(' / '), color: dg >= 2 ? '#ff6a4a' : TYPE_COL[a.echo[0]] || '#ffd257' }); if (dg >= 2) toast('This area is ahead of your story — wild Echoes are much stronger here. You can explore, but battles will be tough.'); $('#wName').textContent = a.name; $('#wSub').textContent = a.sub; const b = $('.warea'); b.classList.remove('in'); void b.offsetWidth; b.classList.add('in'); worldHud(); },
   });
   world.setAutoQuality(gfx().auto);
@@ -933,9 +935,11 @@ function worldHud() {
   if (cc) { pe.innerHTML = `<img class="pimg" src="${cardImg(cc)}" alt=""><div><b>${esc(cc.n)}</b><small>${esc(cc.t)} · partner card</small></div><button class="wb sm" type="button" id="wPetBtn">Partner</button>`; $('#wPetBtn').onclick = () => openMenu('pets'); }
 }
 const TYPEC = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
-function hideWorld() { const w = $('#worldWrap'); document.body.classList.remove('game'); if (!w.hidden) { w.hidden = true; world?.stop(); $('#wModal').hidden = true; } }
+let musRegion = ['harbor', false], battleMusic = false; // the world soundtrack (audio.js music.world) follows the region
+function hideWorld() { music.world(null); const w = $('#worldWrap'); document.body.classList.remove('game'); if (!w.hidden) { w.hidden = true; world?.stop(); $('#wModal').hidden = true; } }
 VIEWS.world = () => {
   view.innerHTML = ''; const w = $('#worldWrap'), s = P.ensure(); w.hidden = false; document.body.classList.add('game'); const W = ensureWorld();
+  if (st().settings.music !== false && !document.body.classList.contains('at-title')) setTimeout(() => { if (document.body.classList.contains('game')) music.world(...musRegion); }, 600);
   const pets = ensurePets();
   if (!W.ready && !W._entering) { W._entering = true; W.enter('here', {}).finally(() => { W._entering = false; worldHud(); }); W._look = JSON.stringify(s.look); }
   else if (W.ready && JSON.stringify(s.look) !== W._look) { W.refreshLook(); W._look = JSON.stringify(s.look); }
@@ -1118,6 +1122,7 @@ VIEWS.profile = () => {
     <div class="hdbox"><b>${DB.hd ? 'HD cards: ON' : 'HD cards: not installed'}</b><span class="muted">${DB.hd ? 'Upscaled images are used in the 3D opening and card viewer.' : 'Run <b>tools\\upscale_cards.bat</b> once to create sharp 2×/4× versions of all cards (uses your graphics card).'}</span></div></section>
   <section class="wrap"><div class="eyebrow">Settings</div><div class="settings">
     <label><input type="checkbox" id="setSound" ${s.settings.sound ? 'checked' : ''}> Sound effects</label>
+    <label><input type="checkbox" id="setMusic" ${s.settings.music !== false ? 'checked' : ''}> Music &amp; ambience in the world</label>
     <label><input type="checkbox" id="setMystery" ${s.settings.mystery ? 'checked' : ''}> White mystery pack intro (from the reference animation)</label>
     <label><input type="checkbox" id="setFast" ${s.settings.fast ? 'checked' : ''}> Skip the 3D animation (instant results)</label>
     <label><input type="checkbox" id="setFps" ${s.settings.fps ? 'checked' : ''}> Show performance meter (FPS + graphics card) — shortcut F8</label>
@@ -1129,6 +1134,7 @@ VIEWS.profile = () => {
   <button class="btn danger" id="reset" type="button">Reset progress</button></div><p class="muted" id="resetMsg"></p></section>`;
   bindLook(); bindName(); preview3d()?.set({ ...P.ensure().look });
   $('#setSound').onchange = e => { s.settings.sound = e.target.checked; setSound(e.target.checked); C.save(); };
+  $('#setMusic').onchange = e => { s.settings.music = e.target.checked; setMusic(e.target.checked); if (e.target.checked && document.body.classList.contains('game')) music.world(...musRegion); C.save(); };
   $('#setMystery').onchange = e => { s.settings.mystery = e.target.checked; C.save(); };
   $('#setFast').onchange = e => { s.settings.fast = e.target.checked; C.save(); };
   $('#setFps').onchange = e => { s.settings.fps = e.target.checked; C.save(); window.__perfHud?.(e.target.checked); };
@@ -1159,7 +1165,7 @@ startSpace($('#bgfx'), () => !opening.hidden || !$('#worldWrap').hidden);
 $('#wMap').onclick = () => worldTravel();
 /* hover ticks + hud buttons */
 document.addEventListener('pointerover', e => { const b = e.target.closest?.('.btn,.rail a,.fchip,.mode'); if (b && b !== document.__lastHover) { document.__lastHover = b; sfx.tick?.(); } });
-$('#sndBtn').onclick = () => { st().settings.sound = !st().settings.sound; setSound(st().settings.sound); $('#sndBtn').classList.toggle('off', !st().settings.sound); C.save(); };
+$('#sndBtn').onclick = () => { st().settings.sound = !st().settings.sound; setSound(st().settings.sound); if (!st().settings.sound) music.world(null); else if (document.body.classList.contains('game')) music.world(...musRegion); $('#sndBtn').classList.toggle('off', !st().settings.sound); C.save(); };
 $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => {}); };
 
 /* ------------------------------------------------------------------ boot */
@@ -1169,7 +1175,7 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
   catch (e) { clearInterval(ft); msg.innerHTML = 'Could not load the card database.<br>Start the game with <b>Pokebox.exe</b> (or start.bat).'; return; }
   msg.textContent = 'Checking HD cards…'; await C.detectHD();
   clearInterval(ft); bar.style.width = '100%'; msg.textContent = `${fmt(DB.cards.length)} cards · ${DB.sets.length} sets${DB.hd ? ' · HD' : ''}`;
-  setSound(st().settings.sound); $('#sndBtn').classList.toggle('off', !st().settings.sound);
+  setSound(st().settings.sound); setMusic(st().settings.music !== false); $('#sndBtn').classList.toggle('off', !st().settings.sound);
   C.snapshotValue(); P.ensure(); P.newlyUnlocked(); lastReady = P.readyCount(); route(); achievements();
   const start = () => { $('#splash').classList.add('out'); sfx.burst(); const d = C.dailyState(); if (d.ready) setTimeout(() => toast('🎁 Your daily reward is ready in the Lobby.'), 700); if (!P.ensure().story.done[1] && !location.hash.startsWith('#journey')) setTimeout(() => toast('📜 Your Journey in Veyra begins — <a href="#journey" class="gold">open Journey ▸</a>'), 1600); };
   const qp = new URLSearchParams(location.search);

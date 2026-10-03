@@ -288,11 +288,25 @@ export function createWorld(canvas, hooks = {}) {
     }
   }
   /** a person doing their job at a fixed spot (local town coords), facing `face` */
+  const JOB_SET = {
+    hammer: [['PR_Anvil', 0, .8, Math.PI / 2, 1, .45], ['PR_Whetstone', -1.5, .1, .5, 1, .5], ['PR_WeaponStand', 1.6, -.4, -.4, .9, .6]],
+    chop: [['PR_Anvil_Log', .35, .85, 0, 1, .45], ['FL_Log', 1.6, .2, 1.3, .7], ['PR_Axe_Bronze', -1, .5, .8, 1]],
+    sell: [['PR_Stall_Empty', 0, 1.05, Math.PI, .95, .9], ['PR_FarmCrate_Apple', -1.3, 1.1, .2, 1], ['PR_Barrel_Apples', 1.35, .8, 0, 1, .4]],
+    garden: [['PR_FarmCrate_Carrot', 1.1, .5, .4, 1], ['PR_Bucket_Wooden_1', -.7, .25, 0, 1], ['PR_FarmCrate_Empty', -1.3, -.5, 1.1, 1]],
+    fish: [['PR_Barrel', -1.05, -.3, 0, 1, .4], ['PR_Rope_1', .8, .1, 0, 1], ['PR_Bucket_Metal', .7, -.7, 0, 1]],
+    sweep: [['PR_Bucket_Wooden_1', .9, -.3, 0, 1], ['PR_Crate_Wooden', -1.2, -.6, .3, .9, .45]],
+    read: [['PR_Crate_Wooden', .9, .35, .2, .8, .4], ['PR_Bag', -.8, .3, .6, 1]],
+  };
   function addWorker(a, x, z, face, seed) {
     const A = ARCH[a]; if (!A) return null; const R = rng(seed);
     const ch = makeRigged(archLook(a, R)); if (!ch) return null;
     put(ch.group, x, z); ch.group.rotation.y = face; ch.update(0);
     const J = JOBS[A.job]; if (J?.prop) attachProp(ch, J.prop);
+    // the work place itself (props2 kit): [name, side, forward, rot] in the worker's own frame — anvil in front of the smith,
+    // a stall in front of the trader, crates and a watering bucket by the gardener, barrels and rope by the fisher
+    const fx = Math.sin(face), fz = Math.cos(face), sx = Math.cos(face), sz = -Math.sin(face);
+    for (const [n, sd, fw, r, sc, bl] of (JOB_SET[A.job] || []).slice(0, quality === 'low' ? 2 : 9)) if (has(n)) kit(n, x + sx * sd + fx * fw, z + sz * sd + fz * fw, { rot: face + r, scale: sc || 1, block: bl });
+    if (JOB_SET[A.job]) clearGrass(root.position.x + x, root.position.z + z, 3);
     if (J?.bench && has('TT_Bench')) { kit('TT_Bench', x - Math.sin(face) * .25, z - Math.cos(face) * .25, { rot: face }); ch.play(J.idle, 0); }
     const v = { ch, pts: [[x, z]], i: 0, wait: 0, speed: 0, job: A.job, face, jt: R() * 3, name: A.names[seed % A.names.length], line: A.lines[seed % A.lines.length], x, z };
     villagers.push(v); block(x, z, .45); return v;
@@ -607,7 +621,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   let gridTex = null, grassMesh = null, water = null, sky = null, mapCanvas = null;
   async function buildGrid() {
     const n = quality === 'low' ? 560 : 800, d = await wcall({ type: 'grid', n });
-    gridTex = new THREE.DataTexture(d.grid, d.n, d.n, THREE.RGFormat, THREE.FloatType); gridTex.magFilter = gridTex.minFilter = THREE.LinearFilter; gridTex.needsUpdate = true;
+    gridTex = new THREE.DataTexture(d.grid, d.n, d.n, THREE.RGFormat, THREE.FloatType); gridTex.magFilter = gridTex.minFilter = THREE.LinearFilter; gridTex.needsUpdate = true; applyGrassClear();
     const m = d.m, cv = document.createElement('canvas'); cv.width = cv.height = m; cv.getContext('2d').putImageData(new ImageData(d.map, m, m), 0, 0); mapCanvas = cv;
   }
   function buildGlobals() {
@@ -629,6 +643,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const type = TYPES[made.length % TYPES.length], y = H(x, z), g = new THREE.Group(); g.position.set(x, y, z); worldRoot.add(g);
       const P_ = (name, dx, dz, o = {}) => { if (!has(name)) return null; const yy = H(x + dx, z + dz) - y + (o.yOff || 0); const m = place(g, name, dx, yy, dz, o); if (o.block) addCollider({ x: x + dx, z: z + dz, r: o.block }); return m; };
       const lm = { type, x, z, g, id: 'lm' + made.length };
+      if (type === 'camp' || type === 'lookout') clearGrass(x, z, type === 'camp' ? 5 : 6); else if (type === 'ruin') clearGrass(x, z, 3.5);
       if (type === 'camp') {
         const tent = new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.2, 4, 1, true), new THREE.MeshStandardMaterial({ color: ['#d8483c', '#3d8fd6', '#e8903c', '#57c28f'][made.length % 4], roughness: .8, side: THREE.DoubleSide }));
         tent.position.set(0, 1.1, -2.2); tent.rotation.y = Math.PI / 4; tent.castShadow = true; g.add(tent); addCollider({ x, z: z - 2.2, r: 1.4 });
@@ -636,17 +651,29 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         const fire = new THREE.Group(); for (let i = 0; i < 4; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .8, 6), new THREE.MeshStandardMaterial({ color: '#5a3a22' })); l.rotation.set(Math.PI / 2, 0, i * Math.PI / 4); l.position.y = .1; fire.add(l); }
         const fl = new THREE.Mesh(new THREE.ConeGeometry(.28, .7, 7), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffb347').multiplyScalar(2.2), transparent: true, opacity: .9 })); fl.position.y = .45; fire.add(fl); g.add(fire);
         animated.push(k => { if (g.visible) { fl.scale.set(1 + Math.sin(k * 13 + x) * .12, 1 + Math.sin(k * 9.3 + z) * .2, 1 + Math.cos(k * 11) * .12); } });
+        // someone lives here: a pot on the fire, supplies by the tent, somewhere to sit (props2 kit)
+        if (made.length % 2) P_('PR_Cauldron', 0, 0, { scale: .7 }); else P_('PR_Pot_1', .05, 0, { scale: .9, yOff: .15 });
+        P_('PR_Barrel', -1.9, -1.2, { rot: R() * 6, block: .4 }); P_('PR_Crate_Wooden', 1.7, -1.6, { rot: R() * 6, block: .5 }); P_('PR_Bag', 1.1, -2.6, { rot: R() * 6 });
+        P_('PR_Bench', 0, 2.1, { rot: R() * .4 - .2, scale: .8, block: .5 }); if (R() < .5) P_('PR_Torch_Metal', -2.2, 1.6, { scale: 1.2 });
+        P_(['PR_Pebble_Round_1', 'PR_Pebble_Round_2', 'PR_Pebble_Square_1'][made.length % 3], 2.6, 1.8, { rot: R() * 6 });
       } else if (type === 'ruin') {
         const n = 5 + (R() * 3 | 0);
         for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, r = 5 + R() * 1.5; const c = P_('Column_Round', Math.cos(a) * r, Math.sin(a) * r, { scale: .9 + R() * .5, rot: R() * 6, block: .6 });
           if (c && R() < .45) { c.rotation.z = (R() - .5) * 1.4; c.position.y -= .4; } }
         P_('FL_Rock_B', 0, 0, { scale: 1.1, rot: R() * 6, block: 1.2 }); P_('FL_Rock_A', 2.4, -1.6, { scale: .8 }); P_('FL_Fern', -2, 2, {}); P_('FL_Fern', 2.5, 2.2, {});
+        // broken pottery and a path of old flagstones: the place had people once
+        P_('PR_Vase_Rubble_Medium', -1.8, -1.4, { rot: R() * 6 }); if (R() < .6) P_('PR_Vase_2', 1.6, 1.3, { rot: R() * 6, block: .3 });
+        P_(R() < .5 ? 'PR_RockPath_Round_Small_1' : 'PR_RockPath_Round_Small_2', 0, 3.4, { rot: R() * 6 }); P_('PR_RockPath_Round_Small_1', .6, -3.6, { rot: R() * 6 });
       } else if (type === 'grove') {
         const big = P_(['FL_Tree_A', 'FL_Tree_B', 'FL_Birch'][made.length % 3], 0, 0, { scale: 1.5 + R() * .4, rot: R() * 6, block: .8 });
         for (let i = 0; i < 22; i++) { const a = R() * Math.PI * 2, r = 2.5 + R() * 7; P_(['FL_Flowers_Y', 'FL_Flowers_W', 'FL_Flowers_P', 'FL_Flowers_B'][(i + made.length) % 4], Math.cos(a) * r, Math.sin(a) * r, { scale: .9 + R() * .6, rot: R() * 6, shadow: false }); }
         for (let i = 0; i < 4; i++) { const a = R() * Math.PI * 2, r = 5 + R() * 4; P_(i % 2 ? 'FL_Bush_Flower' : 'FL_Bush_Berry', Math.cos(a) * r, Math.sin(a) * r, { scale: .8 + R() * .4, rot: R() * 6 }); }
+        { const a = R() * 6.28; P_('PR_Mushroom_Laetiporus', Math.cos(a) * 1.1, Math.sin(a) * 1.1, { rot: a, scale: .9 }); P_('PR_Pebble_Round_1', Math.cos(a + 2) * 3, Math.sin(a + 2) * 3, { rot: R() * 6 }); }
       } else if (type === 'lookout') {
         P_('MV_Lookout', 0, 0, { scale: .9, rot: R() * 6, block: 2.2 });
+        // a Ranger outpost: banner, a training dummy and a rack of gear
+        const ba = R() * 6.28; P_(made.length % 2 ? 'PR_Banner_1' : 'PR_Banner_2', Math.cos(ba) * 4, Math.sin(ba) * 4, { rot: -ba + Math.PI / 2, block: .3 });
+        P_('PR_Dummy', Math.cos(ba + 1.4) * 4.6, Math.sin(ba + 1.4) * 4.6, { rot: R() * 6, block: .35 }); P_('PR_WeaponStand', Math.cos(ba - 1.3) * 4.2, Math.sin(ba - 1.3) * 4.2, { rot: -ba, block: .6 });
         lm.chest = true;
       }
       if (type === 'chest' || lm.chest) {
@@ -716,6 +743,17 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
 
   /* ================================================================== wild Echoes: spawn in tall grass around you */
   let spawnT = 0;
+  // trample the grass where people work and camp, so props on the ground stay readable (grid G channel = grass density)
+  const grassClear = [];
+  function clearGrass(x, z, r) { grassClear.push([x, z, r]); applyGrassClear(); }
+  function applyGrassClear() {
+    if (!gridTex || !grassClear.length) return; const n = gridTex.image.width, a = gridTex.image.data;
+    for (const [x, z, r] of grassClear.splice(0)) { const cx = (x / WORLD + .5) * (n - 1), cz = (z / WORLD + .5) * (n - 1), rr = r / WORLD * (n - 1) + 1;
+      for (let j = Math.floor(cz - rr); j <= Math.ceil(cz + rr); j++) for (let i = Math.floor(cx - rr); i <= Math.ceil(cx + rr); i++) {
+        if (i < 0 || j < 0 || i >= n || j >= n) continue; const d = Math.hypot(i - cx, j - cz) / rr; if (d > 1) continue;
+        const k = (j * n + i) * 2 + 1; a[k] = Math.min(a[k], d < .6 ? 0 : a[k] * (d - .6) / .4); } }
+    gridTex.needsUpdate = true;
+  }
   function gridAt(x, z) { if (!gridTex) return { y: H(x, z), g: 0 }; const n = gridTex.image.width, i = Math.round((x / WORLD + .5) * (n - 1)), j = Math.round((z / WORLD + .5) * (n - 1));
     if (i < 0 || j < 0 || i >= n || j >= n) return { y: -5, g: 0 }; const k = (j * n + i) * 2; return { y: gridTex.image.data[k], g: gridTex.image.data[k + 1] }; }
   function spawnWilds(dt, pp) {
@@ -843,8 +881,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (comic && post?.U) { const toon = style !== 'comic'; CU.cDark.value = (toon ? .62 : .42) + (1 - day) * .06; post.U.exposure.value = (toon ? 1.02 : .95) * BL.exposure * lerp(1.15, 1, day); }
     const S2 = hooks.clock && (envCycle.c = (envCycle.c || 0) - dt) <= 0; if (S2 || force) { envCycle.c = 1; hooks.clock?.({ tod, state: weather.state, wk, night: day < .5 }); }
   }
+  let musKey = '';
   function detectPlace(pp, nr) {
     const q = QS.Q();
+    { const k = nr.id + (isNight() ? ':n' : ''); if (k !== musKey) { musKey = k; hooks.region?.(nr.id, isNight()); } } // soundtrack follows the nearest region + night
     if (nr.d < 70) { if (!q.visited[nr.id]) { q.visited[nr.id] = Date.now(); } if (lastRegion !== nr.id) { lastRegion = nr.id; lastRoute = null; const a = AREAS[nr.id]; hooks.onArea?.({ name: a.name, sub: a.sub, echo: a.echo, id: nr.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nr.id); } }
     else { let best = null, bd = 16; for (const r of ROUTES) { const d = segDist(pp.x, pp.z, r.pts); if (d < bd) { bd = d; best = r; } }
       if (best && lastRoute !== best.id) { lastRoute = best.id; lastRegion = null; hooks.onArea?.({ name: best.name, sub: best.sub, echo: A.echo, route: true, id: best.id, danger: QS.dangerAt(pp.x, pp.z) }); swapFx(nearestRegion(pp.x, pp.z).id); }
@@ -1247,7 +1287,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, get flags() { return { busy, mode, paused, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers }; },
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS,
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },
   };

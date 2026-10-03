@@ -1,10 +1,12 @@
 {
-  "version": "3.9.0",
+  "version": "3.10.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "PC: Pokebox.exe now installs new versions by itself when it starts (with a progress bar) — no more missed updates",
-    "After every update a 'What's new' window shows once, so you can see the new version arrived (PC and Android)"
+    "Original soundtrack for every region (harbor, wetlands, Starfall, Frostline, Voltspire, Sandreach, the Rift) plus a battle theme — generated live, with waves, wind, birds and crickets; a quieter version at night. Settings → Music to turn it off",
+    "49 new props (Quaternius CC0 kits, re-coloured to Pokebox's toon style): traders stand behind market stalls, smiths at anvils, woodcutters at chopping logs, gardeners among crates, fishers by barrels and rope",
+    "Camps now have a pot on the fire, supplies and a bench; ruins have broken pottery and old flagstones; lookouts are Ranger outposts with banners, a training dummy and a weapon rack",
+    "The grass is trampled where people work and camp, so everything on the ground is readable"
   ]
 }

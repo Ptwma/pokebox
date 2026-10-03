@@ -339,7 +339,7 @@ export function createFieldBattle(ctx) {
     const r = { result, ...extra }; const fn = resolveFn; resolveFn = null; fn?.(r);
   }
   async function cleanup(lost) {
-    restoreCorridors(state.cleared); removeEventListener('keydown', onKey, true); document.body.classList.remove('in-battle'); ctx.arena?.(0, 0, 1, 0); shot = null; freeze = 0; lookS.set(0, 0, 0);
+    hooks.music?.(null); restoreCorridors(state.cleared); removeEventListener('keydown', onKey, true); document.body.classList.remove('in-battle'); ctx.arena?.(0, 0, 1, 0); shot = null; freeze = 0; lookS.set(0, 0, 0);
     for (const s of ['p', 'e']) { const rg = state.ring?.[s]; if (rg) { scene.remove(rg.g); rg.g.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); } guardBubble(s, false); }
     ui?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300 }).finished.catch(() => {}).then(() => { ui?.remove(); ui = null; });
     for (const m of state.own) { scene.remove(m.group); m.dispose?.(); }
@@ -362,7 +362,7 @@ export function createFieldBattle(ctx) {
       B = new Battle(mine, enemy);
       const st = setupStage(spec); state = { ...st, spec, mon: {}, own: [], wildMon: null, wildHome: null, bubble: {}, ring: { p: ring(st.a, TC[B.active('p').type] || '#fff'), e: ring(st.b, TC[B.active('e').type] || '#fff') } };
       if (spec.kind === 'wild') { const w = spec.wild; state.wildMon = w.shell; state.wildHome = w.g.position.clone(); w.g.position.copy(st.b); state.mon.e = w.shell; w.shell.setEcho(0); }
-      camK = 0; ctx.setCam(battleCam); buildUI(spec); hooks.sfx?.('charge', .6);
+      camK = 0; ctx.setCam(battleCam); buildUI(spec); hooks.sfx?.('charge', .6); hooks.music?.('battle');
       if (spec.kind !== 'wild') { state.mon.e = creature(B.active('e'), st.b); state.own.push(state.mon.e); }
       state.mon.p = creature(B.active('p'), st.a); state.own.push(state.mon.p);
       for (const m of [state.mon.p, spec.kind !== 'wild' ? state.mon.e : null]) if (m) { m.group.scale.setScalar(.01); tween(420, k => m.group.scale.setScalar(Math.max(.01, ease(k)))); }
