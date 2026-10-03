@@ -1186,6 +1186,15 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
   window.__pbxTest = { showLevelUp, chooseStarter, worldConfirm, worldTravel, openCard, openPack, openMenu, openLattice, playScene, toast }; // used by the automated UI checks
   window.__ready = true;
   setTimeout(autoCheck, 3500); // new version on GitHub? ask the player (never during the first seconds)
+  // after an update: show once what changed, so the player can see the new version really arrived (PC and Android)
+  (async () => { try {
+    const v = await (await fetch('version.json', { cache: 'no-store' })).json(); let seen = null; try { seen = localStorage.getItem('pbxSeenVer'); } catch {}
+    try { localStorage.setItem('pbxSeenVer', v.version); } catch {}
+    if (!seen || seen === v.version || !v.notes?.length) return;
+    while (document.body.classList.contains('at-title') || document.querySelector('.upd')) await new Promise(r => setTimeout(r, 600));
+    const box = document.createElement('div'); box.className = 'upd'; box.innerHTML = `<div class="updbox"><div class="eyebrow">Updated ${esc(seen)} → <b>${esc(v.version)}</b></div><h3 class="display">What's new</h3><ul>${v.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul><div class="row"><button class="btn gold" type="button">Let's go</button></div></div>`;
+    document.body.append(box); box.querySelector('button').onclick = () => box.remove();
+  } catch { /* no version file: nothing to show */ } })();
   if (!IS_APP) setInterval(() => fetch('/__ping').catch(() => {}), 20000);
   // flush the save when the window closes or the phone app goes to the background (Android may kill it there)
   const flush = () => { try { const p = world?.player?.group.position; if (p) P.ensure().world.pos = { v2: 1, x: p.x, z: p.z }; } catch {} C.save(true); };

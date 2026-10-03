@@ -125,7 +125,28 @@ func main() {
 	log.Printf("serving on %v", addrs(lns))
 
 	if !*noOpen {
-		openWindow(url, prof)
+		// a newer game on GitHub? install it before the window opens, so the player always plays the latest version
+		// without having to click anything (the window shows a small progress page meanwhile)
+		target := url
+		if os.Getenv("POKEBOX_NO_AUTOUPDATE") == "" {
+			if info := checkUpdate(); info["newer"] == true {
+				updMu.Lock()
+				lat := updLatest
+				updMu.Unlock()
+				if lat != nil {
+					log.Printf("auto-update %v -> %s", info["current"], lat.Version)
+					setState("downloading", 0, "")
+					go func() {
+						if err := applyUpdate(lat); err != nil {
+							log.Printf("auto-update failed: %v", err)
+							setState("error", 0, err.Error())
+						}
+					}()
+					target = fmt.Sprintf("http://localhost:%d/__updating", Port)
+				}
+			}
+		}
+		openWindow(target, prof)
 	}
 	// stay alive while the game talks to us; stop once the window has been closed for IdleTimeout
 	for {
@@ -181,6 +202,12 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/__ping" {
 		h.Set("X-Pokebox", Version)
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.URL.Path == "/__updating" {
+		h.Set("Content-Type", "text/html; charset=utf-8")
+		h.Set("Cache-Control", "no-store")
+		fmt.Fprint(w, updatingPage)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/__update/") {
@@ -295,3 +322,17 @@ func fatal(msg string) {
 	messageBox("Pokebox", msg)
 	os.Exit(1)
 }
+
+// shown while the launcher installs a new version at start-up; continues to the game when done (or if it fails)
+const updatingPage = `<!doctype html><html><head><meta charset="utf-8"><title>Pokebox — updating</title><style>
+html,body{margin:0;height:100%;background:#0b0916;color:#fff;font:600 16px system-ui,sans-serif;display:grid;place-items:center}
+.b{width:min(460px,86vw);text-align:center}h1{font:800 34px system-ui;letter-spacing:.06em;margin:0 0 6px;color:#ffd257}
+p{opacity:.75;margin:0 0 18px}.bar{height:12px;border-radius:8px;background:rgba(255,255,255,.12);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5cf2d6,#ffd257);transition:width .3s}small{display:block;margin-top:10px;opacity:.6}</style></head>
+<body><div class="b"><h1>POKEBOX</h1><p id="t">Downloading the new version…</p><div class="bar"><i id="i"></i></div><small id="m">Your saves and cards are kept.</small></div>
+<script>const go=()=>location.replace("` + StartPath + `");
+async function poll(){try{const s=await (await fetch("/__update/status",{cache:"no-store"})).json();
+document.getElementById("i").style.width=Math.round((s.pct||0)*100)+"%";
+document.getElementById("t").textContent=s.state==="installing"?"Installing…":s.state==="done"?"Done!":"Downloading the new version…";
+if(s.state==="done"){setTimeout(go,500);return}if(s.state==="error"){document.getElementById("t").textContent="Update failed — starting the current version";document.getElementById("m").textContent=s.msg||"";setTimeout(go,2500);return}}catch(e){}
+setTimeout(poll,400)}poll();</script></body></html>`

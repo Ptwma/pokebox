@@ -1,16 +1,10 @@
 {
-  "version": "3.8.0",
-  "launcher": "2.1",
+  "version": "3.9.0",
+  "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Android: the update window no longer runs off the bottom of a landscape phone screen (it blocked every tap). The buttons always stay visible now",
-    "Phone in portrait: the card hub (cards, shop, binder, market, profile) no longer spills off the right edge, and the header and bottom bar fit",
-    "Fixed the player freezing after a story battle when a chapter scene started at the same moment",
-    "Story scenes and area banners wait while the map, Lattice or a menu is open, and the world HUD hides during every cinematic",
-    "New player moves: jump take-off and landing, swimming at the surface, climbing steep slopes and opening chests",
-    "Card creatures catch the light with a rim of sunlight and soft shading, so they read better in the grass and in battle",
-    "Glass silhouettes and other objectives next to rocks can always be reached; the final battle with GLYPH is fairer",
-    "Touch players get touch controls in the welcome tip, and the 'open Journey' link in tips can be tapped"
+    "PC: Pokebox.exe now installs new versions by itself when it starts (with a progress bar) — no more missed updates",
+    "After every update a 'What's new' window shows once, so you can see the new version arrived (PC and Android)"
   ]
 }
