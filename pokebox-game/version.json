@@ -3,5 +3,12 @@
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
-  "notes": "No more flicker on PC while walking (resolution changes no longer blank a frame, trees/towns no longer pop back and forth, steady shadows, steady water) · Characters: shoes attached to the legs (no more floating feet), chunkier sneakers, bald townsfolk get hats · Story: Rho is now a real rival — rematches in Mistvale, Frostline and on the Causeway with his own arc; Kai introduced properly; you now CHOOSE the fate of Node 7 at the end (free the Echoes or seal the relay) and the ending changes; the Rift League talks back"
+  "notes": [
+    "No more flicker on PC while walking: resolution changes no longer blank a frame, trees and towns no longer pop back and forth, shadows and water stay steady",
+    "Characters: shoes are attached to the legs (no more floating feet), chunkier sneakers, bald townsfolk get hats",
+    "Story: Rho is now a real rival with his own arc: rematches in Mistvale, Frostline and on the Causeway",
+    "Kai introduces himself properly before the Ember Trial",
+    "The ending is yours: after GLYPH you choose to free the Echoes or seal the relay, and the ending changes",
+    "The Rift League and post-game Rho have their own lines"
+  ]
 }
