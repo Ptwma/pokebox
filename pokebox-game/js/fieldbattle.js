@@ -410,7 +410,7 @@ export function createFieldBattle(ctx) {
       let enemy;
       if (spec.kind === 'wild') { const lv = spec.wild.lv || Math.round(4 + QS.tierAt(spec.wild.x, spec.wild.z) * 4.6); enemy = [fighter(DB.cards[spec.wild.card.i], lvMult(lv))]; enemy[0].lv = lv; }
       if (spec.kind === 'wild') { if (storyCapture(spec.wild.card)) enemy[0].minHp = 1; } // a story capture can't be wasted by knocking the Echo out
-      else if (spec.mirror) enemy = mine.map(f => { const g = fighter(f.card, lvMult(f.lv) * 1.08); g.lv = f.lv + 3; return g; }); // GLYPH copies your team: a little stronger, beatable with Guard, switching and type play
+      else if (spec.mirror) enemy = mine.map(f => { const g = fighter(f.card, lvMult(f.lv) * 1.03); g.lv = f.lv + 2; return g; }); // GLYPH copies your team: a little stronger, beatable with Guard, switching and type play
       else enemy = trainerTeam(spec.npc.key, spec.npc.trainer);
       if (!enemy.length) return { result: 'none' };
       B = new Battle(mine, enemy);

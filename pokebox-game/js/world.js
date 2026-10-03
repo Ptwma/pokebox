@@ -280,7 +280,12 @@ export function createWorld(canvas, hooks = {}) {
     g.add(basin, rim, bottom, col1, bowl, water, logo); put(g, x, z); block(x, z, 3.3);
     tickers.push(k => { logo.rotation.y = k; water.position.y = .55 + Math.sin(k * 2) * .02; });
   }
+  // walkable piers: the player (and people placed on them) stand on the deck, not on the sea floor under it
+  const decks = [];
+  const deckAt = (x, z) => { for (const d of decks) if (x > d.x0 - 1 && x < d.x1 + 1 && z > d.z0 - 1 && z < d.z1 + 1 && segDist(x, z, d.pts) < .95) return d.y; return null; };
+  const ground = (x, z) => { const y = H(x, z), d = decks.length ? deckAt(x, z) : null; return d != null && d > y ? d : y; };
   function dockLine(x0, z0, x1, z1, y = -.35) {
+    { const ox = R0().x, oz = R0().z, a = [x0 + ox, z0 + oz], b = [x1 + ox, z1 + oz]; decks.push({ pts: [a, b], y: y + 1.0, x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), z0: Math.min(a[1], b[1]), z1: Math.max(a[1], b[1]) }); }
     const len = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(len / 2.55), rot = Math.atan2(x1 - x0, z1 - z0), list = [];
     for (let i = 0; i <= n; i++) { const k = i / n; list.push([lerp(x0, x1, k), y, lerp(z0, z1, k), rot, 1.1]); }
     instances(root, 'Environment_Dock', list, { shadow: true }); return list;
@@ -881,7 +886,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   })();
   function spawnNPC(id, pos, face, extra = {}) {
     const look = npcLook(id) || villagerLook(rng(id.length * 31 + (pos.x | 0))); const ch = makeRigged(look, id === 'sable' ? { hat: 'model' } : {}); if (!ch) return null;
-    ch.group.position.set(pos.x, H(pos.x, pos.z), pos.z); ch.group.rotation.y = face || 0; ch.group.traverse(o => { if (o.isMesh && !o.material.transparent) o.castShadow = true; });
+    ch.group.position.set(pos.x, ground(pos.x, pos.z), pos.z); ch.group.rotation.y = face || 0; ch.group.traverse(o => { if (o.isMesh && !o.material.transparent) o.castShadow = true; });
     const isTrainer = !!extra.trainer, tag = label(extra.name || npcName(id), extra.shop ? 'Shop' : isTrainer ? (QS.beaten(extra.key || id) ? 'Trainer · beaten' : 'Trainer') : (P.CAST[id]?.role || ''));
     tag.position.y = 2.75; ch.group.add(tag);
     const mk = new THREE.Mesh(new THREE.OctahedronGeometry(.16), new THREE.MeshBasicMaterial({ color: new THREE.Color(isTrainer ? '#ffd257' : '#5cf2d6').multiplyScalar(2), fog: false })); mk.position.y = 3.25; ch.group.add(mk);
@@ -1373,9 +1378,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       // momentum: quick to start, quicker to stop, slow to change on ice, floaty in the air
       { const ice = onGround && onIce(pp.x, pp.z), want = mv.multiplyScalar(speed * (ice ? 1.05 : 1)), acc = !onGround ? 3 : ice ? 1.25 : want.lengthSq() >= player.vel.lengthSq() ? 8.5 : 13;
         if (slideT > 0) player.vel.multiplyScalar(Math.exp(-dt * 1.5)); else player.vel.lerp(want, Math.min(1, dt * acc)); }
-      const nx = pp.x + player.vel.x * dt, nz = pp.z + player.vel.z * dt, hn = H(nx, nz), ho = H(pp.x, pp.z), st = Math.hypot(nx - pp.x, nz - pp.z) || 1e-4;
+      const nx = pp.x + player.vel.x * dt, nz = pp.z + player.vel.z * dt, hn = ground(nx, nz), ho = ground(pp.x, pp.z), st = Math.hypot(nx - pp.x, nz - pp.z) || 1e-4;
       const why = QS.blockedAt(nx, nz);
       if (why) { player.vel.multiplyScalar(0); if (blockMsgT <= 0) { blockMsgT = 3; const G = GATES.find(g => g.route === why); hooks.toast?.(why === 'starter' ? 'Rho: "Whoa — not without a partner Echo! Dr. Vale is at the Lab."' : G ? G.text : 'You can\'t go that way yet.'); } }
+      else if (decks.length && hn - ho < .6 && deckAt(nx, nz) != null) { pp.x = nx; pp.z = nz; } // stepping up onto a pier
       else if (hn > ho && hn > 7 && onGround && mountainAt(nx, nz) > .35) slideOff(pp); // mountain ranges: too high and steep to climb — you slip and slide back down
       else if (hn > -.55 && (hn - ho) / st < 1.25) { pp.x = nx; pp.z = nz; }
       else if (hn > -.55 && (hn - ho) / st < 2.6) { pp.x += (nx - pp.x) * .38; pp.z += (nz - pp.z) * .38; climbT = .25; } // steep hillside: scramble up slowly
@@ -1386,7 +1392,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       for (const b of pushables) { const dx = b.x - pp.x, dz = b.z - pp.z, d = Math.hypot(dx, dz), min = b.r + .42;
         if (d < min && d > 1e-4) { const nx = dx / d, nz = dz / d, along = Math.max(0, player.vel.x * nx + player.vel.z * nz);
           b.vx = nx * along * .9; b.vz = nz * along * .9; b.x += nx * (min - d); b.z += nz * (min - d); b.wob = Math.min(1, b.wob + along * .08); } }
-      const gy = Math.max(H(pp.x, pp.z), -.45);
+      const gy = Math.max(ground(pp.x, pp.z), -.45);
       const wasAir = !onGround; vy -= 18 * dt; if (gliding) vy = Math.max(vy, -1.9); pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; glideOn = false; if (wasAir && airT > .35) player.play('Jump_Land', .08, { once: true, speed: 1.3 }); }
       airT = onGround ? 0 : airT + dt; climbT -= dt;
       // wind glider (press jump again in the air): a toon wing above the player while gliding
@@ -1395,7 +1401,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         wing.geometry.computeVertexNormals(); const bar = new THREE.Mesh(new THREE.CylinderGeometry(.02, .02, 3.6, 5), new THREE.MeshStandardMaterial({ color: '#2e3440' })); bar.rotation.z = Math.PI / 2; bar.position.set(0, -.15, -.35);
         glider.add(wing, bar); glider.position.y = 2.55; glider.visible = false; player.group.add(glider); applyComic(glider); }
       if (glider) { glider.visible = glideOn && !onGround; if (glider.visible) glider.rotation.z = Math.sin(t * 2) * .05; }
-      const swimming = onGround && H(pp.x, pp.z) < -.3;
+      const swimming = onGround && ground(pp.x, pp.z) < -.3;
       player.locomote(onGround ? player.vel.length() : 0, !onGround && airT > .12 ? 'air' : swimming ? 'swim' : climbT > 0 ? 'climb' : null);
       player.group.children[0] && (player.group.children[0].position.y += ((swimming ? SWIM_Y : 0) - player.group.children[0].position.y) * Math.min(1, dt * 6)); // float at the surface while swimming
     }
@@ -1669,7 +1675,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, focus: focusOverride, holds, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers, blocked: (x, z, r = .42) => { const q = { x, z }; collide(q, r); return Math.hypot(q.x - x, q.z - z) > 1e-3; }, reveal: id => { const n = npcs.find(n => n.id === id); return n ? reveal(n, id === 'glyph') : null; }, pushables }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, focus: focusOverride, holds, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers, blocked: (x, z, r = .42) => { const q = { x, z }; collide(q, r); return Math.hypot(q.x - x, q.z - z) > 1e-3; }, ground, reveal: id => { const n = npcs.find(n => n.id === id); return n ? reveal(n, id === 'glyph') : null; }, pushables }; },
     cinematic: (shots, o) => cinematic(shots, o), prologue: o => cinematic(prologueShots(), o), stopCinematic() { cineStop?.(); }, get camYaw() { return cam.yaw; },
     get indoors() { return !!inside; }, exitRoom: () => exitRoom(),
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS, routes: ROUTES, findPos: ids => allItems.filter(it => ids.includes(it.id)).map(it => ({ x: it.x, z: it.z })),
