@@ -74,9 +74,19 @@ const ALIAS = { Cheer: 'Yes', PickUp: 'Interact', Spellcast_Shoot: 'Interact', W
   Idle: 'Idle_Loop', Walk: 'Walk_Loop', Run: 'Jog_Fwd_Loop', Sprint: 'Sprint_Loop', Wave: 'Yes', Idle_Neutral: 'Idle_Loop', HitRecieve: 'Hit_Chest', Death: 'Death01', Punch_Right: 'Punch_Cross' };
 
 /** a VRM actor with the same API as chars.makeRigged(): { group, play, locomote, busy, update, parts } */
-export function makeVRMActor(name, { height = 2.0, scale = 1, aliases = {} } = {}) {
+const tintCache = new Map();
+/* colour variety without new models: hair and top/one-piece materials are multiplied by the look's colours (cached per combo) */
+function tint(m, hair, top) {
+  const nm = m.name || '', isHair = /HAIR/i.test(nm) && !/EYE|BROW|LASH/i.test(nm), isTop = /Tops|Onepi|Outer|Coat|Dress|Hoodie/i.test(nm);
+  const c = isHair ? hair : isTop ? top : null; if (!c || !m.color) return m;
+  const key = m.uuid + c; if (tintCache.has(key)) return tintCache.get(key);
+  const n = m.clone(); const tc = new THREE.Color(c); if (isTop) tc.lerp(new THREE.Color(1, 1, 1), .35); n.color.multiply(tc);
+  if (n.shadeColorFactor) n.shadeColorFactor.multiply(tc); tintCache.set(key, n); return n;
+}
+export function makeVRMActor(name, { height = 2.0, scale = 1, aliases = {}, hair = null, top = null } = {}) {
   const M = vrmReady.get(name); if (!M) return null;
-  const obj = SkeletonUtils.clone(M.scene); obj.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.material.userData = { ...(o.material.userData || {}), actor: true }; } });
+  const obj = SkeletonUtils.clone(M.scene); obj.traverse(o => { if (o.isMesh) { o.frustumCulled = false;
+    if (hair || top) o.material = Array.isArray(o.material) ? o.material.map(m => tint(m, hair, top)) : tint(o.material, hair, top); } });
   const g = new THREE.Group(), k = height / M.h * scale * .9; obj.scale.setScalar(k); if (M.v0) obj.rotation.y = Math.PI; g.add(obj);
   const mixer = new THREE.AnimationMixer(obj), byName = Object.fromEntries(M.clips.map(c => [c.name, c])), acts = {}, AL = { ...ALIAS, ...aliases };
   const act = n => { n = byName[n] ? n : AL[n] || n; return acts[n] ||= byName[n] ? mixer.clipAction(byName[n]) : null; };

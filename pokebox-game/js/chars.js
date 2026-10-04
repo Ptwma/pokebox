@@ -12,6 +12,21 @@ import * as P from './progress.js';
 import { applyComic } from './comic.js';
 import { loadVRM, makeVRMActor, vrmReady } from './vrm.js';
 
+/* anime VRM bodies (VRoid CC0 samples, assets/chars/vrm). Named cast members get a fixed model; the player gets
+   one per body type; everyone else draws from the pools by a hash of their look (stable across sessions). */
+export const VRM_ALL = ['sample_d', 'sample_d_dark', 'sample_e', 'sample_f', 'sample_g', 'base_f', 'base_m', 'hair_f', 'hair_m', 'fumiriya', 'shino'];
+export const VRM_CAST = { vale: 'shino', rho: 'fumiriya', sable: 'sample_d_dark', lyra: 'sample_f', maren: 'base_f', mira: 'sample_e', orin: 'base_m', vera: 'sample_g', kai: 'base_m', dom: 'base_m',
+  kest: 'hair_m', vex: 'sample_d_dark', clerk: 'hair_f', archivist: 'shino', joey: 'fumiriya', ranger: 'base_m', grunt: 'hair_m', grunt2: 'sample_d', deckA: 'base_m', deckB: 'base_f',
+  e4_orin: 'base_m', e4_sable: 'sample_d_dark', e4_kest: 'hair_m', e4_lyra: 'sample_f' };
+const VRM_F = ['sample_d', 'hair_f', 'sample_e', 'sample_g', 'base_f', 'shino'], VRM_M = ['hair_m', 'base_m', 'hair_m', 'fumiriya'];
+let vrmOn = true; export const setVRM = v => { vrmOn = !!v; };
+export function vrmOf(L) {
+  if (!vrmOn || !L || L.noVrm) return null; if (L.vrm) return L.vrm;
+  if (!L.model && !L.colors) return L.body === 'f' ? 'sample_d' : 'hair_m'; /* the player */
+  let h = 2166136261; for (const ch of JSON.stringify([L.model, L.skin, L.hairColor, L.topColor, L.hat, L.body])) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const pool = (L.body === 'f' || /^f_|kid_f/.test(L.model || '')) ? VRM_F : VRM_M; return pool[h % pool.length];
+}
+
 const DIR = new URL('../assets/', import.meta.url).href;
 export const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
 
@@ -42,7 +57,7 @@ function loadUAL() {
 }
 export async function prepare(looks = [], pets = []) {
   loadUAL();
-  const vrms = [...new Set(looks.map(l => l && l.vrm).filter(Boolean))]; const vrmP = Promise.all(vrms.map(loadVRM));
+  const vrms = [...new Set(looks.map(vrmOf).filter(Boolean))]; const vrmP = Promise.all(vrms.map(loadVRM));
   const paths = [...new Set([...looks.map(modelFor), ...pets.map(p => 'pets/' + p)])];
   const res = await Promise.all(paths.map(loadGLB)); paths.forEach((p, i) => res[i] && ready.set(p, res[i]));
   await loadUAL(); await vrmP;
@@ -152,7 +167,8 @@ export const STYLE = { head: 1.3, feet: 1.12 };
 export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   const L = Object.assign({ body: 'm', skin: 'sk2', hairColor: 'hc1', hat: 'none', top: 'tee', topColor: 'tc1', acc: 'none' }, look);
   height *= L.h || 1; // body height: kids, elders, tall athletes
-  if (L.vrm && vrmReady.has(L.vrm)) { const A = makeVRMActor(L.vrm, { height, scale }); if (A) return A; } /* anime VRM model (VRoid) */
+  { const v = vrmOf(look); if (v && vrmReady.has(v)) { const named = !!look.vrm, A = makeVRMActor(v, { height, scale,
+    hair: named ? null : P.item('hairColor', L.hairColor)?.c, top: named ? null : (L.colors?.Outfit || P.item('topColor', L.topColor)?.c) }); if (A) return A; } } /* anime VRM model (VRoid) */
   const path = modelFor(L), gltf = ready.get(path);
   if (!gltf) return null;
   const obj = SkeletonUtils.clone(gltf.scene);

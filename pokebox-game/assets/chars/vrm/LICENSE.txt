@@ -1,0 +1,7 @@
+Anime characters (assets/chars/vrm/*.vrm)
+Source: pixiv Inc. — VRoid Studio sample models (AvatarSample D/D_Darkness/E/F/G, Base Female/Male, Hair Samples Female/Male,
+Sakurada Fumiriya, Sendagaya Shino), released under CC0 1.0 (public domain dedication).
+Mirror used: https://opengameart.org/content/vroid-studio-cc0-models
+Modified for Pokebox: textures downscaled to 768 px, facial blendshapes removed (tools/vrm_slim.py).
+
+Loader: @pixiv/three-vrm 3.5.5 — MIT License (vendor/three-vrm/LICENSE).

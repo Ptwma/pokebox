@@ -24,10 +24,26 @@ def write_glb(path, js, binb):
 
 def main(src, dst, mx=1024):
     js, binb = read_glb(src)
+    # drop morph targets (facial blendshapes): the game does not animate faces, and they are ~35 % of the file
+    dead = set()
+    for m in js.get('meshes', []):
+        for p in m['primitives']:
+            for t in p.pop('targets', []):
+                for a in t.values(): dead.add(js['accessors'][a].get('bufferView'))
+        m.pop('weights', None); (m.get('extras') or {}).pop('targetNames', None)
+    vrm = js.get('extensions', {}).get('VRM')
+    if vrm and 'blendShapeMaster' in vrm:
+        for g in vrm['blendShapeMaster'].get('blendShapeGroups', []): g['binds'] = []
+    live = set()
+    for m in js.get('meshes', []):
+        for p in m['primitives']:
+            for a in list(p['attributes'].values()) + ([p['indices']] if 'indices' in p else []): live.add(js['accessors'][a].get('bufferView'))
+    dead -= live
     views = js['bufferViews']; img_views = {im['bufferView']: i for i, im in enumerate(js.get('images', [])) if 'bufferView' in im}
     new_bin = bytearray(); remap = {}
     for vi, v in enumerate(views):
         data = binb[v.get('byteOffset', 0): v.get('byteOffset', 0) + v['byteLength']]
+        if vi in dead: data = b'\0' * 4
         if vi in img_views:
             im = Image.open(io.BytesIO(data)); im.load()
             if max(im.size) > mx: k = mx / max(im.size); im = im.resize((max(1, round(im.size[0] * k)), max(1, round(im.size[1] * k))), Image.LANCZOS)

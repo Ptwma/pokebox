@@ -7,7 +7,7 @@ import * as P from './progress.js';
 import * as QS from './quests.js';
 import * as C from './core.js';
 import * as RK from './rank.js';
-import { prepare, makeRigged, tickEchoMaterials, attachProp } from './chars.js';
+import { prepare, makeRigged, tickEchoMaterials, attachProp, VRM_CAST } from './chars.js';
 import { loadKits, place, instances, house, has, hasToon, wind, bounds } from './world_kit.js';
 import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
@@ -25,7 +25,7 @@ const uiBlocked = () => document.body.classList.contains('prolog-on') || documen
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /* ------------------------------------------------------------------ people */
-const npcLook = id => P.CAST[id]?.look;
+const npcLook = id => { const l = P.CAST[id]?.look; if (l && VRM_CAST[id] && !l.vrm) l.vrm = VRM_CAST[id]; return l; };
 const npcName = id => P.CAST[id]?.name || id;
 const TOPS = ['tee', 'hoodie', 'jacket', 'ranger', 'summer', 'crew', 'scarf'], TC = ['tc0', 'tc1', 'tc2', 'tc3', 'tc4', 'tc5', 'tc6', 'tc7', 'tc8'], HC = ['hc0', 'hc1', 'hc2', 'hc3', 'hc4'];
 function villagerLook(R, top) { const cs = costume('casual', R, null); return { colors: cs.colors, body: R() < .5 ? 'm' : 'f', skin: 'sk' + (R() * 6 | 0), hairColor: NATURAL_HAIR[R() * NATURAL_HAIR.length | 0], hat: R() < .25 ? ['cap', 'beanie', 'wide', 'beret'][R() * 4 | 0] : 'none', top: top || TOPS[R() * TOPS.length | 0], topColor: TC[R() * TC.length | 0], acc: R() < .15 ? 'glasses' : 'none' }; }
@@ -811,7 +811,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   function buildGlobals() {
     sky = makeSky(AREAS.harbor); scene.add(sky);
     water = makeWater({ ...AREAS.harbor, water: '#1d6aab', shallow: '#38c6c4', fog: AREAS.harbor.fog }, H, { hm: gridTex, span: WORLD, size: viewFar * 2.6 + 200 }); scene.add(water);
-    grassMesh = grassFieldImpl(H, null, { n: 96000, r: 60, base: '#2c6a2e', tip: '#9fd45c', hgt: .46, w: .052, seed: 5, hmask: gridTex, span: WORLD }); scene.add(grassMesh);
+    grassMesh = grassFieldImpl(H, null, { n: 96000, r: 60, base: '#2c6a2e', tip: '#9fd45c', hgt: .32, w: .05, seed: 5, hmask: gridTex, span: WORLD }); scene.add(grassMesh);
     envTex?.dispose(); envTex = envFromSky(renderer, { ...AREAS.harbor, ground: ['#79a957', '#5a8d45', '#98b868'] }); scene.environment = comic ? null : envTex; scene.environmentIntensity = .7;
   }
   /* ================================================================== landmarks: the wild between towns is not empty
@@ -957,7 +957,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       spawnNPC(id, { x: R.x + 2.5, z: R.z + 13.5 }, 0, { trainer: QS.T(fest.types, [1, 4], 3, .9 + Math.min(10, QS.Q().ch) * .045), name: fest.host, fest, key: id + ':' + new Date().toDateString() }); }
     // after the story: the Rift League — four Elites around Relay Node 7, then the Hall of Fame
     if (QS.done()) { const R = REGIONS.rift;
-      ELITE.forEach((e, i) => { P.CAST[e.id] ||= { name: e.name, role: e.role, look: e.look }; spawnNPC(e.id, { x: R.x + e.at[0], z: R.z + e.at[1] }, Math.atan2(-e.at[0], -18 - e.at[1]), { trainer: QS.T(e.types, [3, 7], 3, 1.32 + i * .06), name: e.name, elite: true }); }); }
+      ELITE.forEach((e, i) => { P.CAST[e.id] ||= { name: e.name, role: e.role, look: { ...e.look, vrm: VRM_CAST[e.id] } }; spawnNPC(e.id, { x: R.x + e.at[0], z: R.z + e.at[1] }, Math.atan2(-e.at[0], -18 - e.at[1]), { trainer: QS.T(e.types, [3, 7], 3, 1.32 + i * .06), name: e.name, elite: true }); }); }
     if (QS.Q().ch >= 9) { const g = npcs.find(n => n.id === 'glyph'); if (g) { const g0 = new THREE.Group(); g0.position.copy(g.ch.group.position); actorsRoot.add(g0); glyphEntity(g0); g.glyphFx = g0; } }
     refreshGates();
   }
@@ -1034,7 +1034,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   /* ================================================================== lifecycle */
   async function build() {
     hooks.loading?.(true, 'Veyra');
-    const s = P.ensure(), looks = [s.look, ...Object.values(P.CAST).map(c => c.look).filter(Boolean)];
+    const s = P.ensure(), looks = [s.look, ...Object.keys(P.CAST).map(npcLook).filter(Boolean), ...ELITE.map(e => ({ ...e.look, vrm: VRM_CAST[e.id] }))];
     for (let i = 0; i < 10; i++) looks.push(villagerLook(rng(99 + i)));
     for (const a in ARCH) looks.push(archLook(a, rng(1)));
     try { await Promise.all([loadKits(), prepare(looks, []), buildGrid()]); } catch (e) { console.warn('[world] asset load', e); }
