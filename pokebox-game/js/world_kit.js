@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { loader } from './chars.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { roundTree, pineTree, fitTo } from './flora_gen.js';
 
 
 const DIR = new URL('../assets/world/', import.meta.url).href;
@@ -41,10 +42,25 @@ export function loadKits() {
       o.traverse(c => { if (c.isMesh) { c.material = prepMaterial(c.material); c.castShadow = true; c.receiveShadow = true; } });
       o.position.set(0, 0, 0); o.updateMatrixWorld(true); T[o.name + (k === 'nature_lod' ? '_LOD' : '')] = o;
     }
-  }).catch(e => console.warn('[kit] failed', k, e)))).then(() => Object.keys(T).length);
+  }).catch(e => console.warn('[kit] failed', k, e)))).then(() => { try { animeTrees(); } catch (e) { console.warn('[kit] anime trees', e); } return Object.keys(T).length; });
   return kitsP;
 }
 export const has = n => !!T[n];
+
+/* swap the kit's broadleaf trees and pines for the anime leaf-card trees (same names, same footprint, so every
+   placement, LOD and collider keeps working). Snowy pines, palms, dead trees and cacti stay as they are. */
+const ANIME_TREES = {
+  FL_Tree_A: (lod) => roundTree(11, { kind: 'round', leaf: '#5aa142', lod }), FL_Tree_B: (lod) => roundTree(23, { kind: 'wide', leaf: '#4f9a3c', lod }),
+  FL_Tree_C: (lod) => roundTree(37, { kind: 'tall', leaf: '#6aa847', lod }), FL_Birch: (lod) => roundTree(41, { kind: 'tall', leaf: '#8cbc4f', bark: '#e8e2d4', lod }),
+  FL_Pine_A: (lod) => pineTree(5, { lod }), FL_Pine_B: (lod) => pineTree(9, { leaf: '#36704a', lod }),
+};
+function animeTrees() {
+  for (const [name, make] of Object.entries(ANIME_TREES)) {
+    const old = T[name]; if (!old) continue; const box = new THREE.Box3().setFromObject(old);
+    for (const lod of [false, true]) { const key = name + (lod ? '_LOD' : ''); if (lod && !T[key]) continue;
+      const g = fitTo(make(lod), box); g.name = key; g.traverse(c => { if (c.isMesh) c.material = prepMaterial(c.material); }); g.updateMatrixWorld(true); T[key] = g; delete bbCache[key]; }
+  }
+}
 
 /* size helpers */
 const bbCache = {};

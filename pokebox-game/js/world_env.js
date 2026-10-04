@@ -224,7 +224,7 @@ export function grassField(hf, test, { n = 22000, r = 60, base = '#4f7d3d', tip 
         // soft root→tip gradient (dark roots blend into the ground), per-blade hue drift between teal and sun-yellow
         float k = smoothstep(0., 1., vH); float hue = (vShade - .78) / .22;
         vec3 tip = mix(cTip * vec3(.86, 1., .95), cTip * vec3(1.08, 1.04, .78), hue);
-        vec3 c = mix(cBase * .96, tip, .22 + .78 * k) * (.92 + .08 * hue);   // roots match the ground: reads as a lawn, not as dark spikes
+        vec3 c = mix(cBase * .7, tip, .12 + .88 * k * k) * (.92 + .08 * hue); c += vec3(.06, .07, .02) * smoothstep(.75, 1., vH);   /* darker roots = depth, sunlit tips (anime meadow) */   // roots match the ground: reads as a lawn, not as dark spikes
         c *= mix(vec3(.84, .94, .86), vec3(1.1, 1.05, .8), smoothstep(-.8, .8, vVar));
         gl_FragColor = vec4(c, .15);
         #include <colorspace_fragment>

@@ -811,7 +811,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   function buildGlobals() {
     sky = makeSky(AREAS.harbor); scene.add(sky);
     water = makeWater({ ...AREAS.harbor, water: '#1d6aab', shallow: '#38c6c4', fog: AREAS.harbor.fog }, H, { hm: gridTex, span: WORLD, size: viewFar * 2.6 + 200 }); scene.add(water);
-    grassMesh = grassFieldImpl(H, null, { n: 78000, r: 60, base: '#3b7a34', tip: '#a8dc6a', hgt: .42, w: .085, seed: 5, hmask: gridTex, span: WORLD }); scene.add(grassMesh);
+    grassMesh = grassFieldImpl(H, null, { n: 96000, r: 60, base: '#2c6a2e', tip: '#9fd45c', hgt: .46, w: .052, seed: 5, hmask: gridTex, span: WORLD }); scene.add(grassMesh);
     envTex?.dispose(); envTex = envFromSky(renderer, { ...AREAS.harbor, ground: ['#79a957', '#5a8d45', '#98b868'] }); scene.environment = comic ? null : envTex; scene.environmentIntensity = .7;
   }
   /* ================================================================== landmarks: the wild between towns is not empty

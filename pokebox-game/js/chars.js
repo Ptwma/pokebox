@@ -10,6 +10,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as P from './progress.js';
 import { applyComic } from './comic.js';
+import { loadVRM, makeVRMActor, vrmReady } from './vrm.js';
 
 const DIR = new URL('../assets/', import.meta.url).href;
 export const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
@@ -41,9 +42,10 @@ function loadUAL() {
 }
 export async function prepare(looks = [], pets = []) {
   loadUAL();
+  const vrms = [...new Set(looks.map(l => l && l.vrm).filter(Boolean))]; const vrmP = Promise.all(vrms.map(loadVRM));
   const paths = [...new Set([...looks.map(modelFor), ...pets.map(p => 'pets/' + p)])];
   const res = await Promise.all(paths.map(loadGLB)); paths.forEach((p, i) => res[i] && ready.set(p, res[i]));
-  await loadUAL();
+  await loadUAL(); await vrmP;
   return res.every(Boolean);
 }
 export const isReady = path => ready.has(path);
@@ -150,6 +152,7 @@ export const STYLE = { head: 1.3, feet: 1.12 };
 export function makeRigged(look, { scale = 1, hat, height = 2.0 } = {}) {
   const L = Object.assign({ body: 'm', skin: 'sk2', hairColor: 'hc1', hat: 'none', top: 'tee', topColor: 'tc1', acc: 'none' }, look);
   height *= L.h || 1; // body height: kids, elders, tall athletes
+  if (L.vrm && vrmReady.has(L.vrm)) { const A = makeVRMActor(L.vrm, { height, scale }); if (A) return A; } /* anime VRM model (VRoid) */
   const path = modelFor(L), gltf = ready.get(path);
   if (!gltf) return null;
   const obj = SkeletonUtils.clone(gltf.scene);
