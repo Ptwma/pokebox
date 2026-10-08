@@ -15,11 +15,22 @@
             android:exported="true"
             android:screenOrientation="fullUser"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize|uiMode"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- bottom screen of dual-screen handhelds (AYN Thor): launched by MainActivity onto the second display -->
+        <activity
+            android:name=".BottomActivity"
+            android:exported="false"
+            android:taskAffinity="com.pokebox.game.bottom"
+            android:excludeFromRecents="true"
+            android:resizeableActivity="true"
+            android:launchMode="singleInstance"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize|uiMode|density"
+            android:theme="@style/PokeboxTheme" />
     </application>
 </manifest>

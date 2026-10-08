@@ -628,9 +628,10 @@ body:has(.upd) .cx-area,body:has(.upd) .ch-in{display:none!important} /* the upd
 .setsec{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}.setsec button{padding:7px 14px;border-radius:999px;border:0;background:rgba(255,255,255,.08);color:inherit;font:700 14px var(--ui);cursor:pointer}
 .setsec button.on{background:var(--gold,#ffd257);color:#1b1530}
 .setrow .rng{display:flex;align-items:center;gap:10px}.setrow .rng input{width:min(220px,40vw)}.setrow .rng b{min-width:48px;text-align:right}
-#gMenu .gm,#scene>*,#toasts,.fb-dock,.fb-plate,.coach,.wmodal .wbox,#wModal .wbox{zoom:var(--uis)}
+/* zoom goes on the CHILDREN of animated panels: Chromium/Android WebView stops painting an element that has both zoom and a running entrance animation (the settings menu was invisible on phones, v3.18) */
+#gMenu .gm>*,#scene>*>*,#toasts,.fb-dock,.fb-plate,.coach>*,.wmodal .wbox>*,#wModal .wbox>*{zoom:var(--uis)}
 #wStick{transform:scale(var(--stick));transform-origin:left bottom}
-#gMenu .gm{max-width:calc((100vw - 16px) / var(--uis));max-height:calc((100dvh - 16px) / var(--uis))}#scene>*{max-width:calc(100vw / var(--uis))}
+#gMenu .gm{max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}#scene>*>*{max-width:calc(100vw / var(--uis))}
 /* starter cut-scene */
 #wModal.stcine{background:radial-gradient(ellipse at 50% 60%,rgba(40,30,70,.55),rgba(4,3,10,.94) 70%);display:grid;place-items:center}
 .stc-scene{position:relative;width:min(1000px,96vw);text-align:center;color:#f6ead2}
@@ -726,3 +727,9 @@ html.touch .wtbtns .tb.use.has{animation:usePulse2 1.1s ease-in-out infinite}
 .fb-plate.p{left:3vw;right:auto}
 .fb-log{bottom:calc(16px + 92px)!important;left:3vw;max-width:44vw}
 @media (max-height:500px){.fb-log{bottom:78px!important}}
+
+/* ---- gamepad (v3.19): touch controls hide while a pad is in use; focus ring for menu navigation; button glyphs */
+html.pad .wtouch,html.pad .whelp,html.pad .wb kbd{display:none!important}
+.pad-focus{outline:3px solid #5cf2d6!important;outline-offset:3px!important;box-shadow:0 0 0 6px rgba(92,242,214,.25),0 0 22px rgba(92,242,214,.55)!important;z-index:5}
+.padg{display:inline-grid;place-items:center;width:1.5em;height:1.5em;border-radius:50%;font:900 .8em system-ui;color:#fff;margin-right:.35em;vertical-align:middle;box-shadow:inset 0 0 0 2px rgba(255,255,255,.7)}
+.padg-a{background:#3fae4a}.padg-b{background:#d9443a}.padg-x{background:#3d7fe0}.padg-y{background:#e0b030;color:#1a1208}

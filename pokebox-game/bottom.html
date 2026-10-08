@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Pokebox — second screen</title>
+<link rel="stylesheet" href="css/fonts.css">
+<style>
+  :root{--bg:#0e0b18;--card:#1a1528;--line:rgba(255,255,255,.1);--gold:#ffd257;--mint:#5cf2d6;--ink:#f3e7cf;--mut:#a99fbf;--r:16px;
+    --display:"Barlow Condensed",system-ui,sans-serif;--ui:system-ui,-apple-system,"Segoe UI",sans-serif}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:500 clamp(14px,2.4vmin,22px)/1.3 var(--ui);overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr;padding:max(10px,env(safe-area-inset-top)) 12px 12px;gap:10px}
+  header{display:flex;align-items:center;gap:12px;min-height:56px}
+  header .who{display:flex;flex-direction:column;line-height:1.1}
+  header b{font:800 1.35em var(--display);letter-spacing:.02em}
+  header small{color:var(--mut)}
+  header .sp{flex:1}
+  .pill{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font:700 1em var(--display);white-space:nowrap}
+  .pill.gold{color:var(--gold)}
+  .lv{display:inline-grid;place-items:center;min-width:2em;height:2em;border-radius:10px;background:var(--gold);color:#1a1208;font:900 1em var(--display)}
+  main{min-height:0;display:grid;gap:10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-height:0}
+  .eyebrow{font:800 .72em var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--mint)}
+  h2{margin:2px 0 0;font:800 1.5em var(--display);letter-spacing:.02em;line-height:1.05}
+  button{font:inherit;color:inherit;border:0;cursor:pointer}
+  .big{display:flex;align-items:center;justify-content:center;gap:10px;min-height:64px;border-radius:14px;background:#2a2340;border:1px solid var(--line);font:800 1.15em var(--display);letter-spacing:.04em;text-transform:uppercase}
+  .big:active{transform:scale(.97);filter:brightness(1.25)}
+  .big.gold{background:linear-gradient(180deg,#ffe08a,#e2a93a);color:#1a1208;border:0}
+  .big[disabled]{opacity:.35}
+  /* explore */
+  .ex{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+  .mapw{position:relative;padding:0;overflow:hidden}
+  #map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  .mapz{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px}
+  .mapz button{width:48px;height:48px;border-radius:12px;background:rgba(14,11,24,.82);border:1px solid var(--line);font:800 1.4em var(--display)}
+  .side{display:grid;grid-template-rows:auto auto 1fr;gap:10px;min-height:0}
+  .obj p{margin:6px 0 0;font:700 1.1em var(--display)}
+  .obj .dist{color:var(--gold);font:800 1em var(--display)}
+  .team{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .mon{display:flex;flex-direction:column;align-items:center;gap:4px;background:#241d36;border-radius:12px;padding:6px;border-bottom:3px solid var(--tc,#888);min-width:0}
+  .mon img{width:100%;aspect-ratio:63/88;object-fit:cover;border-radius:6px;background:#0b0912}
+  .mon b{font:700 .85em var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:end}
+  .sheet{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(14,11,24,.94);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;gap:10px;align-items:center}
+  .sheet .t{flex:1}
+  .sheet[hidden]{display:none}
+  /* battle */
+  .bt{grid-template-rows:auto 1fr}
+  .hp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .bar{height:12px;border-radius:6px;background:#00000060;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:linear-gradient(180deg,#6be36b,#2fa83a);transition:width .4s}
+  .bar i.mid{background:linear-gradient(180deg,#ffe066,#e0b020)}.bar i.low{background:linear-gradient(180deg,#ff7a5a,#d0302a)}
+  .moves{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px;min-height:0}
+  .mv{flex-direction:column;gap:2px;background:linear-gradient(135deg,color-mix(in srgb,var(--tc,#556) 80%,#000),color-mix(in srgb,var(--tc,#556) 35%,#0b0a0e));text-transform:none;min-height:0}
+  .mv b{font:800 1.3em var(--display);letter-spacing:.04em;text-transform:uppercase}
+  .mv small{font:600 .75em var(--ui);opacity:.85;text-transform:none;letter-spacing:0}
+  .mv.cap{--tc:#e8483a}.mv.run{--tc:#5a6a7a}
+  .bmsg{color:var(--mut);font-size:.9em;min-height:1.3em}
+  /* dialogue */
+  .sc{grid-template-rows:auto 1fr auto}
+  .sc .now b{font:800 1.2em var(--display);color:var(--gold)}
+  .sc .now p{margin:6px 0 0;font-size:1.15em}
+  .hist{overflow:auto;display:flex;flex-direction:column;gap:6px;font-size:.92em;color:var(--mut)}
+  .hist b{color:var(--ink)}
+  .row{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+  .menu{grid-template-rows:auto 1fr}
+  .center{display:grid;place-items:center;text-align:center;color:var(--mut)}
+</style>
+</head>
+<body>
+<div id="app"><header id="hd"></header><main id="mn"><div class="card center">Waiting for the game…</div></main></div>
+<script type="module" src="js/bottom.js"></script>
+</body>
+</html>

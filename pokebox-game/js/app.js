@@ -12,6 +12,8 @@ import * as QS from './quests.js';
 import { runTitle } from './title.js';
 import * as RK from './rank.js';
 import { openWorldMap } from './worldmap.js';
+import * as PAD from './pad.js';
+import { initDual, deviceInfo } from './dual.js';
 import { runPrologue, startCoach } from './prologue.js';
 import { festivalToday, FESTIVALS } from './events.js';
 import { autoCheck, manualCheck } from './updater.js';
@@ -891,7 +893,8 @@ function liveAvatar(el, look, size) {
   portrait(look, size * 2).then(u => { if (u && el.dataset.pk === k) el.innerHTML = `<img class="pav" src="${u}" width="${size}" height="${size}" alt="">`; });
 }
 /* ------------------------------------------------------------------ World (3D Veyra) */
-let world = null, worldCh = -1;
+let world = null, worldCh = -1; PAD.bindWorld(() => world);
+initDual({ world: () => world, travel: id => { sfx.whoosh(.5); world?.travelTo(id); }, menu: () => openLattice() });
 const AREA_REQ = { harbor: 0, mistvale: 1, sandreach: 2, starfall: 3, voltspire: 4, frostline: 5, rift: 6 };
 function worldConfirm(q, yes, no) {
   return new Promise(res => { const m = $('#wModal'); m.hidden = false;
@@ -990,7 +993,7 @@ function ensureWorld() {
       playScene([['vale', 'You beat the whole Rift League. Your team goes into the Hall of Fame of Veyra — the first Ranger ever.'], ['rho', 'Champion of the Rift. I am NOT jealous. Okay, a little.']], { title: 'Hall of Fame', cine: true }).then(() => toast('🏆 <b>Hall of Fame!</b> <span class="gold">+5,000 coins</span> · rare legends now roam Veyra more often')); },
     reveal: o => vsCard(o), arrival: (id, a) => { sfx.rare?.(1); },
     onChapter: (ch, idx) => { whenFree(() => chapterCard(idx + 1)); xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
-    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; document.querySelector('.tb.use')?.classList.toggle('has', !!html); if (!html) return;
+    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; document.querySelector('.tb.use')?.classList.toggle('has', !!html); if (!html) return; if (PAD.padActive()) html = html.replace('<b>E</b>', PAD.glyph('X'));
       if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); (st().settings.haptics !== false) && navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
     region: (id, night) => { musRegion = [id, night]; if (!battleMusic && st().settings.music !== false) music.world(id, night); },
@@ -1136,6 +1139,7 @@ function applySettings(k) {
   const S2 = st().settings, all = !k, is = (...ks) => all || ks.includes(k);
   if (!all && ['rscale', 'viewDist', 'grassAmt', 'shadows', 'bloom', 'comic', 'shaderFx'].includes(k)) world?.setQuality();
   if (!all && k === 'autoGfx') world?.setAutoQuality(S2.autoGfx);
+  if (!all && k === 'dualScr') { try { window.PokeboxDual?.setEnabled?.(S2.dualScr !== false); } catch {} }
   if (is('volMaster', 'volMusic', 'volSfx')) setVolumes({ master: S2.volMaster ?? 1, music: S2.volMusic ?? 1, sfx: S2.volSfx ?? 1 });
   if (!all && k === 'sound') { setSound(S2.sound); $('#sndBtn')?.classList.toggle('off', !S2.sound); }
   if (is('uiScale')) document.documentElement.style.setProperty('--uis', String(S2.uiScale ?? (PHONE_UI ? 1.1 : 1)));
@@ -1192,7 +1196,9 @@ function renderMenu() {
       + row('Show FPS counter', chk('wfps', S2.wfps));
     else if (sec === 'ctl') inner = row('Camera sensitivity', rng2('sens', Math.round(g.sens * 10), 3, 25, 1, g.sens.toFixed(1) + '×')) + row('Invert camera Y', chk('invertY', g.inv))
       + (PHONE_UI ? row('Joystick size', seg('stickSize', S2.stickSize ?? 1, [[.85, 'S'], [1, 'M'], [1.2, 'L']])) + row('Vibration', chk('haptics', S2.haptics !== false)) : '');
-    else inner = row(`Game version <b>${esc(window.__pbxVersion || '—')}</b>`, '<button class="btn ghost sm" id="mUpd" type="button">Check for updates</button>');
+    else { const di = deviceInfo(); inner = row(`Game version <b>${esc(window.__pbxVersion || '—')}</b>`, '<button class="btn ghost sm" id="mUpd" type="button">Check for updates</button>')
+      + (di ? row('Second screen (dual-screen handhelds)', chk('dualScr', di.dual !== false), di.displays?.length > 1 ? `${di.displays.length} displays found` : 'no second display found')
+        + `<details class="small muted"><summary>Device &amp; controller info</summary><pre style="white-space:pre-wrap;font-size:11px;user-select:text">${esc(JSON.stringify(di, null, 1))}</pre></details>` : ''); }
     body = `<h3 class="display">Settings</h3><div class="setsec">${secs.map(([k, v]) => `<button type="button" class="${sec === k ? 'on' : ''}" data-sec="${k}">${v}</button>`).join('')}</div>${inner}`;
   } else if (menuTab === 'controls') {
     body = `<h3 class="display">Controls</h3><div class="keys">${[['W A S D / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump'], ['Q / Ctrl', 'Dodge roll'], ['E / Enter', 'Talk, read, battle'], ['Mouse drag', 'Turn camera'], ['Mouse wheel', 'Zoom'], ['Left click ground', 'Walk there'], ['M / Tab', 'Map & travel'], ['F', 'Fullscreen'], ['Esc', 'Menu / pause'], ['F8', 'Performance meter']].map(([k, v]) => `<div><kbd>${k}</kbd><span>${v}</span></div>`).join('')}</div>`;

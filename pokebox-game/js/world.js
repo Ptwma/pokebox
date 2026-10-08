@@ -1882,6 +1882,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   function stop() { running = false; cancelAnimationFrame(raf); removeEventListener('keydown', down); removeEventListener('keyup', up); removeEventListener('resize', resize); for (const k in keys) keys[k] = false; if (player) savePos(); }
   return {
     setStick(x, y) { stick.set(x, y); }, setRun(v) { touchRun = !!v; },
+    /* gamepad right stick (radians this frame) and zoom; same limits as touch/mouse */
+    look(dyaw, dpitch) { if (!dyaw && !dpitch) return; cam.tYaw -= dyaw; cam.pitch = clamp(cam.pitch + dpitch * (hooks.invertY?.() ? -1 : 1), .08, 1.15); cam.idle = 0; },
+    zoomBy(d) { cam.tDist = clamp(cam.tDist + d, 2.6, 14); cam.idle = 0; }, sens: () => hooks.sensitivity?.() || 1,
+    get near() { return near ? { kind: near.kind, id: near.id } : null; },
     key(code, isDown = true) { const ev = { code, key: code, target: document.body, preventDefault() {} }; if (isDown) down(ev); else up(ev); },
     teleport(x, z) { teleport(x, z); },
     setView(yaw, pitch = cam.pitch, dist = cam.tDist) { cam.yaw = cam.tYaw = yaw; cam.pitch = pitch; cam.tDist = cam.dist = dist; cam.idle = 0; snap = true; },

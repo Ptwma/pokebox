@@ -6,8 +6,8 @@ android {
         applicationId 'com.pokebox.game'
         minSdk 26
         targetSdk 34
-        versionCode 7          // bump on every release so the APK installs over the old one (saves are kept)
-        versionName '3.0'      // 2.0 = open world (Veyra), field battles, quests
+        versionCode 8          // bump on every release so the APK installs over the old one (saves are kept)
+        versionName '3.1'      // 2.0 = open world (Veyra), field battles, quests
     }
     // one fixed key for every build (GitHub Actions and build-apk.bat), so a new APK always installs over the old one.
     // It is public on purpose (fan project, updates only ever come from this repository's releases).
