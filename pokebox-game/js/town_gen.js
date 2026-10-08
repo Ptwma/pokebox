@@ -87,6 +87,10 @@ export const STYLES = {
   // Lumen Harbor — sunny port in the spirit of a canal city by the sea: pastel stucco, terracotta & teal roofs, balconies, awnings
   tropical: { walls: ['#fbe8c8', '#ffd7c2', '#d6f0ea', '#fff3d6', '#ffe1ea', '#e3ecff'], roofs: ['#e2683c', '#d9553b', '#2fb3a5', '#3d8fd6', '#f2a03d'],
     trim: '#ffffff', door: '#7a4a2a', glass: '#3a7ec8', roof: ['gable', 'hip', 'hip', 'flat'], floors: [1, 2, 2, 3], w: [6.2, 9], d: [6, 8], balcony: .55, awning: .35, chimney: .15, plinth: '#c9b79a' },
+  // Lumen Harbor (since v3.18) — a wind-swept harbour city in the spirit of anime open-world towns: stone ground floors,
+  // white plaster with dark timber framing above, jettied upper storeys, steep tiled roofs (terracotta / slate blue) with dormers
+  mond: { walls: ['#fbefd9', '#f8e6c8', '#fdf3e2', '#f4dfbf'], roofs: ['#c9553a', '#b8452f', '#3f5f8f', '#d06a3c', '#4a6a9a'], trim: '#4a3020', door: '#6a3e22', glass: '#a8d4ef',
+    stone: ['#b9b2a6', '#aaa396', '#c4bcae'], timber: '#5a3a26', floors: [2, 2, 3, 3], w: [6.4, 9], d: [6, 8], mond: true, chimney: .55, plinth: '#8f877a' },
   // Mistvale — a village among ponds and reeds, houses raised on stilts with dark timber and mossy roofs
   wetland: { walls: ['#d9c7a3', '#c9b48c', '#e6d8b8', '#bfa77e'], roofs: ['#4f7a3a', '#5d6b3a', '#7a5a32', '#3f6a4a'], trim: '#f4ead2', door: '#5a3a22', glass: '#5a8a9a',
     roof: ['gable', 'gable', 'steep'], floors: [1, 2, 2], w: [5.6, 8], d: [5.4, 7], stilts: .7, timber: '#5b3d26', chimney: .3, plinth: '#5b3d26' },
@@ -104,8 +108,69 @@ export const STYLES = {
     roof: ['flat', 'flat', 'dome', 'flat'], floors: [1, 2, 2, 3], w: [5.8, 8.6], d: [5.6, 8], awning: .55, plinth: '#c99a62' },
 };
 
+/* a thin beam lying on a wall plane, from (u0,v0) to (u1,v1) in wall coords. face: 'f' (+z), 'b' (-z), 'r' (+x), 'l' (-x) */
+function beam(B, T, face, w, d, u0, v0, u1, v1, th, col, out = .07) {
+  const du = u1 - u0, dv = v1 - v0, L = Math.hypot(du, dv) || 1, nu = -dv / L * th / 2, nv = du / L * th / 2;
+  const P = (u, v, o) => face === 'f' ? T(u, v, d / 2 + o) : face === 'b' ? T(-u, v, -d / 2 - o) : face === 'r' ? T(w / 2 + o, v, -u) : T(-w / 2 - o, v, u);
+  const a = [u0 + nu, v0 + nv], b2 = [u1 + nu, v1 + nv], c = [u1 - nu, v1 - nv], e = [u0 - nu, v0 - nv];
+  B.quad(P(e[0], e[1], out), P(c[0], c[1], out), P(b2[0], b2[1], out), P(a[0], a[1], out), col);   // face
+  B.quad(P(a[0], a[1], 0), P(a[0], a[1], out), P(b2[0], b2[1], out), P(b2[0], b2[1], 0), shade(col, 1.15)); // top edge
+  B.quad(P(c[0], c[1], 0), P(c[0], c[1], out), P(e[0], e[1], out), P(e[0], e[1], 0), shade(col, .7));     // bottom edge
+}
+/* tiled gable roof: slopes split into rows with alternating tone and a small lip per row (reads as clay tiles / slate) */
+function tiledGable(B, T, y, w, d, h, over, col) {
+  const hw = w / 2 + over, hd = d / 2 + over, rows = Math.max(5, Math.round(Math.hypot(hd, h) / .55)), P = (a, b, c) => T(a, y + b, c);
+  for (const sgn of [1, -1]) for (let i = 0; i < rows; i++) {
+    const t0 = i / rows, t1 = (i + 1) / rows, z0 = sgn * hd * (1 - t0), z1 = sgn * hd * (1 - t1), y0 = h * t0, y1 = h * t1, k = (i % 2 ? .93 : 1.02) * (sgn > 0 ? 1 : .8), c = shade(col, k), lip = .07;
+    if (sgn > 0) { B.quad(P(-hw, y0 - lip, z0 + .02), P(hw, y0 - lip, z0 + .02), P(hw, y1, z1), P(-hw, y1, z1), c); B.quad(P(-hw, y0 - lip, z0 + .02), P(-hw, y0, z0 - .06), P(hw, y0, z0 - .06), P(hw, y0 - lip, z0 + .02), shade(c, .6)); }
+    else { B.quad(P(hw, y0 - lip, z0 - .02), P(-hw, y0 - lip, z0 - .02), P(-hw, y1, z1), P(hw, y1, z1), c); }
+  }
+  box(B, (a, b2, c2) => P(a, b2, c2), 0, h - .05, 0, w + over * 2 + .1, .22, .3, shade(col, .7)); // ridge
+  B.tri(P(w / 2, 0, d / 2), P(w / 2, 0, -d / 2), P(w / 2, h, 0), C('#f1ead8')); B.tri(P(-w / 2, 0, -d / 2), P(-w / 2, 0, d / 2), P(-w / 2, h, 0), C('#efe6d2')); // plaster gables
+}
+function mondBuilding(B, W, x, y, z, ry, st, R, opts) {
+  const pick = a => a[(R() * a.length) | 0], rng = (a, b) => a + R() * (b - a);
+  const w = Math.min(opts.maxW || 99, opts.w || rng(st.w[0], st.w[1])), d = Math.min(opts.maxD || 99, opts.d || rng(st.d[0], st.d[1])), floors = opts.floors || pick(st.floors), fh = 3.4;
+  const plaster = C(opts.wall || pick(st.walls)), stone = C(pick(st.stone)), roofC = C(opts.roofC || pick(st.roofs)), tim = C(st.timber), glass = C(st.glass), door = C(st.door);
+  const T = frame(x, y, z, ry), H = floors * fh, jet = .28;
+  box(B, T, 0, -.45, 0, w + .3, .6, d + .3, C(st.plinth));
+  box(B, T, 0, 0, 0, w, fh, d, stone);                                             // stone ground floor
+  for (let k = 0; k < 2; k++) for (let i = 0; i < Math.floor(w / .9); i++) box(B, T, -w / 2 + .45 + i * .9 + (k ? .45 : 0) - .2, .5 + k * 1.3, d / 2 + .01, .5, .32, .04, shade(stone, .9 + R() * .14)); // a few dressed stones
+  for (let f = 1; f < floors; f++) {                                               // jettied plaster storeys with timber framing
+    const ww = w + jet * 2 * f, dd = d + jet * 2 * f, Tf = frame(x, y, z, ry), fy = f * fh;
+    box(B, Tf, 0, fy, 0, ww, fh, dd, plaster);
+    box(B, Tf, 0, fy - .22, 0, ww + .1, .26, dd + .1, tim);                          // sill beam
+    for (const [face, len, dep] of [['f', ww, dd], ['b', ww, dd], ['r', dd, ww], ['l', dd, ww]]) {
+      const WW = face === 'f' || face === 'b' ? ww : dd, DD = face === 'f' || face === 'b' ? dd : ww, n = Math.max(2, Math.round(len / 1.6));
+      const bw = face === 'f' || face === 'b' ? ww : dd, bd = face === 'f' || face === 'b' ? dd : ww;
+      for (let i = 0; i <= n; i++) { const u = -len / 2 + i * len / n; beam(B, Tf, face, face === 'f' || face === 'b' ? ww : ww, face === 'f' || face === 'b' ? dd : dd, u, fy, u, fy + fh, .2, tim); }
+      beam(B, Tf, face, ww, dd, -len / 2, fy + fh - .12, len / 2, fy + fh - .12, .22, tim); beam(B, Tf, face, ww, dd, -len / 2, fy + 1.05, len / 2, fy + 1.05, .14, tim);
+      for (let i = 0; i < n; i++) if ((i + f) % 2 === 0) { const u0 = -len / 2 + i * len / n, u1 = u0 + len / n; beam(B, Tf, face, ww, dd, u0, fy + .1, u1, fy + 1.0, .14, tim); }
+    }
+  }
+  // door: arched dark-wood door in a stone frame + lantern
+  box(B, T, 0, 0, d / 2 + .02, 1.9, 2.9, .14, shade(stone, .8)); box(B, T, 0, 0, d / 2 + .09, 1.45, 2.6, .1, door);
+  box(W, T, 1.25, 2.2, d / 2 + .25, .24, .32, .24, C('#ffd27a')); box(B, T, 1.25, 2.52, d / 2 + .25, .3, .08, .3, C('#2e2a2a'));
+  // windows: dark frames, cross mullions, flower boxes on the upper floors
+  const win = (lx, ly, face, ww, dd, fl) => { const out = face === 'f' ? dd / 2 : ww / 2, wW = 1.0, wH = 1.3;
+    const put = (bx, by, bz, sw, sh, sd, col, BB = B) => face === 'f' ? box(BB, T, bx, by, out + bz, sw, sh, sd, col) : face === 'r' ? box(BB, T, out + bz, by, -bx, sd, sh, sw, col) : box(BB, T, -out - bz, by, bx, sd, sh, sw, col);
+    put(lx, ly - .12, .03, wW + .28, wH + .28, .1, tim); put(lx, ly, .09, wW, wH, .05, glass, W); put(lx, ly + wH / 2 - .04, .12, wW, .07, .05, tim); put(lx, ly, .12, .07, wH, .05, tim);
+    if (fl > 0 && R() < .7) { put(lx, ly - .4, .25, wW + .2, .26, .32, C('#6a4428')); for (let k = 0; k < 4; k++) put(lx - .36 + k * .24, ly - .16, .28, .18, .16, .2, C(pick(['#e8507a', '#ff8fb0', '#f4d03f', '#ffffff', '#d23c3c']))); } };
+  for (let f = 0; f < floors; f++) { const ww = w + jet * 2 * f, dd = d + jet * 2 * f, wy = f * fh + 1.15;
+    const nF = Math.max(1, Math.floor(ww / 2.4)); for (let i = 0; i < nF; i++) { const lx = -ww / 2 + (i + .5) * ww / nF; if (f === 0 && Math.abs(lx) < 1.6) continue; win(lx, wy, 'f', ww, dd, f); }
+    const nS = Math.max(1, Math.floor(dd / 2.8)); for (let i = 0; i < nS; i++) { const lz = -dd / 2 + (i + .5) * dd / nS; win(lz, wy, 'r', ww, dd, f); win(-lz, wy, 'l', ww, dd, f); } }
+  // steep tiled roof (+ a dormer and a chimney)
+  const RW = w + jet * 2 * (floors - 1), RD = d + jet * 2 * (floors - 1), rh = RD * .62;
+  tiledGable(B, T, H, RW, RD, rh, .55, roofC);
+  if (R() < .65) { const dx = (R() - .5) * RW * .4, dz = RD * .18, dy = H + rh * .3; box(B, T, dx, dy, dz, 1.5, 1.4, 1.6, C('#f1ead8')); box(W, T, dx, dy + .35, dz + .82, .8, .8, .05, glass); box(B, T, dx, dy + .2, dz + .8, 1.0, .1, .1, tim);
+    gable(B, (a, b2, c2) => T(a, b2, c2), dx, dy + 1.4, dz, 1.5, 1.6, .8, .2, roofC, true); }
+  if (R() < st.chimney) box(B, T, RW / 4, H + rh * .35, -RD / 6, .7, rh * .8, .7, C('#9a8f86'), C('#4a4040'));
+  return { w: RW + .3, d: RD + .3, h: H + rh };
+}
+
 /* ---------- one building */
 function building(B, W, x, y, z, ry, st, R, opts = {}) {
+  if (st.mond) return mondBuilding(B, W, x, y, z, ry, st, R, opts);
   const pick = a => a[(R() * a.length) | 0], rng = (a, b) => a + R() * (b - a);
   const w = Math.min(opts.maxW || 99, opts.w || rng(st.w[0], st.w[1])), d = Math.min(opts.maxD || 99, opts.d || rng(st.d[0], st.d[1])), floors = opts.floors || pick(st.floors), fh = st === STYLES.tech ? 3.8 : 3.5; // generous storeys: the buildings read big next to a 2 m character, like in the games
   let roof = opts.roof || pick(st.roof); const wall = C(opts.wall || pick(st.walls)), roofC = C(opts.roofC || pick(st.roofs)), trim = C(st.trim), glass = C(st.glass), door = C(st.door);
@@ -227,7 +292,7 @@ export function wallSegment(B0, x0, z0, x1, z1, y, col = '#e2b07a', h = 3.2) { /
   box(B, T, 0, -.6, 0, L, h + .6, 1, C(col)); for (let k = -L / 2 + .5; k < L / 2; k += 1.4) box(B, T, k, h, 0, .7, .6, 1, shade(C(col), 1.05)); return B;
 }
 /** garden fences around the house lots, in the town's own style (front left open to the street). Returns { mesh, walls: [{x,z,hw,hd,rot}] } */
-const FENCE = { tropical: { kind: 'picket', c: '#ffffff', c2: '#f2e6d0', h: .9 }, wetland: { kind: 'rail', c: '#6b4a2e', c2: '#5b3d26', h: 1 }, stargaze: { kind: 'wall', c: '#b8bdd6', c2: '#9aa0bf', h: .8 },
+const FENCE = { tropical: { kind: 'picket', c: '#ffffff', c2: '#f2e6d0', h: .9 }, mond: { kind: 'wall', c: '#b9b2a6', c2: '#9a9286', h: .8 }, wetland: { kind: 'rail', c: '#6b4a2e', c2: '#5b3d26', h: 1 }, stargaze: { kind: 'wall', c: '#b8bdd6', c2: '#9aa0bf', h: .8 },
   winter: { kind: 'rail', c: '#7a4e32', c2: '#f6fbff', h: 1.05, snow: true }, desert: { kind: 'wall', c: '#e2b07a', c2: '#d9a066', h: .9 }, tech: { kind: 'hedge', c: '#4f8a3a', c2: '#3f7030', h: .8 } };
 export function yardFences(styleName, lots, cols) {
   const F = FENCE[styleName] || FENCE.tropical, B = new Builder(), walls = [], c = C(F.c), c2 = C(F.c2);

@@ -1,7 +1,8 @@
 // Pokebox — game shell: home, shop, binder, collection, market, battle, profile
 import * as C from './core.js';
+import * as SIDE from './side.js';
 import { DB, S, RARITY, RSHORT, RCOLOR, TCOLOR, fmt, esc, cardImg, setImg } from './core.js';
-import { sfx, setSound, music, setMusic } from './audio.js';
+import { sfx, setSound, music, setMusic, setVolumes } from './audio.js';
 import { createOpener, T_ZOOMED } from './opener.js';
 import { createVfx } from './vfx.js';
 import { startSpace } from './space.js';
@@ -14,7 +15,7 @@ import { openWorldMap } from './worldmap.js';
 import { runPrologue, startCoach } from './prologue.js';
 import { festivalToday, FESTIVALS } from './events.js';
 import { autoCheck, manualCheck } from './updater.js';
-import { createPreview, PETS, portrait } from './chars.js';
+import { createPreview, PETS, portrait, VRM_CAST } from './chars.js';
 import { panelBreak, areaCard, onomato, impactFrame, speedLines, TYPE_COL } from './comicfx.js';
 import { Battle, TRAINERS, fighter, enemyTeam, bestTeam, power, mult, SIG, MOVES, ENERGY_MAX, estimate } from './battle.js';
 
@@ -793,7 +794,7 @@ function playScene(lines, { title, cine, onLine } = {}) {
     const ownCine = cine && !document.body.classList.contains('cine-on'); if (ownCine) document.body.classList.add('cine-on'); // letterboxed scenes own the screen: HUD hides
     const who2 = who => who === 'you' ? { name: st().name, role: P.item('title', P.ensure().look.title).name, look: P.ensure().look } : P.CAST[who] || { name: who, role: '', look: null };
     const finish = () => { if (done) return; done = true; if (ownCine) document.body.classList.remove('cine-on'); clearInterval(typing); el.hidden = true; el.onclick = null; el.classList.remove('cine'); removeEventListener('keydown', key, true); res(); };
-    let voiceOf = ''; const type = (pEl, text) => { let k = 0; clearInterval(typing); sfx.tick(); typing = setInterval(() => { k += 2; pEl.textContent = text.slice(0, k); if (k % 6 === 0 && /\w/.test(text[k] || '')) sfx.talk?.(voiceOf, text[k]); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16); };
+    let voiceOf = ''; const type = (pEl, text) => { let k = 0; clearInterval(typing); sfx.tick(); const spd = st().settings.textSpeed ?? 2, vo = st().settings.voices !== false; typing = setInterval(() => { k += spd; pEl.textContent = text.slice(0, k); if (vo && k % 6 < spd && /\w/.test(text[k] || '')) sfx.talk?.(voiceOf, text[k]); if (k >= text.length) { clearInterval(typing); typing = null; } }, 16); };
     const show = () => {
       const [who, text] = lines[i], c = who2(who); voiceOf = who;
       onLine?.(who, i);
@@ -805,7 +806,7 @@ function playScene(lines, { title, cine, onLine } = {}) {
         type($('#scP'), text);
       } else {
         el.innerHTML = `<div class="scbox ${who === 'you' ? 'me' : ''}" style="--i:${i}">${title && i === 0 ? `<div class="sctitle">${esc(title)}</div>` : ''}
-          <div class="scav">${c.look ? P.avatarSVG(c.look, { size: 170 }) : ''}</div>
+          <div class="scav">${c.look ? av3(who === 'you' ? c.look : { ...c.look, vrm: VRM_CAST[who] }, 170) : ''}</div>
           <div class="sctext"><div class="scname"><b>${esc(c.name)}</b><small>${esc(c.role)}</small></div><p id="scP"></p><div class="scnext">${i < lines.length - 1 ? 'Click to continue ▸' : 'Click to close ✓'}</div></div></div>`;
         type($('#scP'), text);
       }
@@ -853,7 +854,7 @@ VIEWS.journey = () => {  // one story: the Veyra quest line (quests.js) — chap
         <h1 class="display">${done ? 'Echo Warden' : esc(ch.title)}</h1>
         <p>${done ? 'Veyra is safe — for now. The Rift stays open for rematches.' : `<b>Now:</b> ${esc(step?.text || '')}`}</p>
         <div class="row"><a class="btn gold glow" href="#world">▶ Go to objective</a><span class="jseals">${Array.from({ length: 9 }, (_, i) => `<i class="${i < q.seals.length ? 'on' : ''}" title="${esc(q.seals[i] || 'Seal')}">◆</i>`).join('')}</span></div></div>
-      <div class="jcast">${speakers.map(w => `<div class="jc">${P.avatarSVG(P.CAST[w].look, { size: 120 })}<small>${esc(P.CAST[w].name)}</small></div>`).join('')}</div>
+      <div class="jcast">${speakers.map(w => `<div class="jc">${av3({ ...P.CAST[w].look, vrm: VRM_CAST[w] }, 120)}<small>${esc(P.CAST[w].name)}</small></div>`).join('')}</div>
     </div>
     <div class="jgrid">
       <div class="tile jobj"><div class="eyebrow">This chapter</div>
@@ -864,6 +865,9 @@ VIEWS.journey = () => {  // one story: the Veyra quest line (quests.js) — chap
         <div class="sech" style="margin-top:14px"><div class="eyebrow">Weekly challenges</div><small class="muted">resets in ${resetIn(toMonday - now)}</small></div>${all.weekly.map(chal).join('')}
         <div class="stars"><b>★ ${s.stars}</b> challenge stars${next ? ` · next unlock at ★${next.u.n}: <b>${esc(next.name)}</b>` : ' · all star rewards unlocked'}</div></div>
     </div>
+    <div class="tile jside"><div class="sech"><div class="eyebrow">Side stories</div><small class="muted">${SIDE.doneCount()}/${SIDE.SIDE.length} complete</small></div>
+      ${SIDE.SIDE.map(sq => { const ss = SIDE.stateOf(sq.id), open = q.ch >= sq.minCh, cur = SIDE.current(sq), town = AREA[sq.town] || sq.town;
+        return `<div class="obj ${ss?.done ? 'ok' : cur ? 'cur' : ''}"><span class="ck">${ss?.done ? '✓' : cur ? '✦' : ''}</span><div><b>${open ? esc(sq.title) : '???'}</b><small class="muted">${!open ? 'Unlocks later in the story' : ss?.done ? 'Complete' : cur ? esc(cur.text) : `Talk to ${esc(sq.giver.name)} in ${esc(town)}`}</small></div></div>`; }).join('')}</div>
     <div class="tile jline"><div class="eyebrow">Chapters</div><div class="tl">${QS.STORY.map((c, i) => `<div class="tlc ${i < q.ch ? 'done' : i === q.ch ? 'now' : 'lock'}" style="--ac:${c.color}"><span>${i + 1}</span><b>${i <= q.ch ? esc(c.title) : '???'}</b><small>${REG[c.region] || ''}</small></div>`).join('')}</div></div>
   </section>`;
   $$('[data-claim]').forEach(b => b.onclick = () => { const c = P.claimChallenge(b.dataset.claim); if (c) { sfx.coin(); toast(`Challenge complete: <b>${esc(c.text)}</b> <span class="gold">+${c.coins}</span> ★${c.st}`); xp(15 + c.st * 5); afterProgress(); VIEWS.journey(); } });
@@ -875,6 +879,11 @@ function afterProgress() {
 }
 P.onProgress(() => setTimeout(afterProgress, 50));
 
+/* anime-model portraits anywhere in the UI: av3() prints the drawn avatar as a placeholder, an observer swaps in the 3D render */
+const AV3 = new Map(); let av3n = 0;
+function av3(look, size) { const id = 'a' + (++av3n % 5000); AV3.set(id, look); return `<span class="av3" data-lk="${id}" style="width:${size}px;height:${size}px">${P.avatarSVG(look, { size, bg: false })}</span>`; }
+let av3q = 0; new MutationObserver(() => { if (av3q) return; av3q = requestAnimationFrame(() => { av3q = 0;
+  for (const el of document.querySelectorAll('.av3[data-lk]')) { const lk = el.dataset.lk, look = AV3.get(lk); AV3.delete(lk); el.removeAttribute('data-lk'); if (look) liveAvatar(el, look, parseInt(el.style.width) || 96); } }); }).observe(document.body, { childList: true, subtree: true });
 /* your real 3D character as a little portrait (HUD, Lattice, menu); the drawn avatar shows until it is rendered */
 function liveAvatar(el, look, size) {
   if (!el) return; const k = JSON.stringify(look); if (el.dataset.pk === k && el.querySelector('img')) return; el.dataset.pk = k;
@@ -897,13 +906,22 @@ function worldTravel() {
 }
 /* starter choice (story step) */
 function chooseStarter() {
+  /* a short cut-scene: the lab goes dark, three blank-stock cards rise one by one out of the light, flip to reveal their Echo,
+     you pick one, the others fade and your partner's card flies to you */
   return new Promise(res => {
-    const cards = QS.starterCards(), m = $('#wModal'); m.hidden = false;
-    m.innerHTML = `<div class="wbox starter"><div class="eyebrow">Dr. Vale's three blank-stock cards</div><h3 class="display">Choose your partner</h3>
-      <div class="stgrid">${cards.map(c => `<button class="stc" data-st="${c.i}" type="button" style="--c:${TYPEC[c.t] || '#fff'}"><img src="${cardImg(c)}" alt=""><b>${esc(c.n)}</b><small>${esc(c.t)} type</small></button>`).join('')}</div>
-      <p class="muted small">Your partner walks with you and leads your team. You can catch many more in the tall grass.</p></div>`;
-    $$('[data-st]').forEach(b => b.onclick = () => { const i = +b.dataset.st, c = DB.cards[i]; C.addCard(c); const S = st(); S.team = [i, ...(S.team || []).filter(x => x !== i)].slice(0, 3);
-      const pets = ensurePets(); pets.card = i; pets.none = false; C.save(true); m.hidden = true; m.innerHTML = ''; sfx.win?.(); toast(`<b>${esc(c.n)}</b> is your partner!`); res(i); });
+    const cards = QS.starterCards(), m = $('#wModal'); m.hidden = false; m.classList.add('stcine');
+    m.innerHTML = `<div class="stc-scene"><div class="stc-bars t"></div><div class="stc-bars b"></div>
+      <div class="stc-line" id="stLine">Dr. Vale lays three blank-stock cards on the table…</div>
+      <div class="stc-row">${cards.map((c, k) => `<button class="stc2" data-st="${c.i}" type="button" style="--c:${TYPEC[c.t] || '#fff'};--d:${.6 + k * .55}s">
+        <span class="stc-glow"></span><span class="stc-card"><i class="back"></i><img src="${cardImg(c)}" alt=""></span><b>${esc(c.n)}</b><small>${esc(c.t)} type · HP ${c.hp || '?'}</small></button>`).join('')}</div>
+      <p class="stc-hint" id="stHint">Tap a card to choose your partner</p></div>`;
+    sfx.whoosh?.(.3); cards.forEach((c, k) => setTimeout(() => sfx.tick?.(), 600 + k * 550));
+    setTimeout(() => { const l = $('#stLine'); if (l) l.textContent = `"Every one of them holds an Echo that has been waiting for a Ranger. Choose with your heart."`; }, 2400);
+    let chosen = false;
+    $$('[data-st]').forEach(b => b.onclick = () => { if (chosen) return; chosen = true; const i = +b.dataset.st, c = DB.cards[i];
+      b.classList.add('pick'); m.querySelectorAll('.stc2').forEach(o => o !== b && o.classList.add('gone')); sfx.win?.(); $('#stLine').textContent = `${c.n} chose you too.`; $('#stHint').textContent = '';
+      setTimeout(() => { C.addCard(c); const S = st(); S.team = [i, ...(S.team || []).filter(x => x !== i)].slice(0, 3);
+        const pets = ensurePets(); pets.card = i; pets.none = false; C.save(true); m.hidden = true; m.innerHTML = ''; m.classList.remove('stcine'); toast(`<b>${esc(c.n)}</b> is your partner!`); res(i); }, 1900); });
   });
 }
 /* objective HUD: chapter, current step, distance + arrow to the target */
@@ -950,7 +968,7 @@ function ensureWorld() {
   if (world) return world;
   world = createWorld($('#worldCanvas'), {
     quality: () => gfx().q, renderScale: () => gfx().scale, comic: () => st().settings.comic !== false, style: () => st().settings.style || 'toon', setQuality: q => { st().settings.gfx = q; C.save(); if (!$('#gMenu').hidden) renderMenu(); },
-    shadows: () => st().settings.shadows !== false, fov: () => gfx().fov, sensitivity: () => gfx().sens, invertY: () => gfx().inv,
+    shadows: () => st().settings.shadows !== false, viewDist: () => st().settings.viewDist ?? 1, grassAmt: () => st().settings.grassAmt ?? 1, bloom: () => st().settings.bloom !== false, shaderFx: () => st().settings.shaderFx ?? (PHONE_UI ? 1 : 2), fpsCap: () => st().settings.fpsCap || 0, shake: () => st().settings.shake !== false, fov: () => gfx().fov, sensitivity: () => gfx().sens, invertY: () => gfx().inv,
     minimap: () => $('#wMini'), fps: n => { const f = $('#wFps'); if (f) f.textContent = n + ' fps'; },
     loading: (on, name) => { const l = $('#wLoad'); l.hidden = !on; if (on) $('#wLoadT').textContent = name; },
     partner: partnerInfo,
@@ -972,8 +990,8 @@ function ensureWorld() {
       playScene([['vale', 'You beat the whole Rift League. Your team goes into the Hall of Fame of Veyra — the first Ranger ever.'], ['rho', 'Champion of the Rift. I am NOT jealous. Okay, a little.']], { title: 'Hall of Fame', cine: true }).then(() => toast('🏆 <b>Hall of Fame!</b> <span class="gold">+5,000 coins</span> · rare legends now roam Veyra more often')); },
     reveal: o => vsCard(o), arrival: (id, a) => { sfx.rare?.(1); },
     onChapter: (ch, idx) => { whenFree(() => chapterCard(idx + 1)); xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
-    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; if (!html) return;
-      if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); navigator.vibrate?.(8); }; }
+    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; document.querySelector('.tb.use')?.classList.toggle('has', !!html); if (!html) return;
+      if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); (st().settings.haptics !== false) && navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
     region: (id, night) => { musRegion = [id, night]; if (!battleMusic && st().settings.music !== false) music.world(id, night); },
     music: k => { battleMusic = !!k; if (st().settings.music !== false) music.world(k || musRegion[0], k ? false : musRegion[1]); },
@@ -987,7 +1005,7 @@ function ensureWorld() {
     st2.onpointerdown = e => { sid = e.pointerId; st2.setPointerCapture(sid); const b = st2.getBoundingClientRect(); c0 = { x: b.left + b.width / 2, y: b.top + b.height / 2 }; setK(e.clientX - c0.x, e.clientY - c0.y); st2.classList.add('on'); };
     st2.onpointermove = e => { if (e.pointerId === sid) setK(e.clientX - c0.x, e.clientY - c0.y); };
     st2.onpointerup = st2.onpointercancel = e => { if (e.pointerId !== sid) return; sid = null; knob.style.transform = ''; world.setStick(0, 0); st2.classList.remove('on'); };
-    $$('#wTouch [data-k]').forEach(b => { const k = b.dataset.k; b.onpointerdown = e => { e.preventDefault(); b.classList.add('on'); world.key(k, true); navigator.vibrate?.(8); }; b.onpointerup = b.onpointercancel = b.onpointerleave = () => { if (b.classList.contains('on')) { b.classList.remove('on'); world.key(k, false); } }; });
+    $$('#wTouch [data-k]').forEach(b => { const k = b.dataset.k; b.onpointerdown = e => { e.preventDefault(); b.classList.add('on'); world.key(k, true); (st().settings.haptics !== false) && navigator.vibrate?.(8); }; b.onpointerup = b.onpointercancel = b.onpointerleave = () => { if (b.classList.contains('on')) { b.classList.remove('on'); world.key(k, false); } }; });
     const run = $('#wTouch [data-run]'); run.onclick = () => { run.classList.toggle('on'); world.setRun(run.classList.contains('on')); };
   }
   return world;
@@ -1066,7 +1084,7 @@ async function firstSteps(W) {
 /* ------------------------------------------------------------------ Lattice device: the Ranger's card device, the hub between Veyra and the card game */
 const LAT_APPS = [ // the same five places as the main menu, plus the map and settings
   { k: 'resume', ic: '🌍', t: 'Veyra', s: 'Back to the world' },
-  { k: 'map', ic: '🗺️', t: 'Map & Travel', s: 'Relay Ferry' },
+  { k: 'map', ic: '🗺️', t: 'Map & Travel', s: 'Relay Express' },
   { k: '#journey', ic: '📜', t: 'Journey', s: 'Story · challenges · ranking' },
   { k: '#collection', ic: '🃏', t: 'Cards', s: 'Cards · binder · team · market' },
   { k: '#shop', ic: '🎁', t: 'Shop', s: 'Card packs & clothes' },
@@ -1081,7 +1099,7 @@ function openLattice() {
   L.innerHTML = `<div class="latbox" role="dialog" aria-label="Lattice device">
     <aside class="latme">
       <div class="lathead"><span class="latlogo">◆</span><div><b>LATTICE</b><small>Ranger device · Echo storage</small></div></div>
-      <div class="latcard">${P.avatarSVG(s.look, { size: 92 })}<div><b>${esc(s.name)}</b><small>Level ${Lv.lv} · ${fmt(st().coins)} coins</small>${rankChip()}
+      <div class="latcard">${av3(s.look, 92)}<div><b>${esc(s.name)}</b><small>Level ${Lv.lv} · ${fmt(st().coins)} coins</small>${rankChip()}
         <span class="xpbar"><i style="width:${(Lv.pct * 100).toFixed(1)}%"></i></span><span class="latseals">${q ? Array.from({ length: 9 }, (_, i) => `<i class="${i < q.seals.length ? 'on' : ''}">◆</i>`).join('') : ''}</span></div></div>
       ${stp ? `<div class="latobj"><small>Chapter ${q.ch + 1} · ${esc(ch.title)}</small><b>${esc(stp.text)}</b></div>` : ''}
       <div class="latteam"><small>Team</small><div>${team.map(i => `<img src="${cardImg(DB.cards[i])}" alt="${esc(DB.cards[i].n)}" title="${esc(DB.cards[i].n)}">`).join('') || '<em>No partners yet</em>'}</div>${cc ? `<small>Walking with <b>${esc(cc.n)}</b></small>` : ''}</div>
@@ -1107,7 +1125,27 @@ window.__openLattice = openLattice;
 
 /* ------------------------------------------------------------------ Game menu (Esc) — pause, pets, settings, controls, fullscreen */
 let menuTab = 'resume';
-function toggleFullscreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {}); }
+/* fullscreen is a setting: it stays on until you switch to Windowed in Settings. Esc is captured with the Keyboard Lock API
+   (Chrome/Edge: a short Esc reaches the game — opens the menu — instead of leaving fullscreen; holding Esc still exits). */
+const PHONE_UI = matchMedia('(pointer: coarse)').matches;
+function enterFullscreen() { if (document.fullscreenElement) return; document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).then(() => navigator.keyboard?.lock?.(['Escape']).catch(() => {})).catch(() => {}); }
+function setFullscreen(on) { C.S.settings.fullscreen = !!on; C.save(); if (on) enterFullscreen(); else if (document.fullscreenElement) { navigator.keyboard?.unlock?.(); document.exitFullscreen().catch(() => {}); } }
+function toggleFullscreen() { setFullscreen(!document.fullscreenElement); }
+/* apply one setting (or all of them at boot) */
+function applySettings(k) {
+  const S2 = st().settings, all = !k, is = (...ks) => all || ks.includes(k);
+  if (!all && ['rscale', 'viewDist', 'grassAmt', 'shadows', 'bloom', 'comic', 'shaderFx'].includes(k)) world?.setQuality();
+  if (!all && k === 'autoGfx') world?.setAutoQuality(S2.autoGfx);
+  if (is('volMaster', 'volMusic', 'volSfx')) setVolumes({ master: S2.volMaster ?? 1, music: S2.volMusic ?? 1, sfx: S2.volSfx ?? 1 });
+  if (!all && k === 'sound') { setSound(S2.sound); $('#sndBtn')?.classList.toggle('off', !S2.sound); }
+  if (is('uiScale')) document.documentElement.style.setProperty('--uis', String(S2.uiScale ?? (PHONE_UI ? 1.1 : 1)));
+  if (is('stickSize')) document.documentElement.style.setProperty('--stick', String(S2.stickSize ?? 1));
+  if (is('wfps')) { const f = $('#wFps'); if (f) f.hidden = !S2.wfps; }
+}
+document.addEventListener('fullscreenchange', () => { if (document.fullscreenElement) navigator.keyboard?.lock?.(['Escape']).catch(() => {}); });
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (C.S.settings?.fullscreen && !document.fullscreenElement && !PHONE_UI) enterFullscreen(); }, true);
+/* no browser context menu (right click → Inspect…) anywhere in the game, except in text fields */
+document.addEventListener('contextmenu', e => { if (!e.target.closest?.('input,textarea,[contenteditable]')) e.preventDefault(); });
 function openMenu(tab) {
   const m = $('#gMenu'); menuTab = tab || (document.body.classList.contains('game') ? 'resume' : 'settings');
   world?.setPaused(document.body.classList.contains('game')); m.hidden = false; renderMenu(); sfx.click();
@@ -1126,24 +1164,41 @@ function renderMenu() {
       <div class="petgrid cards">${list.map(c => `<button class="petc ${cur?.i === c.i ? 'on' : ''}" data-pcard="${c.i}" type="button" style="--c:${TYPEC[c.t] || '#fff'}"><img src="${cardImg(c)}" alt="" loading="lazy"><b>${esc(c.n)}</b><small>${esc(c.t)}${team.has(c.i) ? ' · team' : ''}</small></button>`).join('') || '<p class="muted">No Pokémon cards yet — open packs first.</p>'}</div>
       <button class="btn ghost sm" id="petNone" type="button">${pets.none ? 'Walk with my partner again' : 'Walk alone'}</button>`;
   } else if (menuTab === 'settings') {
-    body = `<h3 class="display">Settings</h3>
-      <div class="setrow"><span>Graphics quality</span><div class="seg">${['low', 'medium', 'high'].map(q => `<button type="button" class="${g.q === q ? 'on' : ''}" data-gfx="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div></div>
-      <p class="muted small">Low: no post-effects or shadows (weak laptops). Medium: shadows, bloom, anti-aliasing. High: + ambient occlusion, 2K shadows, sharper resolution.</p>
-      <label class="setrow"><span>Render scale <b id="mScaleV">${Math.round(g.scale * 100)}%</b> <small class="muted">${WEAK_GPU ? '(integrated graphics detected)' : ''}</small></span><input type="range" id="mScale" min="50" max="100" step="5" value="${Math.round(g.scale * 100)}"></label>
-      <label class="setrow"><span>Auto-lower quality when the frame rate drops</span><input type="checkbox" id="mAuto" ${g.auto ? 'checked' : ''}></label>
-      <label class="setrow"><span>Graphic-novel style (ink, cel bands, hatching)</span><input type="checkbox" id="mComic" ${S2.comic !== false ? 'checked' : ''}></label>
-      <label class="setrow"><span>Real-time shadows</span><input type="checkbox" id="mShadow" ${S2.shadows !== false ? 'checked' : ''}></label>
-      <label class="setrow"><span>Field of view <b id="mFovV">${g.fov}°</b></span><input type="range" id="mFov" min="45" max="85" value="${g.fov}"></label>
-      <label class="setrow"><span>Camera sensitivity <b id="mSensV">${g.sens.toFixed(1)}×</b></span><input type="range" id="mSens" min="3" max="25" value="${Math.round(g.sens * 10)}"></label>
-      <label class="setrow"><span>Invert camera Y</span><input type="checkbox" id="mInv" ${g.inv ? 'checked' : ''}></label>
-      <label class="setrow"><span>Sound effects</span><input type="checkbox" id="mSnd" ${S2.sound ? 'checked' : ''}></label>
-      <label class="setrow"><span>Show FPS counter</span><input type="checkbox" id="mFpsC" ${S2.wfps ? 'checked' : ''}></label>
-      <div class="setrow"><span>Game version <b>${esc(window.__pbxVersion || '—')}</b></span><button class="btn ghost sm" id="mUpd" type="button">Check for updates</button></div>`;
+    const sec = S2.setSec || 'gfx', seg = (id, val, opts) => `<div class="seg">${opts.map(([v, l]) => `<button type="button" class="${String(val) === String(v) ? 'on' : ''}" data-set="${id}" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const row = (label, ctl, note = '') => `<div class="setrow"><span>${label}${note ? `<small class="muted"> ${note}</small>` : ''}</span>${ctl}</div>`;
+    const chk = (id, on) => `<input type="checkbox" data-chk="${id}" ${on ? 'checked' : ''}>`;
+    const rng2 = (id, v, min, max, step, fmtv) => `<span class="rng"><input type="range" data-rng="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><b>${fmtv}</b></span>`;
+    const secs = [['gfx', 'Graphics'], ['audio', 'Audio'], ['display', 'Display'], ['ctl', 'Controls'], ['about', 'About']];
+    let inner = '';
+    if (sec === 'gfx') inner = row('Quality preset', `<div class="seg">${['low', 'medium', 'high'].map(q => `<button type="button" class="${g.q === q ? 'on' : ''}" data-gfx="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>`)
+      + `<p class="muted small">Low: no post-effects or shadows. Medium: shadows, bloom. High: + ambient occlusion, 2K shadows, sharpest image.</p>`
+      + row('Render scale', rng2('rscale', Math.round(g.scale * 100), 50, 100, 5, Math.round(g.scale * 100) + '%'), WEAK_GPU ? '(integrated graphics)' : '')
+      + row('View distance', seg('viewDist', S2.viewDist ?? 1, [[.75, 'Near'], [1, 'Normal'], [1.3, 'Far']]))
+      + row('Grass density', seg('grassAmt', S2.grassAmt ?? 1, [[.5, 'Low'], [1, 'Normal'], [1.3, 'Lush']]))
+      + row('Shader look', seg('shaderFx', S2.shaderFx ?? (PHONE_UI ? 1 : 2), [[0, 'Off'], [1, 'Soft'], [2, 'Cinematic']]), 'depth of field, haze, sun rays')
+      + row('Real-time shadows', chk('shadows', S2.shadows !== false)) + row('Bloom / glow', chk('bloom', S2.bloom !== false))
+      + row('Graphic-novel style (ink, cel bands)', chk('comic', S2.comic !== false))
+      + row('Frame-rate limit', seg('fpsCap', S2.fpsCap || 0, [[30, '30'], [60, '60'], [0, 'Max']]), PHONE_UI ? '30 saves battery and heat' : '')
+      + row('Auto-lower quality when the frame rate drops', chk('autoGfx', g.auto));
+    else if (sec === 'audio') inner = row('Master volume', rng2('volMaster', Math.round((S2.volMaster ?? 1) * 100), 0, 100, 5, Math.round((S2.volMaster ?? 1) * 100) + '%'))
+      + row('Music', rng2('volMusic', Math.round((S2.volMusic ?? 1) * 100), 0, 100, 5, Math.round((S2.volMusic ?? 1) * 100) + '%'))
+      + row('Sound effects', rng2('volSfx', Math.round((S2.volSfx ?? 1) * 100), 0, 100, 5, Math.round((S2.volSfx ?? 1) * 100) + '%'))
+      + row('Sound on', chk('sound', S2.sound)) + row('Character voices (dialogue blips)', chk('voices', S2.voices !== false))
+      + `<p class="muted small">Sound pauses by itself when the game is in the background.</p>`;
+    else if (sec === 'display') inner = (PHONE_UI ? '' : row('Display mode', seg('dispMode', S2.fullscreen ? 'fs' : 'win', [['fs', 'Fullscreen'], ['win', 'Windowed']]), 'Esc opens the menu, it does not leave fullscreen'))
+      + row('Text & menu size', seg('uiScale', S2.uiScale ?? (PHONE_UI ? 1.1 : 1), [[.9, 'S'], [1, 'M'], [1.15, 'L'], [1.3, 'XL']]))
+      + row('Dialogue text speed', seg('textSpeed', S2.textSpeed ?? 2, [[1, 'Slow'], [2, 'Normal'], [4, 'Fast'], [999, 'Instant']]))
+      + row('Field of view', rng2('fov', g.fov, 45, 85, 1, g.fov + '°')) + row('Camera shake', chk('shake', S2.shake !== false))
+      + row('Show FPS counter', chk('wfps', S2.wfps));
+    else if (sec === 'ctl') inner = row('Camera sensitivity', rng2('sens', Math.round(g.sens * 10), 3, 25, 1, g.sens.toFixed(1) + '×')) + row('Invert camera Y', chk('invertY', g.inv))
+      + (PHONE_UI ? row('Joystick size', seg('stickSize', S2.stickSize ?? 1, [[.85, 'S'], [1, 'M'], [1.2, 'L']])) + row('Vibration', chk('haptics', S2.haptics !== false)) : '');
+    else inner = row(`Game version <b>${esc(window.__pbxVersion || '—')}</b>`, '<button class="btn ghost sm" id="mUpd" type="button">Check for updates</button>');
+    body = `<h3 class="display">Settings</h3><div class="setsec">${secs.map(([k, v]) => `<button type="button" class="${sec === k ? 'on' : ''}" data-sec="${k}">${v}</button>`).join('')}</div>${inner}`;
   } else if (menuTab === 'controls') {
     body = `<h3 class="display">Controls</h3><div class="keys">${[['W A S D / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump'], ['Q / Ctrl', 'Dodge roll'], ['E / Enter', 'Talk, read, battle'], ['Mouse drag', 'Turn camera'], ['Mouse wheel', 'Zoom'], ['Left click ground', 'Walk there'], ['M / Tab', 'Map & travel'], ['F', 'Fullscreen'], ['Esc', 'Menu / pause'], ['F8', 'Performance meter']].map(([k, v]) => `<div><kbd>${k}</kbd><span>${v}</span></div>`).join('')}</div>`;
   } else {
     const s = P.ensure(), L = C.levelInfo();
-    body = `<h3 class="display">${inWorld ? 'Paused' : 'Menu'}</h3><div class="mcard">${P.avatarSVG(s.look, { size: 84 })}<div><b>${esc(s.name)}</b><small>Level ${L.lv} · ${fmt(st().coins)} coins · ★${s.stars}</small><small>${inWorld ? esc(AREAS[world?.area]?.name || '') : ''}</small></div></div>
+    body = `<h3 class="display">${inWorld ? 'Paused' : 'Menu'}</h3><div class="mcard">${av3(s.look, 84)}<div><b>${esc(s.name)}</b><small>Level ${L.lv} · ${fmt(st().coins)} coins · ★${s.stars}</small><small>${inWorld ? esc(AREAS[world?.area]?.name || '') : ''}</small></div></div>
       <div class="mquick"><a class="btn ghost" href="#journey">📜 Journey</a><a class="btn ghost" href="#shop">🛍 Shop</a><a class="btn ghost" href="#battle">⚔ Battle</a><a class="btn ghost" href="#profile">👤 Trainer</a></div>`;
   }
   m.innerHTML = `<div class="gm"><nav>${tabs.map(([k, v]) => `<button type="button" class="gtab ${menuTab === k ? 'on' : ''}" data-mt="${k}">${v}</button>`).join('')}<small class="muted">Esc to ${inWorld ? 'resume' : 'close'}</small></nav><section>${body}</section></div>`;
@@ -1163,14 +1218,16 @@ function renderMenu() {
   $$('#gMenu [data-gfx]').forEach(b => b.onclick = () => { S2.gfx = b.dataset.gfx; C.save(); world?.setQuality(); renderMenu(); });
   const on = (id, fn) => { const el = $(id); if (el) el.oninput = el.onchange = () => { fn(el); C.save(); }; };
   const sc = $('#mScale'); if (sc) { sc.oninput = () => { $('#mScaleV').textContent = sc.value + '%'; }; sc.onchange = () => { S2.rscale = +sc.value / 100; C.save(); world?.setQuality(); }; }
-  on('#mAuto', el => { S2.autoGfx = el.checked; world?.setAutoQuality(el.checked); });
-  on('#mComic', el => { S2.comic = el.checked; world?.setQuality(); });
-  on('#mShadow', el => { S2.shadows = el.checked; world?.setQuality(); });
-  on('#mFov', el => { S2.fov = +el.value; $('#mFovV').textContent = el.value + '°'; });
-  on('#mSens', el => { S2.sens = +el.value / 10; $('#mSensV').textContent = (+el.value / 10).toFixed(1) + '×'; });
-  on('#mInv', el => { S2.invertY = el.checked; });
-  on('#mSnd', el => { S2.sound = el.checked; setSound(el.checked); });
-  on('#mFpsC', el => { S2.wfps = el.checked; $('#wFps').hidden = !el.checked; });
+  $$('#gMenu [data-sec]').forEach(b => b.onclick = () => { S2.setSec = b.dataset.sec; sfx.click(); renderMenu(); });
+  const applySet = (k, v) => { S2[k] = v; C.save(); applySettings(k); };
+  $$('#gMenu [data-set]').forEach(b => b.onclick = () => { const k = b.dataset.set, raw = b.dataset.v, v = isNaN(+raw) ? raw : +raw; sfx.click();
+    if (k === 'dispMode') setFullscreen(v === 'fs'); else applySet(k, v); setTimeout(renderMenu, k === 'dispMode' ? 250 : 0); });
+  $$('#gMenu [data-chk]').forEach(el => el.onchange = () => applySet(el.dataset.chk, el.checked));
+  $$('#gMenu [data-rng]').forEach(el => { const k = el.dataset.rng, out = el.parentElement.querySelector('b');
+    const val = () => k === 'rscale' || k.startsWith('vol') ? +el.value / 100 : k === 'sens' ? +el.value / 10 : +el.value;
+    const label = () => k === 'fov' ? el.value + '°' : k === 'sens' ? (+el.value / 10).toFixed(1) + '×' : el.value + '%';
+    el.oninput = () => { out.textContent = label(); if (k.startsWith('vol') || k === 'fov' || k === 'sens') applySet(k, val()); };
+    el.onchange = () => applySet(k, val()); });
   const mu = $('#mUpd'); if (mu) mu.onclick = () => { closeMenu(); manualCheck(m => toast(m)); };
 }
 window.__androidBack = () => { dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' })); };
@@ -1193,7 +1250,7 @@ let lookSlot = 'hair';
 function trainerCardHTML() {
   const s = P.ensure(), L = C.levelInfo(), fr = P.item('frame', s.look.frame), ti = P.item('title', s.look.title);
   return `<div class="tcard" style="--fr:${fr.bg}"><div class="tcin">
-    <div class="tcav">${P.avatarSVG(s.look, { size: 190 })}</div>
+    <div class="tcav">${av3(s.look, 190)}</div>
     <div class="tcinfo"><div class="eyebrow">${esc(ti.name)}</div><input class="tcname" id="tName" maxlength="16" value="${esc(s.name)}" aria-label="Trainer name">
       <div class="tclv"><span class="lvl">${L.lv}</span><div class="xpbar"><i style="width:${(L.pct * 100).toFixed(1)}%"></i></div></div>
       <div class="tcst"><div><b>${s.packs}</b><small>packs</small></div><div><b>${s.battle.wins}</b><small>wins</small></div><div><b>${fmt(C.uniqueCount())}</b><small>cards</small></div><div><b>★${s.stars}</b><small>stars</small></div><div><b>${Math.min(s.story.ch, 7)}/7</b><small>chapters</small></div></div></div>
@@ -1282,7 +1339,7 @@ $('#wMap').onclick = () => worldTravel();
 /* hover ticks + hud buttons */
 document.addEventListener('pointerover', e => { const b = e.target.closest?.('.btn,.rail a,.fchip,.mode'); if (b && b !== document.__lastHover) { document.__lastHover = b; sfx.tick?.(); } });
 $('#sndBtn').onclick = () => { st().settings.sound = !st().settings.sound; setSound(st().settings.sound); if (!st().settings.sound) music.world(null); else if (document.body.classList.contains('game')) music.world(...musRegion); $('#sndBtn').classList.toggle('off', !st().settings.sound); C.save(); };
-$('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => {}); };
+$('#fsBtn').onclick = () => toggleFullscreen();
 
 /* ------------------------------------------------------------------ boot */
 (async () => {
@@ -1291,7 +1348,7 @@ $('#fsBtn').onclick = () => { document.fullscreenElement ? document.exitFullscre
   catch (e) { clearInterval(ft); msg.innerHTML = 'Could not load the card database.<br>Start the game with <b>Pokebox.exe</b> (or start.bat).'; return; }
   msg.textContent = 'Checking HD cards…'; await C.detectHD();
   clearInterval(ft); bar.style.width = '100%'; msg.textContent = `${fmt(DB.cards.length)} cards · ${DB.sets.length} sets${DB.hd ? ' · HD' : ''}`;
-  setSound(st().settings.sound); setMusic(st().settings.music !== false); $('#sndBtn').classList.toggle('off', !st().settings.sound);
+  setSound(st().settings.sound); setMusic(st().settings.music !== false); applySettings(); $('#sndBtn').classList.toggle('off', !st().settings.sound);
   C.snapshotValue(); P.ensure(); P.newlyUnlocked(); lastReady = P.readyCount(); route(); achievements();
   const start = () => { $('#splash').classList.add('out'); sfx.burst(); const d = C.dailyState(); if (d.ready) setTimeout(() => toast('🎁 Your daily reward is ready — <a href="#home" class="gold">Home ▸</a>'), 700); if (!P.ensure().story.done[1] && !location.hash.startsWith('#journey')) setTimeout(() => toast('📜 Your Journey in Veyra begins — <a href="#journey" class="gold">open Journey ▸</a>'), 1600); };
   const qp = new URLSearchParams(location.search);

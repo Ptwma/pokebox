@@ -21,21 +21,42 @@ function chunk({ cx, cz, size, segs }) {
   }
   return { pos, col, nor, grass, bio, road, town, mnt };
 }
+/* map palette: flat, painted biome colours (no ground noise) so the map reads like an illustrated atlas */
+const MAPC = { meadow: [.56, .77, .42], marsh: [.45, .65, .54], cliffs: [.62, .72, .52], snow: [.9, .93, .96], plateau: [.79, .69, .48], dunes: [.9, .81, .56], volcanic: [.45, .37, .35] };
+const ROCK = [.6, .56, .5], SNOWCAP = [.97, .97, 1], PLAZA = [.93, .87, .74];
+const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 function grid({ n }) { // island-wide height + grass grid (RG float) for grass blades, water depth and the map
-  const out = new Float32Array(n * n * 2), m = n >> 1, map = new Uint8ClampedArray(m * m * 4);
+  const out = new Float32Array(n * n * 2), m = n, map = new Uint8ClampedArray(m * m * 4), base = new Float32Array(m * m * 3);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1) - .5) * WORLD, z = (j / (n - 1) - .5) * WORLD, s = sample(x, z); out[(j * n + i) * 2] = s.y; out[(j * n + i) * 2 + 1] = s.grass;
-      if (!(i & 1) && !(j & 1) && (i >> 1) < m && (j >> 1) < m) {
-        const k = ((j >> 1) * m + (i >> 1)) * 4;
-        let c; if (s.y < 0) { const d = Math.min(1, -s.y / 4); c = [.25 - d * .12, .55 - d * .2, .72 - d * .12]; } else c = colorAt(x, z, s, s.mountain * .6);
-        map[k] = Math.pow(c[0], 1 / 1.25) * 255; map[k + 1] = Math.pow(c[1], 1 / 1.25) * 255; map[k + 2] = Math.pow(c[2], 1 / 1.25) * 255; map[k + 3] = 255;
+      const x = (i / (n - 1) - .5) * WORLD, z = (j / (n - 1) - .5) * WORLD, s = sample(x, z), k = j * n + i; out[k * 2] = s.y; out[k * 2 + 1] = s.grass;
+      let c;
+      if (s.y < 0) { const d = Math.min(1, -s.y / 4.4); c = mix3([.42, .8, .84], [.15, .42, .7], Math.pow(d, .7)); }
+      else {
+        c = [0, 0, 0]; let tw = 0; for (const id in s.w) { const wt = s.w[id], pc = MAPC[BIO_OF[id]]; if (!pc || wt < .003) continue; c[0] += pc[0] * wt; c[1] += pc[1] * wt; c[2] += pc[2] * wt; tw += wt; }
+        if (tw > 0) c = c.map(v => v / tw); else c = MAPC.meadow;
+        if (s.y < 1.2 && s.land < 1) c = mix3(c, [.93, .87, .66], .7);                           // beaches
+        c = mix3(c, ROCK, Math.min(1, s.mountain * 1.3) * .75);
+        c = mix3(c, SNOWCAP, Math.max(0, Math.min(1, (s.y - 26) / 10)) * Math.min(1, s.mountain * 2));
+        c = mix3(c, PLAZA, s.town * .55);
       }
+      base[k * 3] = c[0]; base[k * 3 + 1] = c[1]; base[k * 3 + 2] = c[2];
     }
     if (j % 64 === 0) postMessage({ progress: j / n });
   }
-  // hillshade the map from the height grid
-  for (let j = 1; j < m; j++) for (let i = 1; i < m; i++) { const a = out[((j * 2) * n + i * 2) * 2], b = out[(((j - 1) * 2) * n + (i - 1) * 2) * 2]; if (a < 0) continue; const sh = Math.max(.6, Math.min(1.35, 1 + (a - b) * .06)); const k = (j * m + i) * 4; map[k] *= sh; map[k + 1] *= sh; map[k + 2] *= sh; }
+  // shading pass: NW hillshade from real normals, soft contour lines every 8 m, a dark coastline and a light surf ring
+  const hy = (i, j) => out[(Math.max(0, Math.min(n - 1, j)) * n + Math.max(0, Math.min(n - 1, i))) * 2], cell = WORLD / (n - 1);
+  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
+    const k = j * m + i, y = hy(i, j); let r = base[k * 3], g = base[k * 3 + 1], b = base[k * 3 + 2];
+    if (y >= 0) {
+      const dx = (hy(i + 1, j) - hy(i - 1, j)) / (2 * cell), dz = (hy(i, j + 1) - hy(i, j - 1)) / (2 * cell);
+      const nl = Math.hypot(dx, 1, dz), dot = (dx * .5 + .7 + dz * .5) / nl, sh = Math.max(.6, Math.min(1.3, 1 + (dot - .7) * 1.6));
+      r *= sh; g *= sh; b *= sh;
+      if (Math.floor(y / 8) !== Math.floor(hy(i + 1, j) / 8) || Math.floor(y / 8) !== Math.floor(hy(i, j + 1) / 8)) { r *= .88; g *= .86; b *= .84; }
+      if (hy(i + 1, j) < 0 || hy(i - 1, j) < 0 || hy(i, j + 1) < 0 || hy(i, j - 1) < 0) { r *= .62; g *= .6; b *= .58; }   // coastline ink
+    } else if (y > -1.1) { r = r * .45 + .55; g = g * .45 + .55; b = b * .45 + .55; }                                        // surf
+    map[k * 4] = Math.pow(Math.min(1, r), 1 / 1.1) * 255; map[k * 4 + 1] = Math.pow(Math.min(1, g), 1 / 1.1) * 255; map[k * 4 + 2] = Math.pow(Math.min(1, b), 1 / 1.1) * 255; map[k * 4 + 3] = 255;
+  }
   return { grid: out, n, map, m };
 }
 onmessage = e => {

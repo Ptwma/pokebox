@@ -178,7 +178,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         immersive();
-        if (web != null) { web.onResume(); web.resumeTimers(); }
+        if (web != null) { web.onResume(); web.resumeTimers(); web.evaluateJavascript("try{window.dispatchEvent(new Event('pageshow'))}catch(e){}", null); }
     }
 
     @Override

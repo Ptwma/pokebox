@@ -1,6 +1,6 @@
 // Pokebox — the full-screen map of Veyra (phone first).
 // One canvas, drawn crisply at the device pixel ratio: drag to pan, pinch / wheel / buttons to zoom, tap a town for its card
-// (fast travel when its Relay Ferry stop is open). Shows where you are and which way you face, the current objective with a
+// (fast travel when its Relay Express station is open). Shows where you are and which way you face, the current objective with a
 // dashed guide line, every route with its name, and which areas are ahead of your story (dangerous Echoes).
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TYPEC = { Grass: '#5fae4f', Fire: '#ff6a3c', Water: '#3d9fff', Lightning: '#ffd23c', Psychic: '#d86bff', Fighting: '#d8844a', Darkness: '#8a6ae8', Metal: '#b8c6d4', Dragon: '#e0b040', Colorless: '#f0ece0' };
@@ -13,15 +13,16 @@ export function openWorldMap(host, opts) {
   const { W, q, req = {}, target, onTravel, onClose } = opts;
   const size = W.size || 1150, ids = Object.keys(W.regions), here = W.area;
   // the terrain map, colour-graded once (a canvas filter every frame is slow on phones and glitches on some GPUs)
-  const map = (() => { const src = W.mapCanvas; if (!src) return null; const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; const x = c.getContext('2d');
-    try { x.filter = 'saturate(1.15) contrast(1.08)'; } catch {} x.drawImage(src, 0, 0); return c; })();
+  // the painted terrain atlas, upscaled once with smoothing (drawing a small canvas big every frame looks blocky)
+  const map = (() => { const src = W.mapCanvas; if (!src) return null; const k = src.width < 1200 ? 2 : 1, c = document.createElement('canvas'); c.width = src.width * k; c.height = src.height * k; const x = c.getContext('2d');
+    x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; try { x.filter = 'blur(1px)'; } catch {} x.drawImage(src, 0, 0, c.width, c.height); return c; })();
   host.hidden = false; host.classList.add('fs');
   host.innerHTML = `<div class="wmapfs">
     <canvas class="wm-cv" aria-label="Map of Veyra"></canvas>
     <header class="wm-top"><div><div class="eyebrow">Map of Veyra</div><h3 class="display">${esc(W.areas[here]?.name || 'Veyra')}</h3></div>
       <button class="wm-x" type="button" aria-label="Close map">✕</button></header>
     ${target?.label ? `<button class="wm-goal" type="button"><i>◆</i><span><small>Objective</small>${esc(target.label)}</span></button>` : ''}
-    <div class="wm-legend"><span><i class="me"></i>You</span><span><i class="goal"></i>Objective</span><span><i class="ferry"></i>Ferry stop</span><span><i class="lock"></i>Not visited</span></div>
+    <div class="wm-legend"><span><i class="me"></i>You</span><span><i class="goal"></i>Objective</span><span><i class="ferry"></i>Train station</span><span><i class="lock"></i>Not visited</span></div>
     <div class="wm-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="me" aria-label="Center on me">◎</button><button type="button" data-z="all" aria-label="Whole map">⤢</button></div>
     <div class="wm-sheet" hidden></div></div>`;
   const root = host.querySelector('.wmapfs'), cv = root.querySelector('.wm-cv'), g = cv.getContext('2d'), sheet = root.querySelector('.wm-sheet');
@@ -53,8 +54,8 @@ export function openWorldMap(host, opts) {
   }
   function draw(t) {
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cw, ch);
-    g.fillStyle = '#1d4c80'; g.fillRect(0, 0, cw, ch);
-    if (map) { const [x0, y0] = toS(-size / 2, -size / 2); g.imageSmoothingEnabled = true; g.drawImage(map, x0, y0, size * view.s, size * view.s); }
+    g.fillStyle = '#2d70b8'; g.fillRect(0, 0, cw, ch);
+    if (map) { const [x0, y0] = toS(-size / 2, -size / 2); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(map, x0, y0, size * view.s, size * view.s); }
     // routes: dark casing + light core, names along the way when zoomed in
     for (const r of W.routes || []) { g.lineJoin = g.lineCap = 'round';
       for (const [wd, c] of [[7, 'rgba(30,22,10,.55)'], [3.5, '#f3e2b8']]) { g.lineWidth = wd; g.strokeStyle = c; g.beginPath(); r.pts.forEach(([x, z], i) => { const [sx, sy] = toS(x, z); i ? g.lineTo(sx, sy) : g.moveTo(sx, sy); }); g.stroke(); }
@@ -67,9 +68,9 @@ export function openWorldMap(host, opts) {
     for (const T of towns) { const [sx, sy] = toS(T.x, T.z), isHere = T.id === here, r = 11;
       g.beginPath(); g.arc(sx, sy, r + 5, 0, 7); g.fillStyle = 'rgba(0,0,0,.45)'; g.fill();
       g.beginPath(); g.arc(sx, sy, r, 0, 7); g.fillStyle = T.visited ? T.col : '#6b6f7c'; g.fill(); g.lineWidth = 3; g.strokeStyle = T.visited ? '#ffd257' : '#2a2c36'; g.stroke();
-      g.fillStyle = '#1b1530'; g.font = '900 12px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(T.visited ? '⛴' : '?', sx, sy + 1);
+      g.fillStyle = '#1b1530'; g.font = '900 12px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(T.visited ? '🚂' : '?', sx, sy + 1);
       if (isHere) { g.beginPath(); g.arc(sx, sy, r + 9 + Math.sin(t * .004) * 2, 0, 7); g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.stroke(); }
-      T.box = pill(sx, sy - r - 8, T.name, T.ahead ? '⚠ ahead of your story' : T.visited ? 'Ferry stop' : 'Not visited yet', { border: sel === T.id ? '#ffd257' : T.ahead ? 'rgba(255,110,90,.8)' : null, fs: 15 }); }
+      T.box = pill(sx, sy - r - 8, T.name, T.ahead ? '⚠ ahead of your story' : T.visited ? 'Train station' : 'Not visited yet', { border: sel === T.id ? '#ffd257' : T.ahead ? 'rgba(255,110,90,.8)' : null, fs: 15 }); }
     for (const p of goals) { const [sx, sy] = toS(p.x, p.z), k = 1 + Math.sin(t * .006) * .15; g.save(); g.translate(sx, sy); g.scale(k, k); g.rotate(Math.PI / 4);
       g.fillStyle = '#ffd257'; g.strokeStyle = '#1b1530'; g.lineWidth = 3; g.beginPath(); g.rect(-8, -8, 16, 16); g.fill(); g.stroke(); g.restore(); }
     // you: an arrow pointing where you face
@@ -88,8 +89,8 @@ export function openWorldMap(host, opts) {
     const can = T.visited && T.id !== here;
     sheet.innerHTML = `<div class="wm-sh"><div><div class="eyebrow" style="color:${T.col}">${esc(T.sub)}</div><h4 class="display">${esc(T.name)}</h4>
       <div class="wm-chips">${T.echo.map(e => `<span style="--c:${TYPEC[e] || '#fff'}">${esc(e)}</span>`).join('')}</div>
-      <p class="small">${T.id === here ? 'You are here.' : T.visited ? 'Relay Ferry stop — travel there instantly.' : 'Not visited yet: walk there along the routes to open its ferry stop.'}${T.ahead ? ' <b class="warn">Wild Echoes here are ahead of your story.</b>' : ''}</p></div>
-      <div class="wm-act">${can ? `<button class="btn gold" type="button" data-travel="${T.id}">Travel ⛴</button>` : ''}<button class="btn ghost sm" type="button" data-fly="${T.id}">Show</button></div></div>`;
+      <p class="small">${T.id === here ? 'You are here.' : T.visited ? 'Relay Express station — ride the train there.' : 'Not visited yet: walk there along the routes to open its train station.'}${T.ahead ? ' <b class="warn">Wild Echoes here are ahead of your story.</b>' : ''}</p></div>
+      <div class="wm-act">${can ? `<button class="btn gold" type="button" data-travel="${T.id}">Ride the train 🚂</button>` : ''}<button class="btn ghost sm" type="button" data-fly="${T.id}">Show</button></div></div>`;
     sheet.hidden = false;
     sheet.querySelector('[data-travel]')?.addEventListener('click', e => { e.stopPropagation(); close(); onTravel?.(T.id); }); // (not data-go: the app's global click handler treats data-go as a page link)
     sheet.querySelector('[data-fly]').addEventListener('click', () => flyTo(T.x, T.z, Math.max(view.s, Math.min(cw, ch) / 260)));

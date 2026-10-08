@@ -7,13 +7,16 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 export const PROLOGUE = [
-  { k: 'Veyra', h: 'A ring of islands', t: 'Around a flooded caldera lies Veyra. At its heart hums Relay Node 7 — one of the oldest Pokémon storage relays in the world.' },
-  { k: 'Relay Node 7', h: 'What the relay keeps', t: 'Every time a Pokémon is sent through a PC, a faint trace of its data stays behind in the relay. For thirty years, nobody asked where those traces go.' },
-  { k: 'Mistvale', h: 'Echoes', t: 'In Veyra, the traces have started to wake up. We call them Echoes. Each holds the shape of the Pokémon it came from — and gathers where the land matches its type.' },
-  { k: 'Pokébox Labs', h: 'Lattice cards', t: 'Pokébox Labs learned to bind an Echo to crystal card stock: the Lattice card. A bound Echo can be projected to battle — and no real Pokémon is ever hurt.' },
-  { k: 'The Circuit', h: 'Rangers & Wardens', t: 'Lattice Rangers explore the islands, catch wild Echoes and collect their cards. Circuit Wardens guard the towns: win their Trials, earn their Seals.' },
-  { k: 'Under Node 7', h: 'Something is listening', t: 'But the Echoes are multiplying. The relay hums in patterns no one can read… and something deep beneath it has started to answer.', glitch: true },
-  { k: 'Lumen Harbor', h: 'Your story starts now', t: 'You are Veyra’s newest Lattice Ranger. Your ferry just docked in Lumen Harbor — and someone is already waiting for you.' },
+  { k: 'Veyra', h: 'A ring of islands', t: 'Around a flooded caldera lies Veyra — six towns, one ring of sea roads, and at its heart Relay Node 7, the oldest Pokémon storage relay in the world.' },
+  { k: 'Thirty years ago', h: 'The night the PCs went dark', t: 'Thirty years ago a storm struck Node 7. For one night every PC in Veyra went silent. When the lights came back on, everyone was relieved — and nobody asked what the relay had kept.' },
+  { k: 'Mistvale', h: 'Echoes', t: 'It kept everything. Every Pokémon ever sent through a PC left a faint trace behind. Now those traces are waking up in the fog and the tall grass. We call them Echoes.' },
+  { k: 'Pokébox Labs', h: 'Lattice cards', t: 'Dr. Ione Vale learned to bind an Echo to crystal card stock: the Lattice card. A bound Echo can battle as a projection — and no real Pokémon is ever hurt. Or so the Lab says.' },
+  { k: 'Starfall', h: 'Rangers, Wardens, Archivists', t: 'Lattice Rangers explore the islands and collect the Echoes. Circuit Wardens guard the towns and test the Rangers. And on Starfall hill, the Archivists listen to the relay as if it were speaking.' },
+  { k: 'Frostline', h: 'Two memories, one shape', t: 'Under the ice of Frostline, two Echoes drifted into each other. What came out has no name in any Pokédex.' },
+  { k: 'Voltspire', h: 'The Static Syndicate', t: 'In the storm towers, men in black coats found out that a frightened Echo prints a rare card. Fear sells. They call themselves the Static Syndicate.' },
+  { k: 'Sandreach', h: 'Glass that remembers', t: 'In the south, the dunes have begun to melt into glass — in the exact shapes of Pokémon that passed through Node 7, three decades ago.' },
+  { k: 'Under Node 7', h: 'Something is listening', t: 'The Echoes are multiplying. The relay hums in patterns no one can read… and something deep beneath it has started to answer.', glitch: true },
+  { k: 'Lumen Harbor', h: 'Your story starts now', t: 'You are Veyra’s newest Lattice Ranger. Your ferry just docked in Lumen Harbor — and a courier with goggles and too much energy is already waving at you.' },
 ];
 
 /** plays the prologue. ctx: { W, sfx, music, onDone } — resolves when finished or skipped */
@@ -74,11 +77,16 @@ function mapPanel(el, W, isSkipped, start) {
 export function startCoach({ W, touch, isBusy, onDone }) {
   const el = document.createElement('div'); el.className = 'coach'; el.hidden = true; document.body.append(el);
   const pos0 = () => { const p = W.player?.group.position; return p ? { x: p.x, z: p.z } : null; };
+  const sp = () => { const v = W.player?.vel; return v ? Math.hypot(v.x, v.z) : 0; };
   const steps = [
-    { h: 'Move', t: touch ? 'Drag the <b>left stick</b> to walk. Push it all the way to run.' : '<b>W A S D</b> to walk · hold <b>Shift</b> to run · <b>Space</b> to jump.', done: s => { const p = W.player?.group.position; return p && s.p && Math.hypot(p.x - s.p.x, p.z - s.p.z) > 6; }, max: 40 },
-    { h: 'Look around', t: touch ? 'Drag on the <b>right side</b> of the screen to turn the camera.' : 'Drag with the <b>mouse</b> to turn the camera. Mouse wheel zooms.', done: s => Math.abs((W.camYaw ?? 0) - s.yaw) > .9, max: 14 },
-    { h: 'Your objective', t: 'The gold <b>◆ beacon</b> and the star on the minimap show where to go. ' + (touch ? '<b>Tap the minimap</b>' : 'Press <b>M</b>') + ' for the full map of Veyra.', done: () => false, max: 11 },
-    { h: 'Talk & interact', t: 'Walk up to people, chests and signs, then press ' + (touch ? '<b>✋</b>' : '<b>E</b>') + '. Your Lattice ' + (touch ? '<b>☰</b>' : '(<b>Esc</b>)') + ' holds cards, packs and your journey.', done: () => false, max: 10 },
+    { h: 'Move', t: touch ? 'Drag the <b>left stick</b> to walk.' : '<b>W A S D</b> (or the arrow keys) to walk.', done: s => { const p = W.player?.group.position; return p && s.p && Math.hypot(p.x - s.p.x, p.z - s.p.z) > 6; }, max: 40 },
+    { h: 'Run', t: touch ? 'Push the stick <b>all the way</b> to run.' : 'Hold <b>Shift</b> while walking to run.', done: () => sp() > 7, max: 20 },
+    { h: 'Jump & glide', t: touch ? 'Tap <b>⤒</b> to jump. Tap it again in the air to open the glider.' : '<b>Space</b> to jump. Press it again in the air to glide.', done: () => (W.player?.group.position.y ?? 0) - (W.groundAt?.() ?? -99) > .6, max: 18 },
+    { h: 'Look around', t: touch ? 'Drag on the <b>right side</b> of the screen to turn the camera. <b>Pinch</b> to zoom.' : 'Drag with the <b>mouse</b> to turn the camera. The <b>mouse wheel</b> zooms.', done: s => Math.abs((W.camYaw ?? 0) - s.yaw) > .9, max: 16 },
+    { h: 'Your objective', t: 'The gold <b>◆ beacon</b> and the star on the minimap show where to go. ' + (touch ? '<b>Tap the minimap</b>' : 'Press <b>M</b>') + ' for the map of Veyra.', done: () => false, max: 10 },
+    { h: 'Talk & interact', t: 'Walk up to people, chests, doors and signs, then press ' + (touch ? '<b>✋</b>' : '<b>E</b>') + '.', done: () => false, max: 9 },
+    { h: 'Your Lattice', t: (touch ? 'The <b>☰</b> button' : '<b>Esc</b>') + ' opens your Lattice: cards, packs, your partner, the journey and the settings.', done: () => false, max: 9 },
+    { h: 'Wild Echoes', t: 'Echoes live in the tall grass. Get close and they challenge you — weaken one in battle, then throw a <b>Poké Ball</b> to catch it.', done: () => false, max: 10 },
   ];
   let i = -1, st = null, timer = 0, gone = false;
   const show = () => { const S = steps[i]; el.innerHTML = `<div class="co-n">${i + 1}/${steps.length}</div><div class="co-b"><b>${esc(S.h)}</b><p>${S.t}</p></div><div class="co-a"><button class="btn gold sm" type="button" data-ok>Got it</button><button class="co-skip" type="button" data-skip>Skip tutorial</button></div>`;

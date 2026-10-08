@@ -48,6 +48,19 @@ export function createFieldBattle(ctx) {
     return team.map(c => { const f = fighter(c, spec.lvl); f.lv = multLv(spec.lvl) + (team.indexOf(c) === team.length - 1 ? 2 : 0); return f; });
   }
 
+  /* ---------- the battle intro: diagonal flash wipes, both cards slide in (VS), the title — held until both cut-outs are ready */
+  async function battleIntro(spec) {
+    const e = B.active('e'), p = B.active('p'), el = document.createElement('div'); el.className = 'fb-intro ' + (spec.kind === 'wild' ? 'wild' : 'trainer');
+    el.innerHTML = `<div class="fbi-flash"></div><div class="fbi-band"></div><div class="fbi-vs">
+      <div class="fbi-side e" style="--tc:${TC[e.type] || '#ccc'}"><img src="${cardImg(e.card)}" alt=""><b>${esc(spec.kind === 'wild' ? e.name : spec.name)}</b><small>${spec.kind === 'wild' ? 'Wild Echo · Lv ' + (e.lv || '?') : esc(e.name) + ' · Lv ' + (e.lv || '?')}</small></div>
+      <i>VS</i><div class="fbi-side p" style="--tc:${TC[p.type] || '#ccc'}"><img src="${cardImg(p.card)}" alt=""><b>${esc(p.name)}</b><small>Your partner · Lv ${p.lv || '?'}</small></div></div>
+      <div class="fbi-title">${spec.kind === 'wild' ? `A wild ${esc(e.name)} appeared!` : `${esc(spec.name)} wants to battle!`}</div>`;
+    document.body.append(el); document.body.classList.add('fb-introing'); hooks.sfx?.('whoosh', .5);
+    const pets = [state.mon.p, state.mon.e].filter(m => m?.ready);
+    await Promise.all([new Promise(r => setTimeout(r, 1700)), Promise.race([Promise.all(pets.map(m => m.ready.catch(() => {}))), new Promise(r => setTimeout(r, 6000))])]);
+    el.classList.add('out'); document.body.classList.remove('fb-introing'); hooks.sfx?.('charge', .4); setTimeout(() => el.remove(), 650);
+  }
+
   /* ---------- staging */
   function creature(f, spot, { echo = 0 } = {}) {
     const cp = makeCardPet({ i: f.card.i, f: f.card.f, n: f.card.n, t: f.card.t }, cardImg(f.card), { size: 1.5 });
@@ -265,7 +278,7 @@ export function createFieldBattle(ctx) {
     const at = D0.clone().setY(D0.y + 1);
     shot = { mode: 'impact', b: D0 }; hitStop(big ? .16 : e.crit ? .12 : .07);
     hooks.sfx?.('hit'); hooks.sfx?.(TYPE_SFX[e.type] || 'thud', big ? .8 : .4);
-    shake = big ? .55 : e.crit ? .38 : .2; burst(at, col, big || e.crit); flashGlow(at, col, big ? 7 : e.crit ? 5 : 3.2, big ? 520 : 340);
+    shake = (big ? .55 : e.crit ? .38 : .2) * (hooks.shake?.() === false ? 0 : 1); burst(at, col, big || e.crit); flashGlow(at, col, big ? 7 : e.crit ? 5 : 3.2, big ? 520 : 340);
     def.setFlash?.(1); setTimeout(() => def.setFlash?.(0), big ? 160 : 110);
     if (big || e.crit) impactFrame(ui);
     const sp = screenOf(def.group, 2.2); onomato(ui.querySelector('#fbFx'), sp.x, sp.y - 30, e.kind === 'attack' ? 'Fighting' : e.type, { big, crit: e.crit });
@@ -423,6 +436,7 @@ export function createFieldBattle(ctx) {
       state.mon.p = creature(B.active('p'), st.a); state.own.push(state.mon.p);
       for (const m of [state.mon.p, spec.kind !== 'wild' ? state.mon.e : null]) if (m) { m.group.scale.setScalar(.01); tween(420, k => m.group.scale.setScalar(Math.max(.01, ease(k)))); }
       try { P.dexSeen(B.e.team.map(f => f.name)); } catch {} setTimeout(() => hooks.sfx?.('cry', B.active('e').type), 500); // Pokédex: everything you face counts as seen
+      await battleIntro(spec); /* the Pokémon-style intro covers the card cut-outs loading */
       plate('p'); plate('e'); moves(); log(spec.kind === 'wild' ? `A wild <b>${esc(spec.wild.card.n)}</b> Echo appeared!` : `<b>${esc(spec.name)}</b> challenges you!`);
       ui.classList.add('choose'); setTimeout(() => { if (ui && !busy && state) phase(true); }, 1700);
       return new Promise(res => { resolveFn = res; });

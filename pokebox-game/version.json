@@ -1,13 +1,20 @@
 {
-  "version": "3.17.0",
+  "version": "3.18.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "New anime characters: everyone in Veyra (you, Rho, Dr. Vale, the Wardens, the Rift League and the townsfolk) is now a proper anime 3D model with toon shading, like Genshin-style games — all your existing animations still work",
-    "Your trainer keeps your colours: hair colour and top colour from the customiser are applied to the new model",
-    "New trees everywhere: soft, leafy anime crowns instead of the old blob trees",
-    "Finer meadow grass with darker roots and sunlit tips",
-    "Bigger download this time (new character models, about 34 MB)"
+    "Story: Rho rematches now advance the story; already-finished steps are detected and skipped automatically",
+    "Story: longer, connected dialogue for every mission, a 10-panel opening story and a first-time controls tutorial",
+    "Starter choice is now a cutscene with 3 random first-stage Pokémon of 3 different types",
+    "7 side stories with their own characters and rewards (see Journey → Side stories)",
+    "Relay Express: ride a steam train between visited towns from the station outside each town",
+    "Battles: VS intro while the cards load, Pokémon-style HP plates and type-coloured moves",
+    "New settings: view distance, grass, FPS cap, shader effects, volumes, UI scale, text speed, FOV, camera shake, stick size, haptics",
+    "Fullscreen stays on until you switch to windowed in Settings (Esc no longer exits it); right-click menu disabled",
+    "Music pauses when the app goes to the background",
+    "Physics: no more sinking into hills; stand on docks, crates, stairs and platforms; partner swims with you; swim stamina at the island edge",
+    "Phone: faster rendering on High, shader warm-up before play, new thumb-arc buttons with icons, bigger text",
+    "New painted world map, 3D anime portraits, Mondstadt-style harbor houses, smoother zoom"
   ]
 }

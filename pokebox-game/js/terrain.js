@@ -114,7 +114,7 @@ const radial = (a, r0, r1) => [[Math.cos(a) * r0, 2 + Math.sin(a) * r0], [Math.c
 const grid = (sp, rot, ext) => { const out = [], c = Math.cos(rot), s = Math.sin(rot), T = (u, v) => [u * c - v * s, 2 + u * s + v * c];
   for (let k = -3; k <= 3; k++) { if (!k) continue; out.push([T(k * sp, -ext), T(k * sp, ext)], [T(-ext, k * sp), T(ext, k * sp)]); } return out; };
 export const TOWN_PLAN = {
-  harbor:    { n: 42, edge: 64, style: 'tropical', streets: [...grid(23, 0, 64), radial(-Math.PI / 2, 12, 58)] },
+  harbor:    { n: 42, edge: 64, style: 'mond', streets: [...grid(23, 0, 64), radial(-Math.PI / 2, 12, 58)] },
   mistvale:  { n: 38, edge: 62, style: 'wetland', reserve: [[-31, 9, 8]], streets: [ring(22, .12, 1), ring(46, .06, 2), ...[0, 1, 2, 3, 4, 5].map(i => radial(i / 6 * Math.PI * 2 + .3, 12, 58))] },
   starfall:  { n: 40, edge: 62, style: 'stargaze', streets: [ring(22, 0, 0, Math.PI * .9, Math.PI * 2.1), ring(46, 0, 0, Math.PI * .85, Math.PI * 2.15),
     ...[0, 1, 2, 3, 4, 5, 6].map(i => radial(Math.PI + (i + .5) / 7 * Math.PI, 12, 58)), radial(Math.PI / 2, 12, 40), radial(Math.PI * .25, 14, 50), radial(Math.PI * .75, 14, 50)] },

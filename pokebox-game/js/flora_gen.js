@@ -57,7 +57,7 @@ export function roundTree(seed, { kind = 'round', leaf = '#5aa142', bark = '#6b4
   for (let i = 0; i < nClump; i++) { const a = R() * 6.283, d = cr * (.45 + R() * .3); list.push([Math.cos(a) * d, C.y + (R() - .35) * ch * .7, Math.sin(a) * d, cr * (.55 + R() * .2), ch * (.5 + R() * .2), cr * (.55 + R() * .2), .7]); }
   G.add(mesh(core(list, C, lod ? .98 : .66), coreMat(leaf), lod ? 'PX_LeafCoreLOD' : 'PX_LeafCore'));
   if (lod) { G.children[1].material = MATS['lod' + leaf] ||= Object.assign(new THREE.MeshStandardMaterial({ color: new THREE.Color(leaf).multiplyScalar(.85), roughness: 1 }), { name: 'PX_LeafLOD' }); return G; }
-  G.add(mesh(cards(R, list, C, 150, .5), leafMat(leaf), 'PX_Leaves'));
+  G.add(mesh(cards(R, list, C, 100, .58), leafMat(leaf), 'PX_Leaves'));
   return G;
 }
 /** conifer: stacked leaf-card cones */
@@ -68,7 +68,7 @@ export function pineTree(seed, { leaf = '#3f7d4a', bark = '#5a3f2c', lod = false
   const tiers = 5; for (let i = 0; i < tiers; i++) { const t = i / (tiers - 1), y = 1.6 + t * (H - 2.2), r = 2.3 * (1 - t * .78); list.push([0, y, 0, r, .9 - t * .25, r, 1 - t * .45]); }
   G.add(mesh(core(list, C, lod ? .95 : .8), coreMat(leaf), 'PX_LeafCore'));
   if (lod) return G;
-  G.add(mesh(cards(R, list, C, 150, .42), leafMat(leaf), 'PX_Leaves'));
+  G.add(mesh(cards(R, list, C, 100, .5), leafMat(leaf), 'PX_Leaves'));
   return G;
 }
 

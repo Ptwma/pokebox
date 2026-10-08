@@ -5,6 +5,7 @@
 import * as C from './core.js';
 import * as P from './progress.js';
 import { REGIONS, ROUTES, routePoint, K } from './terrain.js';
+import { SCRIPT, OUTROS } from './story_script.js';
 
 /* ------------------------------------------------------------------ cast (joins the existing P.CAST used by story scenes) */
 export const CAST2 = {
@@ -202,6 +203,10 @@ export const STORY = [
     reward: { coins: 5000, xp: 2500, seal: 'Echo Seal', flag: 'story-done' } },
 ];
 
+/* the longer script (story_script.js) dresses the steps: richer lines + 'after' lines that bridge to the next mission */
+for (const ch of STORY) { if (OUTROS[ch.title] && typeof ch.outro !== 'function') ch.outro = OUTROS[ch.title];
+  for (const st of ch.steps) { const S2 = SCRIPT[st.text]; if (!S2) continue; if (S2.lines?.length) st.lines = S2.lines; if (S2.after?.length) st.after = S2.after; } }
+
 /* ------------------------------------------------------------------ engine */
 export function Q() {
   const s = P.ensure();
@@ -238,6 +243,15 @@ function advance() {
     if (rw.coins) C.addCoins(rw.coins); q.ch++; q.step = 0; C.save(true);
     emit('chapter', { ch, reward: rw });
   } else { C.save(true); emit('step', { step: stepNow() }); }
+}
+/** catch-up: the event that would complete the current step if its goal is already met (glyphs recorded earlier, a one-off
+    trainer already beaten), so an old save or an out-of-order playthrough can never get stuck. null = nothing to do. */
+const REPEAT_FOES = new Set(['rho', 'glyph']);
+export function pendingCatchUp() {
+  const st = stepNow(); if (!st) return null; const found = P.ensure().world?.found || {};
+  if (st.kind === 'find' && st.ids.every(id => found[id])) return ['find', {}];
+  if (st.kind === 'battle' && !REPEAT_FOES.has(st.npc) && beaten(st.npc)) return ['win', { id: st.npc }];
+  return null;
 }
 /** feed game events in; returns true if the story moved on */
 export function event(type, d = {}) {
@@ -278,10 +292,21 @@ export function npcLines(id) {
 }
 export function markBeaten(id) { Q().beaten[id] = Date.now(); C.save(); }
 export const beaten = id => !!Q().beaten[id];
-/** starter choices: the first printing of the three classics we can find */
+/** starter choices: three random everyday (common, low-HP basic) Pokémon of three DIFFERENT types, rolled once per new player
+    and kept in the save, so every new Ranger gets a different trio — never three of one element, never a rare. */
+const STARTER_TYPES = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Colorless', 'Dragon'];
+/* first-stage Pokémon that evolve: real 'starter' material (the card DB has no stage field) */
+const FIRST_STAGE = new Set('Bulbasaur Charmander Squirtle Caterpie Weedle Pidgey Rattata Spearow Ekans Pichu Pikachu Sandshrew Cleffa Clefairy Vulpix Igglybuff Zubat Oddish Paras Venonat Diglett Meowth Psyduck Mankey Growlithe Poliwag Abra Machop Bellsprout Tentacool Geodude Ponyta Slowpoke Magnemite Doduo Seel Grimer Shellder Gastly Drowzee Krabby Voltorb Exeggcute Cubone Koffing Rhyhorn Horsea Goldeen Staryu Magikarp Eevee Dratini Chikorita Cyndaquil Totodile Sentret Hoothoot Ledyba Spinarak Chinchou Togepi Natu Mareep Marill Hoppip Sunkern Wooper Swinub Slugma Phanpy Larvitar Houndour Teddiursa Elekid Magby Smoochum Treecko Torchic Mudkip Poochyena Zigzagoon Wurmple Lotad Seedot Taillow Wingull Ralts Shroomish Slakoth Whismur Makuhita Aron Meditite Electrike Gulpin Carvanha Wailmer Numel Spoink Trapinch Cacnea Swablu Barboach Corphish Baltoy Feebas Shuppet Duskull Snorunt Spheal Bagon Beldum Turtwig Chimchar Piplup Starly Bidoof Kricketot Shinx Budew Buizel Cherubi Shellos Drifloon Buneary Glameow Stunky Bronzor Gible Riolu Hippopotas Skorupi Croagunk Finneon Snover Snivy Tepig Oshawott Patrat Lillipup Purrloin Pansage Pansear Panpour Munna Pidove Blitzle Roggenrola Woobat Drilbur Timburr Tympole Sewaddle Venipede Cottonee Petilil Sandile Darumaka Dwebble Scraggy Yamask Trubbish Zorua Minccino Gothita Solosis Ducklett Vanillite Deerling Karrablast Foongus Frillish Joltik Ferroseed Klink Tynamo Elgyem Litwick Axew Cubchoo Shelmet Mienfoo Golett Pawniard Rufflet Vullaby Deino Larvesta Chespin Fennekin Froakie Bunnelby Fletchling Scatterbug Litleo Skiddo Pancham Espurr Honedge Spritzee Swirlix Inkay Binacle Skrelp Clauncher Helioptile Goomy Bergmite Noibat Rowlet Litten Popplio Pikipek Yungoos Grubbin Crabrawler Cutiefly Rockruff Mareanie Mudbray Dewpider Fomantis Morelull Salandit Stufful Bounsweet Wimpod Sandygast Jangmo-o Grookey Scorbunny Sobble Skwovet Rookidee Blipbug Nickit Gossifleur Wooloo Chewtle Yamper Rolycoly Applin Silicobra Arrokuda Toxel Sizzlipede Clobbopus Hatenna Impidimp Milcery Snom Cufant Dreepy Sprigatito Fuecoco Quaxly Lechonk Tarountula Nymble Pawmi Tandemaus Fidough Smoliv Nacli Charcadet Tadbulb Wattrel Maschiff Shroodle Bramblin Toedscool Capsakid Rellor Flittle Tinkatink Wiglett Finizen Varoom Glimmet Greavard Frigibax Gimmighoul'.split(' '));
+const NOT_BASIC = /\b(ex|EX|GX|V|VMAX|VSTAR|VUNION|BREAK|LV\.X|Prime|LEGEND|Tag Team|δ)\b|^(Dark|Light|Shining|Radiant|Mega|M) |'s |◇|☆|\bStar\b/;
 export function starterCards() {
-  const pick = n => C.DB.cards.filter(c => c.n === n && c.r <= 1).sort((a, b) => a.r - b.r || a.i - b.i)[0] || C.DB.cards.find(c => c.n === n);
-  return ['Bulbasaur', 'Charmander', 'Squirtle'].map(pick).filter(Boolean);
+  const q = Q(), C2 = C.DB.cards;
+  if (q.starterPick?.length === 3 && q.starterPick.every(i => C2[i])) return q.starterPick.map(i => C2[i]);
+  let pool = {}; for (const c of C2) if (C.isMon(c) && c.r <= 1 && FIRST_STAGE.has(c.n) && STARTER_TYPES.includes(c.t)) (pool[c.t] ||= []).push(c);
+  if (Object.keys(pool).length < 3) { pool = {}; for (const c of C2) if (C.isMon(c) && c.r === 0 && c.hp && c.hp <= 100 && STARTER_TYPES.includes(c.t) && !NOT_BASIC.test(c.n)) (pool[c.t] ||= []).push(c); }
+  const types = STARTER_TYPES.filter(t => pool[t]?.length).sort(() => Math.random() - .5).slice(0, 3);
+  const pick = types.map(t => pool[t][Math.random() * pool[t].length | 0]);
+  if (pick.length < 3) { const fb = n => C2.filter(c => c.n === n && c.r <= 1).sort((a, b) => a.r - b.r || a.i - b.i)[0]; return ['Bulbasaur', 'Charmander', 'Squirtle'].map(fb).filter(Boolean); }
+  q.starterPick = pick.map(c => c.i); C.save(true); return pick;
 }
 /**
  * How far along the ring you may walk. The ring is measured clockwise from Lumen Harbor (u = 0°) through

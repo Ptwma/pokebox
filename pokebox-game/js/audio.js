@@ -1,9 +1,18 @@
 // Tiny synthesized sound kit (no audio files needed)
-let ctx = null, master = null, enabled = true;
+let ctx = null, master = null, sfxBus = null, musBus = null, enabled = true;
+const VOL = { master: 1, music: 1, sfx: 1 };
+/** volumes 0..1 (Settings → Audio) */
+export function setVolumes(v = {}) { Object.assign(VOL, v); if (master) { master.gain.value = .5 * VOL.master; sfxBus.gain.value = VOL.sfx; musBus.gain.value = VOL.music; } }
 export function setSound(on) { enabled = on; }
+/* the app went to the background (home button, other app, screen off, tab switched): silence everything until it is back */
+let away = false;
+const goAway = () => { away = true; try { ctx?.suspend(); } catch {} }, comeBack = () => { if (document.hidden) return; away = false; try { if (enabled) ctx?.resume(); } catch {} };
+document.addEventListener('visibilitychange', () => document.hidden ? goAway() : comeBack());
+addEventListener('pagehide', goAway); addEventListener('blur', () => { if (document.hidden) goAway(); }); addEventListener('pageshow', comeBack); addEventListener('focus', comeBack); addEventListener('pointerdown', comeBack, true); addEventListener('keydown', comeBack, true);
+export const audioAway = () => away;
 function ac() {
-  if (!enabled) return null;
-  if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = .5; master.connect(ctx.destination); } catch { return null; } }
+  if (!enabled || away || document.hidden) return null;
+  if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = .5 * VOL.master; master.connect(ctx.destination); sfxBus = ctx.createGain(); sfxBus.gain.value = VOL.sfx; sfxBus.connect(master); musBus = ctx.createGain(); musBus.gain.value = VOL.music; musBus.connect(master); } catch { return null; } }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
 }
@@ -16,7 +25,7 @@ function env(g, t, a, peak, dcy) { g.gain.setValueAtTime(0.0001, t); g.gain.expo
 function tone(freq, t, dur, type = 'sine', vol = .2, slide = 0) {
   const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(freq, t);
   if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * slide), t + dur);
-  env(g, t, .005, vol, dur); o.connect(g).connect(master); o.start(t); o.stop(t + dur + .05);
+  env(g, t, .005, vol, dur); o.connect(g).connect(sfxBus); o.start(t); o.stop(t + dur + .05);
 }
 export const sfx = {
   tick() { if (!ac()) return; tone(1400, ctx.currentTime, .03, 'sine', .025); },
@@ -27,7 +36,7 @@ export const sfx = {
   /** footsteps by surface: grass, sand, snow, wood (piers), stone (plazas), water */
   step(kind = 'grass') { if (!ac()) return; const t = ctx.currentTime, n = noise(kind === 'water' ? .18 : .07), f = ctx.createBiquadFilter(), g = ctx.createGain();
     const P = { grass: ['bandpass', 1400, .05], sand: ['highpass', 2600, .045], snow: ['bandpass', 900, .07], wood: ['lowpass', 500, .09], stone: ['bandpass', 2200, .045], water: ['lowpass', 800, .08] }[kind] || ['bandpass', 1400, .05];
-    f.type = P[0]; f.frequency.value = P[1] * (.9 + Math.random() * .2); env(g, t, .004, P[2], kind === 'water' ? .16 : .06); n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + .25);
+    f.type = P[0]; f.frequency.value = P[1] * (.9 + Math.random() * .2); env(g, t, .004, P[2], kind === 'water' ? .16 : .06); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + .25);
     if (kind === 'wood') tone(160 + Math.random() * 40, t, .06, 'sine', .05); },
   /** each type has its own cry: a short synthesized call when a wild Echo appears or a battle starts */
   cry(type = 'Colorless', big = false) { if (!ac()) return; const t = ctx.currentTime, k = big ? 1.3 : 1;
@@ -40,20 +49,20 @@ export const sfx = {
   whoosh(d = .5) {
     if (!ac()) return; const t = ctx.currentTime, n = noise(d), f = ctx.createBiquadFilter(), g = ctx.createGain();
     f.type = 'bandpass'; f.Q.value = 1.2; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(3200, t + d * .7);
-    env(g, t, d * .35, .35, d * .6); n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + d + .1);
+    env(g, t, d * .35, .35, d * .6); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + d + .1);
   },
   rip() {
     if (!ac()) return; const t = ctx.currentTime;
     for (let k = 0; k < 7; k++) {
       const n = noise(.08), f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = 'highpass'; f.frequency.value = 1800 + Math.random() * 2500;
-      env(g, t + k * .028, .004, .45, .06); n.connect(f).connect(g).connect(master); n.start(t + k * .028); n.stop(t + k * .028 + .1);
+      env(g, t + k * .028, .004, .45, .06); n.connect(f).connect(g).connect(sfxBus); n.start(t + k * .028); n.stop(t + k * .028 + .1);
     }
   },
   burst() {
     if (!ac()) return; const t = ctx.currentTime;
     [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, t + i * .045, .9, 'sine', .07));
     const n = noise(1.2), fl = ctx.createBiquadFilter(), g = ctx.createGain(); fl.type = 'highpass'; fl.frequency.value = 6000;
-    env(g, t, .02, .08, 1.1); n.connect(fl).connect(g).connect(master); n.start(t); n.stop(t + 1.3);
+    env(g, t, .02, .08, 1.1); n.connect(fl).connect(g).connect(sfxBus); n.start(t); n.stop(t + 1.3);
   },
   sparkle() { if (!ac()) return; const t = ctx.currentTime; [2093, 2637, 3136].forEach((f, i) => tone(f, t + i * .06, .35, 'sine', .04)); },
   rare(level = 1) {
@@ -63,32 +72,32 @@ export const sfx = {
   zap() {
     if (!ac()) return; const t = ctx.currentTime;
     for (let k = 0; k < 6; k++) { const n = noise(.05), f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = 'bandpass'; f.frequency.value = 2500 + Math.random() * 4000; f.Q.value = 3;
-      env(g, t + k * .035, .002, .35, .04); n.connect(f).connect(g).connect(master); n.start(t + k * .035); n.stop(t + k * .035 + .08); }
+      env(g, t + k * .035, .002, .35, .04); n.connect(f).connect(g).connect(sfxBus); n.start(t + k * .035); n.stop(t + k * .035 + .08); }
     tone(90, t, .3, 'sawtooth', .08, 2.2);
   },
   thunder() {
     if (!ac()) return; const t = ctx.currentTime, n = noise(1.6), f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = 'lowpass'; f.frequency.setValueAtTime(3000, t); f.frequency.exponentialRampToValueAtTime(180, t + 1.4);
-    env(g, t, .01, .55, 1.5); n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + 1.7); this.zap();
+    env(g, t, .01, .55, 1.5); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + 1.7); this.zap();
   },
   boom(v = 1) {
     if (!ac()) return; const t = ctx.currentTime; tone(110, t, .7 * v, 'sine', .35 * v, .3);
-    const n = noise(.8), f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = 'lowpass'; f.frequency.value = 900; env(g, t, .005, .4 * v, .7); n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + .9);
+    const n = noise(.8), f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = 'lowpass'; f.frequency.value = 900; env(g, t, .005, .4 * v, .7); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + .9);
   },
-  pop() { if (!ac()) return; const t = ctx.currentTime; tone(600, t, .12, 'square', .08, .4); const n = noise(.06), g = ctx.createGain(); env(g, t, .002, .3, .05); n.connect(g).connect(master); n.start(t); n.stop(t + .08); },
+  pop() { if (!ac()) return; const t = ctx.currentTime; tone(600, t, .12, 'square', .08, .4); const n = noise(.06), g = ctx.createGain(); env(g, t, .002, .3, .05); n.connect(g).connect(sfxBus); n.start(t); n.stop(t + .08); },
   thud() { if (!ac()) return; tone(140, ctx.currentTime, .25, 'sine', .3, .4); },
   charge(d = 2) {
     if (!ac()) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
     o.type = 'sawtooth'; o.frequency.setValueAtTime(80, t); o.frequency.exponentialRampToValueAtTime(900, t + d); f.type = 'lowpass'; f.frequency.setValueAtTime(400, t); f.frequency.exponentialRampToValueAtTime(5000, t + d);
     g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.09, t + d * .9); g.gain.exponentialRampToValueAtTime(.0001, t + d + .05);
-    o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + d + .1);
+    o.connect(f).connect(g).connect(sfxBus); o.start(t); o.stop(t + d + .1);
   },
   flame(d = 1) {
     if (!ac()) return; const t = ctx.currentTime, n = noise(d), f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = 'lowpass'; f.frequency.value = 700;
-    env(g, t, d * .3, .3, d * .65); n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + d + .1);
+    env(g, t, d * .3, .3, d * .65); n.connect(f).connect(g).connect(sfxBus); n.start(t); n.stop(t + d + .1);
   },
   plink() { if (!ac()) return; const t = ctx.currentTime, f = 900 + Math.random() * 900; tone(f, t, .09, 'sine', .05); tone(f * 2.4, t, .05, 'sine', .02); },
   clink() { if (!ac()) return; const t = ctx.currentTime, f = 2400 + Math.random() * 1600; tone(f, t, .12, 'triangle', .035); tone(f * 1.5, t + .01, .08, 'sine', .02); },
-  hit() { if (!ac()) return; const t = ctx.currentTime; tone(160, t, .25, 'sawtooth', .18, .4); const n = noise(.15), g = ctx.createGain(); env(g, t, .003, .3, .12); n.connect(g).connect(master); n.start(t); n.stop(t + .2); },
+  hit() { if (!ac()) return; const t = ctx.currentTime; tone(160, t, .25, 'sawtooth', .18, .4); const n = noise(.15), g = ctx.createGain(); env(g, t, .003, .3, .12); n.connect(g).connect(sfxBus); n.start(t); n.stop(t + .2); },
   ko() { if (!ac()) return; const t = ctx.currentTime; tone(440, t, .6, 'square', .08, .25); },
   win() { if (!ac()) return; const t = ctx.currentTime; [523, 659, 784, 1047].forEach((f, i) => tone(f, t + i * .12, .5, 'square', .06)); },
   lose() { if (!ac()) return; const t = ctx.currentTime; [392, 330, 262].forEach((f, i) => tone(f, t + i * .18, .5, 'triangle', .08)); },
@@ -105,7 +114,7 @@ let musT = null, musGain = null, musOn = false;
 export const music = {
   title() {
     if (musOn || !ac()) return; musOn = true;
-    musGain = ctx.createGain(); musGain.gain.value = .0001; musGain.connect(master); musGain.gain.exponentialRampToValueAtTime(.55, ctx.currentTime + .8);
+    musGain = ctx.createGain(); musGain.gain.value = .0001; musGain.connect(musBus); musGain.gain.exponentialRampToValueAtTime(.55, ctx.currentTime + .8);
     const E = 60 / 132 / 2; let bar0 = ctx.currentTime + .1;
     const blip = (f, t, d, type, v) => { if (!f) return; const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f, t);
       g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .01); g.gain.setValueAtTime(v * .8, t + d * .6); g.gain.exponentialRampToValueAtTime(.0001, t + d * .95);
@@ -196,7 +205,7 @@ music.world = function (id, night = false) {
   if (!id || !musicOn || !ac()) { if (wm) { const w = wm; wm = null; clearTimeout(w.timer); w.stopAmb?.(); w.gain.gain.cancelScheduledValues(ctx.currentTime); w.gain.gain.setValueAtTime(w.gain.gain.value, ctx.currentTime); w.gain.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + 1.5); setTimeout(() => w.gain.disconnect(), 1800); } return; }
   if (wm && wm.id === id && wm.night === night) return;
   music.world(null); if (musOn) music.stop(.8);
-  const T = THEMES[id] || THEMES.harbor, gain = ctx.createGain(); gain.gain.value = .0001; gain.connect(master);
+  const T = THEMES[id] || THEMES.harbor, gain = ctx.createGain(); gain.gain.value = .0001; gain.connect(musBus);
   gain.gain.exponentialRampToValueAtTime(id === 'battle' ? .32 : .22, ctx.currentTime + 2.5);
   const w = wm = { id, night, gain, seed: (Math.random() * 1e9) | 0, bar0: ctx.currentTime + .3 };
   w.stopAmb = ambience(night && id !== 'battle' ? [...new Set([...T.amb.filter(a => a !== 'birds'), 'crickets'])] : T.amb, gain);

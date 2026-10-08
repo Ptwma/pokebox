@@ -53,6 +53,7 @@ const ANIME_TREES = {
   FL_Tree_A: (lod) => roundTree(11, { kind: 'round', leaf: '#5aa142', lod }), FL_Tree_B: (lod) => roundTree(23, { kind: 'wide', leaf: '#4f9a3c', lod }),
   FL_Tree_C: (lod) => roundTree(37, { kind: 'tall', leaf: '#6aa847', lod }), FL_Birch: (lod) => roundTree(41, { kind: 'tall', leaf: '#8cbc4f', bark: '#e8e2d4', lod }),
   FL_Pine_A: (lod) => pineTree(5, { lod }), FL_Pine_B: (lod) => pineTree(9, { leaf: '#36704a', lod }),
+  TT_Tree_Round: (lod) => roundTree(53, { kind: 'round', leaf: '#62a845', lod }), TT_Tree_Round2: (lod) => roundTree(61, { kind: 'wide', leaf: '#559e3e', lod }), TT_Tree_Pine: (lod) => pineTree(13, { lod }),
 };
 function animeTrees() {
   for (const [name, make] of Object.entries(ANIME_TREES)) {

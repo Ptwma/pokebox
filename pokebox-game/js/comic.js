@@ -218,12 +218,13 @@ const FINAL = {
     shTint: { value: new THREE.Color('#2e3a6a') }, hiTint: { value: new THREE.Color('#ffd9a8') }, split: { value: .3 },
     vig: { value: .42 }, grain: { value: .045 }, boil: { value: 1 }, paper: { value: new THREE.Color('#f4ead8') }, toon: { value: 1 },
     sunUv: { value: new THREE.Vector2(.5, .8) }, sunVis: { value: 0 }, sunCol: { value: new THREE.Color('#fff2d0') }, rays: { value: 1 },
+    fx: { value: 1 }, hazeCol: { value: new THREE.Color('#bcd6f0') }, /* shader preset: 0 off, 1 soft, 2 cinematic (depth-of-field, aerial haze, glow, stronger sun shafts) */
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
   fragmentShader: /* glsl */`
     #include <packing>
-    uniform sampler2D tCol, tDepth; uniform vec2 res, sunUv; uniform float cNear, cFar, time, lineW, ink, inkFar, exposure, sat, contrast, crush, split, vig, grain, boil, toon, sunVis, rays;
-    uniform vec3 inkCol, shTint, hiTint, paper, sunCol; varying vec2 vUv;
+    uniform sampler2D tCol, tDepth; uniform vec2 res, sunUv; uniform float cNear, cFar, time, lineW, ink, inkFar, exposure, sat, contrast, crush, split, vig, grain, boil, toon, sunVis, rays, fx;
+    uniform vec3 inkCol, shTint, hiTint, paper, sunCol, hazeCol; varying vec2 vUv;
     float lin(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cNear, cFar); }
     float hs(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(hs(i), hs(i + vec2(1,0)), f.x), mix(hs(i + vec2(0,1)), hs(i + vec2(1,1)), f.x), f.y); }
@@ -245,6 +246,9 @@ const FINAL = {
       float lap = abs(l + r + u + d - 4. * c) + .5 * abs(a1 + a2 + a3 + a4 - 4. * c);
       float crease = smoothstep(.03, .07, lap / cc) * (1. - sky);
       vec4 c0 = texture2D(tCol, vUv); vec3 col = c0.rgb;
+      if (fx > 1.5) { /* cinematic depth of field: far things soften like a camera lens (never the player/near world) */
+        float dk = smoothstep(70., 260., c) * (1. - sky * .7); if (dk > .01) { vec2 o = 2.2 * dk / res; vec3 b = col * .2;
+          b += texture2D(tCol, vUv + vec2(o.x, 0.)).rgb * .2 + texture2D(tCol, vUv - vec2(o.x, 0.)).rgb * .2 + texture2D(tCol, vUv + vec2(0., o.y)).rgb * .2 + texture2D(tCol, vUv - vec2(0., o.y)).rgb * .2; col = mix(col, b, dk); } }
       vec4 Tl = texture2D(tCol, uv - vec2(px.x, 0.)), Tr = texture2D(tCol, uv + vec2(px.x, 0.)), Tu = texture2D(tCol, uv + vec2(0., px.y)), Td = texture2D(tCol, uv - vec2(0., px.y));
       vec3 tl = film(Tl.rgb), tr = film(Tr.rgb), tu = film(Tu.rgb), td = film(Td.rgb);
       float iw = min(min(c0.a, min(Tl.a, Tr.a)), min(Tu.a, Td.a));
@@ -259,7 +263,11 @@ const FINAL = {
         vec2 dlt = (sunUv - vUv) * (.75 / 14.); vec2 p = vUv + dlt * hs(gl_FragCoord.xy); float acc = 0., wgt = 1.;
         for (int i = 0; i < 14; i++) { p += dlt; acc += step(cFar * .985, lin(clamp(p, 0., 1.))) * wgt; wgt *= .93; }
         float fall = 1. - smoothstep(0., .85, length((vUv - sunUv) * vec2(res.x / res.y, 1.)));
-        col += sunCol * acc / 9.2 * fall * fall * sunVis * .22 * (1. - sky * .6);
+        col += sunCol * acc / 9.2 * fall * fall * sunVis * (fx > 1.5 ? .36 : .22) * (1. - sky * .6);
+      }
+      if (fx > .5) { /* aerial haze: distance takes the sky's colour, warmer toward the sun (the 'shader pack' depth) */
+        float hz = smoothstep(40., cFar * .8, c) * (1. - sky); float toSun = 1. - smoothstep(0., .9, length((vUv - sunUv) * vec2(res.x / res.y, 1.))) * sunVis;
+        col = mix(col, mix(hazeCol, sunCol, toSun * .45) * 1.05, hz * (fx > 1.5 ? .3 : .16));
       }
       // grade: filmic curve (toon: softer shoulder so skies & grass keep their colour), contrast, split toning
       col = toon > .5 ? clamp(1. - exp(-col * exposure * 1.18), 0., 1.) * 1.04 : film(col);
@@ -269,6 +277,7 @@ const FINAL = {
       col = mix(col, col * hiTint * 1.25, split * .8 * smoothstep(.45, 1., L));
       col = clamp((col - crush) / (1. - crush), 0., 1.);
       col = clamp((col - .5) * contrast + .5, 0., 1.);
+      if (fx > 1.5) { col = mix(col, col * col * (3. - 2. * col), .25); col *= mix(vec3(1.), vec3(1.03, 1.01, .97), smoothstep(.4, 1., L)); } /* richer midtones, golden highlights */
       col = mix(col, toon > .5 ? mix(col * .22, inkCol, .35) : inkCol, e * mix(1., .85, toon));
       // paper: fibre grain + subtle warm cast, vignette (comic only)
       if (toon < .5) { float g = hs(gl_FragCoord.xy + fr) * .6 + vn(gl_FragCoord.xy * .35) * .4;
@@ -289,7 +298,8 @@ export function createComicPost(renderer, scene, camera, quality) {
   const U = mat.uniforms; U.tCol.value = rt.texture; U.tDepth.value = rt.depthTexture;
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false;
   const qScene = new THREE.Scene(); qScene.add(quad); const qCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const bloom = quality === 'high' ? new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), .28, .4, .95) : null;
+  const PHONE = matchMedia?.('(pointer: coarse)').matches, BD = PHONE ? 4 : 2; /* bloom is a blur: quarter resolution on phones looks identical */
+  const bloom = quality === 'high' ? new UnrealBloomPass(new THREE.Vector2(size.x / BD, size.y / BD), .28, .4, .95) : null;
   let t = 0, n = 0;
   function toonLook(A) { // bright Pokémon look: saturated, clean, soft cool shadows, thin warm-dark lines
     const T = A.toon || {};
@@ -306,7 +316,7 @@ export function createComicPost(renderer, scene, camera, quality) {
     U, bloom,
     setSize(w, h) {
       const s = renderer.getDrawingBufferSize(new THREE.Vector2()); rt.setSize(s.x, s.y); U.res.value.set(s.x, s.y); CU.cRes.value.set(s.x, s.y);
-      U.lineW.value = Math.max(1, s.y / 720); INK.cW.value = U.toon.value > .5 ? 1.25 : 2.1; bloom?.setSize(Math.round(s.x / 2), Math.round(s.y / 2));
+      U.lineW.value = Math.max(1, s.y / 720); INK.cW.value = U.toon.value > .5 ? 1.25 : 2.1; bloom?.setSize(Math.round(s.x / BD), Math.round(s.y / BD));
     },
     look(A) {
       if (CU.cToon.value > .5) return toonLook(A);
@@ -323,10 +333,10 @@ export function createComicPost(renderer, scene, camera, quality) {
     setComic(v) { U.ink.value = v ? 1 : 0; CU.cOn.value = v ? 1 : 0; },
     setStyle(st) { const t = st !== 'comic' ? 1 : 0; CU.cToon.value = t; U.toon.value = t; U.boil.value = 1 - t; },
     render(dt) {
-      t += dt; n++; CU.cTime.value = t; U.time.value = t; U.cNear.value = camera.near; U.cFar.value = camera.far;
+      t += dt; n++; CU.cTime.value = t; U.time.value = t; U.cNear.value = camera.near; U.cFar.value = camera.far; if (scene.fog) U.hazeCol.value.copy(scene.fog.color);
       if (n % 30 === 1) applyComic(scene);
       renderer.setRenderTarget(rt); renderer.render(scene, camera); const ri = renderer.info.render; api.info = { calls: ri.calls, triangles: ri.triangles };
-      if (bloom) bloom.render(renderer, null, rt, dt, false);
+      if (bloom && bloom.enabled !== false) bloom.render(renderer, null, rt, dt, false);
       renderer.setRenderTarget(null); renderer.render(qScene, qCam);
     },
     dispose() { rt.dispose(); rt.depthTexture.dispose(); mat.dispose(); quad.geometry.dispose(); bloom?.dispose(); },

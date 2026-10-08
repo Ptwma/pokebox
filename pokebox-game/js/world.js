@@ -8,6 +8,8 @@ import * as QS from './quests.js';
 import * as C from './core.js';
 import * as RK from './rank.js';
 import { prepare, makeRigged, tickEchoMaterials, attachProp, VRM_CAST } from './chars.js';
+import * as SIDE from './side.js';
+import { makeTrain, makeTrack, makeSmoke } from './train.js';
 import { loadKits, place, instances, house, has, hasToon, wind, bounds } from './world_kit.js';
 import { createComicPost, applyComic, CU } from './comic.js';
 import { makeCardPet } from './cardpet.js';
@@ -221,17 +223,18 @@ export function createWorld(canvas, hooks = {}) {
     quality = hooks.quality?.() || quality;
     const scale = clamp(hooks.renderScale?.() || 1, .5, 1);
     // sharp image first: phones have dpr 2.5-3.5, rendering below ~1.3 looks smeared. Dynamic resolution (loop) keeps it smooth.
-    prMax = (quality === 'high' ? Math.min(devicePixelRatio, 2) : quality === 'medium' ? Math.min(devicePixelRatio, 1.6) : Math.min(devicePixelRatio, 1.3)) * scale;
+    prMax = (quality === 'high' ? Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.75 : 2) : quality === 'medium' ? Math.min(devicePixelRatio, 1.6) : Math.min(devicePixelRatio, 1.3)) * scale;
     pr = prMax; prDrops = prCool = prSlow = prT = 0;
     GFX.density = quality === 'high' ? 1 : quality === 'medium' ? .8 : .5; GFX.grassFar = quality === 'high' ? 60 : quality === 'medium' ? 46 : 31;
     viewFar = quality === 'high' ? 320 : quality === 'medium' ? 210 : 150; vegR = quality === 'high' ? 230 : quality === 'medium' ? 160 : 110;
+    { const vd = clamp(hooks.viewDist?.() ?? 1, .6, 1.5); viewFar *= vd; vegR *= vd; GFX.density *= clamp(hooks.grassAmt?.() ?? 1, .3, 1.5); }
     renderer.shadowMap.autoUpdate = true;
     const sc = quality === 'high' ? 30 : 20; Object.assign(sun.shadow.camera, { left: -sc, right: sc, top: sc, bottom: -sc }); sun.shadow.camera.updateProjectionMatrix();
     shadows = quality !== 'low' && hooks.shadows?.() !== false; renderer.shadowMap.enabled = shadows;
     renderer.shadowMap.type = quality === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     const ms = quality === 'high' ? 2048 : 1024; if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     renderer.setPixelRatio(pr); post?.dispose(); comic = hooks.comic?.() !== false; CU.cOn.value = comic ? 1 : 0; style = hooks.style?.() || 'toon'; GFX.style = style;
-    post = comic ? createComicPost(renderer, scene, camera, quality) : makePost(renderer, scene, camera, quality, { comic: false }); post.setStyle?.(style);
+    post = comic ? createComicPost(renderer, scene, camera, quality) : makePost(renderer, scene, camera, quality, { comic: false }); post.setStyle?.(style); if (post.bloom) post.bloom.enabled = hooks.bloom?.() !== false; if (post.U?.fx) post.U.fx.value = hooks.shaderFx?.() ?? 1;
     renderer.toneMapping = comic ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; scene.environment = comic ? null : envTex; resize(); if (env) post?.look(env.look);
     scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
   }
@@ -247,9 +250,9 @@ export function createWorld(canvas, hooks = {}) {
 
   /* ---------- placement helpers (town-local while a town is being built) */
   const put = (obj, x, z, yOff = 0) => { obj.position.set(x, h(x, z) + yOff, z); obj.traverse(o => { if (o.isMesh && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } }); root.add(obj); return obj; };
-  const block = (x, z, r) => colliders.push({ x, z, r });
+  const block = (x, z, r, top) => colliders.push(top != null ? { x, z, r, top } : { x, z, r }); /* top: a low prop you can hop onto and stand on */
   const blockBox = (x, z, hw, hd, rot = 0) => colliders.push({ box: true, x, z, hw, hd, c: Math.cos(rot), s: Math.sin(rot) });
-  const kit = (name, x, z, o = {}) => { const y = o.y ?? h(x, z) + (o.yOff || 0); const m = place(root, name, x, y, z, o); if (m && o.block) block(x, z, o.block); return m; };
+  const kit = (name, x, z, o = {}) => { const y = o.y ?? h(x, z) + (o.yOff || 0); const m = place(root, name, x, y, z, o); if (m && o.block) { const bb = bounds(name), hh = bb ? (bb.max.y - bb.min.y) * (o.scale || 1) : 9; block(x, z, o.block, hh < 1.8 ? y + hh : null); } return m; };
   function scatter(names, n, seed, test, { rMin = 6, rMax = 54, sMin = .8, sMax = 1.25, yOff = 0, tint = null, shadow = true, blockR = 0, sink = .05 } = {}) {
     names = names.filter(has); if (!names.length) return;
     const R = rng(seed), lists = Object.fromEntries(names.map(k => [k, []])); let tries = 0, got = 0;
@@ -310,7 +313,7 @@ export function createWorld(canvas, hooks = {}) {
     const g = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: '#6b4a2a', roughness: .9 });
     const p = new THREE.Mesh(new THREE.CylinderGeometry(.09, .1, 2.4, 8), wood); p.position.y = 1.2;
     for (const [dy, r, c] of [[2.1, .35, '#d9b36c'], [1.65, -.4, '#c99a58']]) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, .38, .08), new THREE.MeshStandardMaterial({ color: c, roughness: .85 })); b.position.set(.5 * Math.sign(r), dy, 0); b.rotation.y = r; g.add(b); }
-    g.add(p); const tag = label('Relay Ferry', 'Fast travel'); tag.position.y = 3; g.add(tag); put(g, x, z); block(x, z, .4); items.push({ kind: 'travel', id: 'travel:' + areaId, x, z, g, r: 2.6 });
+    g.add(p); const tag = label('Relay Express', 'Train map'); tag.position.y = 3; g.add(tag); put(g, x, z); block(x, z, .4); items.push({ kind: 'travel', id: 'travel:' + areaId, x, z, g, r: 2.6 });
   }
   function fountain(x, z) {
     const g = new THREE.Group(), stone = new THREE.MeshStandardMaterial({ color: '#b8b0a2', roughness: .9 });
@@ -327,7 +330,13 @@ export function createWorld(canvas, hooks = {}) {
   // walkable piers: the player (and people placed on them) stand on the deck, not on the sea floor under it
   const decks = [];
   const deckAt = (x, z) => { for (const d of decks) if (x > d.x0 - 1 && x < d.x1 + 1 && z > d.z0 - 1 && z < d.z1 + 1 && segDist(x, z, d.pts) < .95) return d.y; return null; };
-  const ground = (x, z) => { const y = H(x, z), d = decks.length ? deckAt(x, z) : null; return d != null && d > y ? d : y; };
+  /* the height of the terrain AS DRAWN (the chunk's triangles), so feet never sink into a steep hill the mesh shows higher
+     than the smooth height function; falls back to H() where the chunk is not built yet */
+  const meshH = (x, z) => { const cx = Math.floor(x / CH), cz = Math.floor(z / CH), c = chunks.get(cx + ',' + cz); if (!c || c.state !== 'ready' || !c.data?.pos) return H(x, z);
+    const segs = c.segs, n = segs + 1, step = CH / segs, u = (x - cx * CH) / step, v = (z - cz * CH) / step, i = Math.min(segs - 1, Math.max(0, Math.floor(u))), j = Math.min(segs - 1, Math.max(0, Math.floor(v))), fx = u - i, fz = v - j, P = c.data.pos;
+    const y00 = P[(j * n + i) * 3 + 1], y10 = P[(j * n + i + 1) * 3 + 1], y01 = P[((j + 1) * n + i) * 3 + 1], y11 = P[((j + 1) * n + i + 1) * 3 + 1];
+    return fx + fz < 1 ? y00 + (y10 - y00) * fx + (y01 - y00) * fz : y11 + (y01 - y11) * (1 - fx) + (y10 - y11) * (1 - fz); };
+  const ground = (x, z) => { const y = meshH(x, z), d = decks.length ? deckAt(x, z) : null; return d != null && d > y ? d : y; };
   function dockLine(x0, z0, x1, z1, y = -.35) {
     { const ox = R0().x, oz = R0().z, a = [x0 + ox, z0 + oz], b = [x1 + ox, z1 + oz]; decks.push({ pts: [a, b], y: y + 1.0, x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), z0: Math.min(a[1], b[1]), z1: Math.max(a[1], b[1]) }); }
     const len = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(len / 2.55), rot = Math.atan2(x1 - x0, z1 - z0), list = [];
@@ -386,16 +395,22 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   const BUILD = {
     harbor() {
       const ly = h(-10, -11);
-      if (has('TT_Lab')) { kit('TT_Lab', -10, -11, { y: ly - .05, scale: .72 }); blockBox(-10, -11, 4.8, 3.4); }
+      { /* Pokébox Labs: a big timber-framed hall in the harbour's own architecture (+ the dish on the roof) */
+        const res = buildHouses('mond', [{ x: -10, z: -11, y: ly, rot: 0, opts: { w: 9.4, d: 6.6, floors: 3, roofC: '#3f5f8f', wall: '#f6f1e8' } }], 77); root.add(res.group);
+        res.group.traverse(o => { if (o.isMesh) { o.castShadow = quality !== 'low'; o.receiveShadow = true; } }); blockBox(-10, -11, 5.4, 4.1); nightFx.push(day => { res.glass.emissiveIntensity = lerp(1.5, 0, day); });
+        kit('Prop_SatelliteDish', -6.2, -12.5, { y: ly + 10.6, scale: .8, rot: .6 }); }
+      if (false) { kit('TT_Lab', -10, -11, { y: ly - .05, scale: .72 }); blockBox(-10, -11, 4.8, 3.4); }
       else { house(root, -10, ly, -11, { w: 4, d: 3, floors: 2, wall: 'Brick', seed: 11, rot: 0, balcony: true }); blockBox(-10, -11, 4.3, 3.3);
         kit('Prop_SatelliteDish', -6.5, -12.5, { y: ly + 6.2, scale: .7, rot: .6 }); }
-      const lt = label('POKÉBOX LABS', 'Research HQ', '#c9a4ff'); lt.scale.set(4.4, 1.1, 1); lt.position.set(-10, ly + (has('TT_Lab') ? 8.6 : 10.5), -8); root.add(lt);
+      const lt = label('POKÉBOX LABS', 'Research HQ', '#c9a4ff'); lt.scale.set(4.4, 1.1, 1); lt.position.set(-10, ly + 13.5, -8); root.add(lt);
       for (const [x, z, n] of [[-15.2, -6.4, 'Prop_Crate'], [-14, -6.2, 'Prop_Barrel1'], [-5, -6.6, 'Prop_Crate_Tarp'], [-4, -7.2, 'Prop_Barrel2_Closed']]) kit(n, x, z, { rot: x, scale: .75, block: .6 });
       kit('Prop_Light_Floor', -10, -6.8, { scale: .8 });
       const HS = [[10, -12, 3, 3, 2, 'Plaster', 3], [18, -2, 2, 3, 1, 'Plaster', 5], [-20, 6, 3, 3, 1, 'Brick', 7], [5, -23, 3, 4, 2, 'Plaster', 9], [-5, -24, 2, 2, 1, 'Plaster', 13], [-24, -6, 2, 3, 2, 'Brick', 17], [22, 18, 2, 2, 1, 'Plaster', 19]];
       for (const [x, z] of HS.slice(0, 1)) { const rot = Math.atan2(-x, -z + 2); // the card shop faces the plaza; the other houses come from the town plan (lots)
-        if (has('TT_Shop')) { kit('TT_Shop', x, z, { rot, scale: 1.05 }); blockBox(x, z, 3.9, 3.4, rot); items.push({ kind: 'door', room: 'shop', town: 'harbor', label: 'Card Shop', id: 'door:shop:harbor', x: x + Math.sin(rot) * 4.6, z: z + Math.cos(rot) * 4.6, r: 2.2, out: rot }); } else { house(root, x, h(x, z), z, { w: 3, d: 3, floors: 2, wall: 'Plaster', seed: 3, rot, balcony: true }); blockBox(x, z, 3.3, 3.3, rot); } }
-      const shopTag = label('CARD SHOP', 'Packs & Vault', '#ffd257'); shopTag.scale.set(3.2, .8, 1); shopTag.position.set(9.3, h(10, -12) + (has('TT_Shop') ? 5.4 : 7.8), -9.4); root.add(shopTag);
+        { const res = buildHouses('mond', [{ x, z, y: h(x, z), rot, opts: { w: 7.2, d: 6.4, floors: 2, roofC: '#c9553a' } }], 91); root.add(res.group);
+          res.group.traverse(o => { if (o.isMesh) { o.castShadow = quality !== 'low'; o.receiveShadow = true; } }); nightFx.push(day => { res.glass.emissiveIntensity = lerp(1.5, 0, day); }); }
+        if (true) { blockBox(x, z, 3.9, 3.4, rot); items.push({ kind: 'door', room: 'shop', town: 'harbor', label: 'Card Shop', id: 'door:shop:harbor', x: x + Math.sin(rot) * 4.6, z: z + Math.cos(rot) * 4.6, r: 2.2, out: rot }); } else { house(root, x, h(x, z), z, { w: 3, d: 3, floors: 2, wall: 'Plaster', seed: 3, rot, balcony: true }); blockBox(x, z, 3.3, 3.3, rot); } }
+      const shopTag = label('CARD SHOP', 'Packs & Vault', '#ffd257'); shopTag.scale.set(3.2, .8, 1); shopTag.position.set(9.3, h(10, -12) + 9.6, -9.4); root.add(shopTag);
       fountain(0, 2);
       const plaza = new THREE.Mesh(new THREE.CircleGeometry(11.8, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: cobbleTex(), roughness: .9, polygonOffset: true, polygonOffsetFactor: -2 }));
       plaza.position.set(0, h(0, 2) + .03, 2); plaza.receiveShadow = true; root.add(plaza);
@@ -409,7 +424,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       for (const [x, z, n] of [[20.2, 27, 'Prop_Barrel'], [21.8, 29.6, 'Prop_Bucket_Fishes'], [20.4, 33, 'Prop_Chest_Closed'], [22, 41, 'Prop_Anchor'], [28, 36.4, 'Prop_Barrel']]) kit(n, x, z, { y: .68, rot: x * 3, scale: 1.2 });
       // the beach by the piers stays open: the walk from the ferry landing to the docks and the plaza is never blocked
       const nearDock = (x, z) => segDist(x, z, [[21, 18], [21, 47]]) < 5.5 || segDist(x, z, [[21, 36], [33, 36]]) < 5.5 || Math.hypot(x - 16, z - 22) < 9 || segDist(x, z, [[16, 22], [6, 10], [0, 2]]) < 4;
-      scatter(['FL_Palm'], 22, 12, (x, z, y) => y > .05 && y < .9 && offPath(x, z) && !nearDock(x, z) && clearOf(x, z, 2), { rMin: 30, rMax: 54, sMin: 1.4, sMax: 2.1, blockR: .5 });
+      scatter(['FL_Tree_A', 'FL_Tree_B', 'FL_Birch'], 18, 12, (x, z, y) => y > .2 && y < .9 && offPath(x, z) && !nearDock(x, z) && clearOf(x, z, 3), { rMin: 30, rMax: 54, sMin: .8, sMax: 1.1, blockR: .5 }); /* Mondstadt-like port: leafy trees, no palms */
       scatter(['FL_Rock_Sand', 'FL_Rock_Sand'], 16, 14, (x, z, y) => y > -.6 && y < .5 && offPath(x, z) && !nearDock(x, z) && clearOf(x, z, 2.5), { rMin: 34, rMax: 58, sMin: 1.1, sMax: 2.2, blockR: .9 });
       scatter(has('TT_Tree_Round') ? ['TT_Tree_Round', 'TT_Tree_Round2', 'TT_Tree_Round', 'FL_Tree_A', 'FL_Tree_C'] : [...TREES, ...BIRCH, 'FL_Tree_B'], 52, 21, (x, z, y) => y > .9 && offPath(x, z) && clearOf(x, z, 3.5) && Math.hypot(x, z - 2) > 16, { rMin: 16, rMax: 48, sMin: .7, sMax: 1.05, blockR: .6 });
       scatter(BUSH, 60, 22, (x, z, y) => y > .8 && offPath(x, z) && clearOf(x, z, 1.2), { rMin: 8, rMax: 44, sMin: .8, sMax: 1.3, shadow: false });
@@ -543,7 +558,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   const HOUSE_FOLK = { harbor: ['fisher', 'merchant', 'worker_f', 'elder_m', 'merchant_f'], mistvale: ['gardener', 'fisher', 'elder_f', 'gardener'], starfall: ['scholar', 'elder_m', 'scholar', 'worker_f'],
     frostline: ['docker', 'worker_f', 'elder_m'], voltspire: ['smith', 'scholar', 'worker_f', 'smith'], sandreach: ['merchant', 'merchant_f', 'smith', 'gardener'] };
   // signature kit buildings kept among the procedural houses (one or two per town, they anchor the regional look)
-  const SIGNATURE = { harbor: ['SR_Market_B', 'SR_Market_A'], mistvale: ['MV_Lookout', 'MV_Stilt'], starfall: ['SF_Archive'], frostline: ['FL_Lodge'], voltspire: ['VS_Station'], sandreach: ['SR_Workshop', 'SR_Market_A', 'SR_Market_B'] };
+  const SIGNATURE = { harbor: [], mistvale: ['MV_Lookout', 'MV_Stilt'], starfall: ['SF_Archive'], frostline: ['FL_Lodge'], voltspire: ['VS_Station'], sandreach: ['SR_Workshop', 'SR_Market_A', 'SR_Market_B'] };
   function decorateTown(id) {
     if (!has('TT_RelayCenter') || id === 'rift') return;
     const R = REGIONS[id], seed = id.length * 97, plan = TOWN_PLAN[id] || {};
@@ -947,6 +962,80 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const col = addCollider({ x: pos.x, z: pos.z, r: .55 });
     const npc = { id, key: extra.key || id, ch, x: pos.x, z: pos.z, r: 2.6, face: face || 0, tag, mk, col, ...extra }; npcs.push(npc); return npc;
   }
+  /* ---------- the Relay Express: a station outside every town, fast travel by train with a short ride */
+  const stations = {}; let train = null, smoke = null;
+  function buildStations() {
+    for (const id in REGIONS) { if (id === 'rift') continue; const R = REGIONS[id]; let best = null;
+      for (let ai = 0; ai < 48; ai++) for (const r of [96, 104, 112, 122]) { const a = ai / 48 * Math.PI * 2, cx = R.x + Math.cos(a) * r, cz = R.z + Math.sin(a) * r, dx = -Math.sin(a), dz = Math.cos(a);
+        let mn = 1e9, mx = -1e9; for (let k = -46; k <= 46; k += 4) { const y = H(cx + dx * k, cz + dz * k); mn = Math.min(mn, y); mx = Math.max(mx, y); }
+        if (mn < .6 || mx > 16 || Math.hypot(cx, cz) > WORLD * .5 - 40) continue;
+        let clash = false; for (let k = -48; k <= 48 && !clash; k += 8) for (const sd of [0, 6, 12]) { if (nearColliders(cx + dx * k + Math.sin(a) * 0 + Math.cos(a) * sd, cz + dz * k + Math.sin(a) * sd, 3).size) { clash = true; break; } }
+        if (clash) continue; const sc = (mx - mn) + Math.abs(r - 104) * .03; if (!best || sc < best.sc) best = { sc, cx, cz, dx, dz, mx, mn }; }
+      if (!best || best.mx - best.mn > 4.5) continue;
+      const yaw = Math.atan2(best.dx, best.dz), y = best.mx + .05, g = makeTrack(96); g.position.set(best.cx, y, best.cz); g.rotation.y = yaw; scene.add(g);
+      const nx = Math.cos(yaw), nz = -Math.sin(yaw); /* local +x (platform side) in world */
+      addCollider({ box: true, x: best.cx + nx * 3.1, z: best.cz + nz * 3.1, hw: 1.6, hd: 8, c: Math.cos(yaw), s: Math.sin(yaw), top: y + .7, step: 1.6 });
+      const hx = best.cx + nx * 9.2, hz = best.cz + nz * 9.2, hr = Math.atan2(-nx, -nz);
+      const res = buildHouses('mond', [{ x: hx, z: hz, y: H(hx, hz), rot: hr, opts: { w: 7, d: 5.6, floors: 1, roofC: '#3f5f8f' } }], 300 + id.length); scene.add(res.group);
+      for (const c of res.colliders) addCollider({ box: true, x: c.x, z: c.z, hw: c.hw, hd: c.hd, c: Math.cos(c.rot), s: Math.sin(c.rot) });
+      const tg = label((AREAS[id]?.name || id).toUpperCase() + ' STATION', 'Relay Express · fast travel', '#9fd8ff'); tg.scale.multiplyScalar(1.2); tg.position.set(hx, H(hx, hz) + 8.5, hz); scene.add(tg);
+      const st = { id, x: best.cx, z: best.cz, y, yaw, dx: best.dx, dz: best.dz, nx, nz }; stations[id] = st;
+      allItems.push({ kind: 'travel', id: 'station:' + id, x: best.cx + nx * 3.1, z: best.cz + nz * 3.1, r: 5 }); }
+    train = makeTrain(); train.visible = false; scene.add(train); smoke = makeSmoke(46); scene.add(smoke.group);
+    animated.push(k => { const dt = Math.min(.05, k - (smoke.k ?? k)); smoke.k = k; smoke.update(dt); });
+  }
+  const nearestStation = (x, z) => Object.values(stations).sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0];
+  const fade = on => new Promise(r => { let f = document.querySelector('.tr-fade'); if (!f) { f = document.createElement('div'); f.className = 'tr-fade'; document.body.append(f); } requestAnimationFrame(() => { f.classList.toggle('on', on); setTimeout(r, 450); }); });
+  async function trainTrip(toId) {
+    const pp = player.group.position, A = nearestStation(pp.x, pp.z), B = stations[toId];
+    if (!A || !B || !train || A === B) { const R = REGIONS[toId]; teleport(R.x + (AREAS[toId].spawn?.[0] || 0), R.z + (AREAS[toId].spawn?.[1] || 18)); return; }
+    await fade(true);
+    const place = (S, along) => { train.position.set(S.x + S.dx * along, S.y + .3, S.z + S.dz * along); train.rotation.y = S.yaw; train.visible = true; };
+    const wheelsSpin = d => { for (const w of train.userData.wheels) w.rotation.x += d; };
+    const chim = new THREE.Vector3(), vel = new THREE.Vector3();
+    const puff = (S, rate, dt, sp) => { chim.copy(train.userData.chimney).applyAxisAngle(new THREE.Vector3(0, 1, 0), S.yaw).add(train.position); vel.set(-S.dx * sp, 0, -S.dz * sp); smoke.emit(chim, vel, rate, dt); };
+    // 1. boarding at the departure station
+    teleport(A.x + A.nx * 2.6 - A.dx * .4, A.z + A.nz * 2.6 - A.dz * .4); place(A, 0); player.group.rotation.y = Math.atan2(-A.nx, -A.nz);
+    const side = (S, d, h) => [S.x + S.nx * d, S.y + h, S.z + S.nz * d];
+    let along = 0, last = 0;
+    const shots = [
+      { focus: [A.x, A.z], dur: 3.4, fov: 46, wait: 1500, cam: e => { const k = e * 3.4, dt = Math.max(0, k - last); last = k; puff(A, 6, dt, 0); if (e > .55) player.group.visible = false; return [A.x + A.nx * 13 + A.dx * 9, A.y + 3.2, A.z + A.nz * 13 + A.dz * 9]; }, look: () => [A.x + A.dx * 3, A.y + 1.8, A.z + A.dz * 3] },
+      { focus: [A.x, A.z], dur: 4.2, fov: 50, wait: 0, linear: true, cam: e => { const k = e * 4.2, dt = Math.max(0, k - last); last = k; const sp = Math.min(22, k * 7); along += sp * dt; place(A, along); wheelsSpin(sp * dt / .55); puff(A, 14, dt, sp);
+          return [A.x + A.nx * 16 + A.dx * (along - 6), A.y + 4, A.z + A.nz * 16 + A.dz * (along - 6)]; }, look: () => [train.position.x, A.y + 2, train.position.z] },
+    ];
+    await fade(false); last = 0; await cinematic([shots[0]], { noWait: false }); last = 0; await cinematic([shots[1]], { noWait: true });
+    // 2. the journey card while the destination streams in
+    await fade(true); const card = document.createElement('div'); card.className = 'tr-card'; card.innerHTML = `<div class="tr-lines"></div><small>Relay Express</small><b>Next stop: ${esc(AREAS[toId]?.name || toId)}</b><i>🚂</i>`; document.body.append(card);
+    teleport(B.x + B.nx * 2.6, B.z + B.nz * 2.6); player.group.visible = false; hooks.sfx?.('whoosh', .3);
+    await new Promise(r => setTimeout(r, 2600)); card.classList.add('out'); setTimeout(() => card.remove(), 600);
+    // 3. arrival: the train rolls in and stops at the platform
+    along = -60; last = 0; place(B, along);
+    const arrive = { focus: [B.x, B.z], dur: 4.6, fov: 48, wait: 1200, cam: e => { const k = e * 4.6, dt = Math.max(0, k - last); last = k; const rem = -along, sp = Math.max(0, Math.min(18, rem * 1.1)); along = Math.min(0, along + sp * dt); place(B, along); wheelsSpin(sp * dt / .55); puff(B, 4 + sp * .6, dt, sp);
+        if (e > .82 && !player.group.visible) { player.group.visible = true; player.group.rotation.y = Math.atan2(B.nx, B.nz); }
+        return [B.x + B.nx * 14 - B.dx * 14, B.y + 3.6, B.z + B.nz * 14 - B.dz * 14]; }, look: () => [B.x + B.dx * 2, B.y + 1.8, B.z + B.dz * 2] };
+    await fade(false); await cinematic([arrive]); player.group.visible = true;
+    setTimeout(() => { if (train) train.visible = false; }, 8000);
+  }
+
+  /* a walkable spot near (x, z): dry land, not inside a building or a prop */
+  function freeSpot(x, z) { for (let r = 0; r < 24; r += 1.5) for (let k = 0; k < (r ? 12 : 1); k++) { const a = k / 12 * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (H(px, pz) > .25 && ![...nearColliders(px, pz, 2)].some(c => c.box ? Math.abs((px - c.x) * c.c - (pz - c.z) * c.s) < c.hw + 1 && Math.abs((px - c.x) * c.s + (pz - c.z) * c.c) < c.hd + 1 : Math.hypot(px - c.x, pz - c.z) < c.r + 1)) return [px, pz]; }
+    return [x, z]; }
+  /* side-story spots: a soft golden light pillar where something is waiting to be found */
+  const sideItems = [];
+  function refreshSide() {
+    for (const it of sideItems.splice(0)) { scene.remove(it.g); const i = allItems.indexOf(it); if (i >= 0) allItems.splice(i, 1); }
+    for (const q of SIDE.active()) { const cur = SIDE.current(q), st = SIDE.stateOf(q.id); if (!cur || cur.kind !== 'find') continue; const R = REGIONS[q.town]; if (!R) continue;
+      const [x, z] = freeSpot(R.x + cur.at[0], R.z + cur.at[1]), y = H(x, z), g = new THREE.Group(); g.position.set(x, y, z);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(.35, .6, 9, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#ffd97a', transparent: true, opacity: .32, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); beam.position.y = 4.5;
+      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(.32), new THREE.MeshBasicMaterial({ color: '#fff1b8' })); gem.position.y = 1.2; g.add(beam, gem); scene.add(g);
+      animated.push(k => { gem.rotation.y = k * 2; gem.position.y = 1.2 + Math.sin(k * 3) * .12; });
+      const it = { kind: 'side', id: `${q.id}:${st.s}`, x, z, r: 2.4, g, label: cur.text }; sideItems.push(it); allItems.push(it); } }
+  function sideReward(q, rw) { hooks.sfx?.('win'); hooks.toast?.(`<span class="gold">✦ Side story complete</span> <b>${esc(q.title)}</b> — +${rw?.reward?.coins || 0} coins · +${rw?.reward?.xp || 0} XP`); if (rw?.reward?.xp) hooks.xp?.(rw.reward.xp); }
+  async function sideProgress(r) {
+    if (r.cur?.lines?.length && r.cur.kind !== 'battle') await cineTalk(r.cur.lines);
+    if (r.finished) sideReward(r.finished, r.reward); else { const nx = SIDE.current(r.q); if (nx) hooks.toast?.(`<span class="gold">✦ ${esc(r.q.title)}</span> — ${esc(nx.text)}`); }
+    refreshSide(); refreshNPCs(); }
   function refreshNPCs() {
     for (const n of npcs.splice(0)) { actorsRoot.remove(n.ch.group); removeCollider(n.col); }
     for (const r of QS.rosterNow()) spawnNPC(r.id, r.pos, r.face, { trainer: r.trainer, shop: r.shop, mirror: r.mirror });
@@ -959,6 +1048,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     if (QS.done()) { const R = REGIONS.rift;
       ELITE.forEach((e, i) => { P.CAST[e.id] ||= { name: e.name, role: e.role, look: { ...e.look, vrm: VRM_CAST[e.id] } }; spawnNPC(e.id, { x: R.x + e.at[0], z: R.z + e.at[1] }, Math.atan2(-e.at[0], -18 - e.at[1]), { trainer: QS.T(e.types, [3, 7], 3, 1.32 + i * .06), name: e.name, elite: true }); }); }
     if (QS.Q().ch >= 9) { const g = npcs.find(n => n.id === 'glyph'); if (g) { const g0 = new THREE.Group(); g0.position.copy(g.ch.group.position); actorsRoot.add(g0); glyphEntity(g0); g.glyphFx = g0; } }
+    { const ch = QS.Q().ch; for (const q of SIDE.available(ch)) { const st = SIDE.stateOf(q.id);
+        const put = (who, town, at, extra = {}) => { const R = REGIONS[town]; if (!R) return; P.CAST[who.id] = { name: who.name, role: 'Side story', look: who.look }; const [x, z] = freeSpot(R.x + at[0], R.z + at[1]); spawnNPC(who.id, { x, z }, Math.atan2(R.x - x, R.z - z), { name: who.name, ...extra }); };
+        put(q.giver, q.town, q.at);
+        if (st && !st.done) for (const sp of q.steps) if (sp.where) put({ id: sp.npc, name: sp.where.name, look: sp.where.look }, sp.where.town, sp.where.at, sp.kind === 'battle' ? { trainer: QS.T(sp.types || ['Colorless'], [1, 3], 2, .95 + ch * .045), key: 'side:' + sp.npc } : {}); } }
+    refreshSide();
     refreshGates();
   }
 
@@ -1015,7 +1109,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       const d = Math.hypot(pp.x - e.x, pp.z - e.z) || .01, running = player.vel.length() > 6; let speed = 0;
       const calm = t < wildCool || busy || mode !== 'explore'; // right after a battle nobody picks a fight for 10 s
       if (d < (e.mood === 'challenger' ? 13 : 9)) e.state = e.mood === 'shy' && (running || d < 3) ? 'flee' : (e.mood === 'bold' || (e.mood === 'challenger' && !calm)) && d > 2.4 ? 'approach' : 'watch';
-      if (e.mood === 'challenger' && e.state === 'approach' && d < 3.2 && !calm && !challengeOpen && !uiBlocked() && !cineCam && (!AUTOTEST || window.__pbxChallenges)) challenge(e);
+      if (e.mood === 'challenger' && e.state === 'approach' && d < 3.2 && !calm && !challengeOpen && !uiBlocked() && !cineCam && !storyBusy && interacting === 0 && document.getElementById('scene')?.hidden !== false && (!AUTOTEST || window.__pbxChallenges)) challenge(e);
       else if (e.state !== 'wander') { e.state = 'wander'; e.wait = 1; }
       if (e.state === 'wander') {
         e.wait -= dt; if (e.wait <= 0) { const a = Math.random() * 6.28, r = Math.random() * 7; e.tx = e.hx + Math.cos(a) * r; e.tz = e.hz + Math.sin(a) * r; e.wait = 3 + Math.random() * 4; }
@@ -1043,6 +1137,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     buildGates();
     try { buildLandmarks(); } catch (e) { console.warn('[world] landmarks', e); }
     try { buildBoats(); } catch (e) { console.warn('[world] boats', e); }
+    try { buildStations(); } catch (e) { console.warn('[world] stations', e); }
     try { buildRouteFences(); } catch (e) { console.warn('[world] route fences', e); }
     if (comic) applyComic(worldRoot);
     built = true;
@@ -1059,7 +1154,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     streamChunks(x, z, true);
     await new Promise(res => { const tick = () => { const c = chunks.get(Math.floor(x / CH) + ',' + Math.floor(z / CH)); if (c?.state === 'ready' || performance.now() - t0 > 15000) res(); else setTimeout(tick, 60); }; const t0 = performance.now(); tick(); });
     refreshNPCs(); spawnCompanions(); lastRegion = null; snap = true; near = null; hooks.prompt?.(null);
-    s.world.pos = { v2: 1, v3: K, x, z }; envCycle(0, true); hooks.loading?.(false);
+    s.world.pos = { v2: 1, v3: K, x, z }; envCycle(0, true);
+    /* warm-up while the loading screen is still up: compile every shader and upload every texture now, so the first taps
+       after loading are answered at once (on phones the first frames used to freeze for seconds while shaders compiled) */
+    try { camera.position.set(x + 4, H(x, z) + 3, z + 5); camera.lookAt(x, H(x, z) + 1, z); await Promise.race([renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera)), new Promise(r => setTimeout(r, 8000))]); } catch (e) { console.warn('[world] warm-up', e); }
+    hooks.loading?.(false);
     setTimeout(runStoryAuto, 400);
   }
   function refreshLook() { if (!player) return; prepare([P.ensure().look]).then(() => { const p = player.group.position.clone(), r = player.group.rotation.y; scene.remove(player.group); glider = null; player = makeRigged(P.ensure().look); player.group.position.copy(p); player.group.rotation.y = r; player.vel = new THREE.Vector3(); scene.add(player.group); }); }
@@ -1162,11 +1261,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   let drag = null; const stick = new THREE.Vector2(); let touchRun = false; const touches = new Map(); let pinch = 0;
   canvas.addEventListener('pointerdown', e => { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); drag = null; return; } drag = { x: e.clientX, y: e.clientY, yaw: cam.tYaw, pitch: cam.pitch, moved: false, btn: e.button }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener('pointermove', e => { if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touches.size === 2 && pinch) { const [a, b] = [...touches.values()], d = Math.hypot(a.x - b.x, a.y - b.y); cam.tDist = clamp(cam.tDist - (d - pinch) * .03, 2.6, 14); pinch = d; return; }
+    if (touches.size === 2 && pinch) { const [a, b] = [...touches.values()], d = Math.hypot(a.x - b.x, a.y - b.y); cam.tDist = clamp(cam.tDist - (d - pinch) * .045, 2.6, 14); cam.idle = 0; pinch = d; return; }
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y, sens = hooks.sensitivity?.() || 1; if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; cam.idle = 0; } cam.tYaw = drag.yaw - dx * TURN * sens; cam.pitch = clamp(drag.pitch + dy * TURN * .7 * sens * (hooks.invertY?.() ? -1 : 1), .08, 1.15); });
   canvas.addEventListener('pointerup', e => { touches.delete(e.pointerId); if (touches.size < 2) pinch = 0; if (drag && !drag.moved && drag.btn === 0) clickMove(e); drag = null; });
   canvas.addEventListener('pointercancel', e => { touches.delete(e.pointerId); pinch = 0; drag = null; });
-  canvas.addEventListener('wheel', e => { cam.tDist = clamp(cam.tDist + Math.sign(e.deltaY) * .8, 2.6, 14); }, { passive: true });
+  canvas.addEventListener('wheel', e => { cam.tDist = clamp(cam.tDist + Math.sign(e.deltaY) * Math.min(2, .8 + Math.abs(e.deltaY) / 400), 2.6, 14); cam.idle = 0; }, { passive: true });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   let target = null; const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
   function clickMove(e) {
@@ -1191,12 +1290,18 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       } else if (n.kind === 'wild') await wildBattle(n.w);
       else if (n.kind === 'travel') hooks.travel?.();
       else if (n.kind === 'chest') openChest(n.item);
+      else if (n.kind === 'side') { faceTo(player, n.x, n.z); player.play('Interact', .2, { once: true }); hooks.sfx?.('sparkle'); const r = SIDE.event('find', { id: n.id }); if (r) await sideProgress(r); }
       else if (n.kind === 'door') await enterRoom(n.item);
       else if (n.kind === 'spot') await useSpot(n.spot);
     } finally { interacting--; holdOff(); }
   }
   async function talkTo(np) {
-    const id = np.id; faceTo(player, np.x, np.z); faceTo(np.ch, player.group.position.x, player.group.position.z);
+    const id = np.id;
+    if (id.startsWith('sq_')) { faceTo(player, np.x, np.z); faceTo(np.ch, player.group.position.x, player.group.position.z); np.ch.play('Wave', .2, { once: true });
+      const r = SIDE.talk(id); if (!r) return; if (r.lines?.length) await cineTalk(r.lines);
+      if (r.accepted) { hooks.toast?.(`<span class="gold">✦ Side story</span> <b>${esc(r.accepted.title)}</b> — ${esc(r.accepted.steps[0].text)}`); hooks.sfx?.('sparkle'); }
+      if (r.battle) { await trainerBattle(np); return; }
+      if (r.finished) sideReward(r.finished, r.reward); refreshSide(); return; } faceTo(player, np.x, np.z); faceTo(np.ch, player.group.position.x, player.group.position.z);
     np.ch.play('Wave', .2, { once: true }); player.play('Interact', .2, { once: true });
     const st = QS.stepNow(), isStoryBattle = st?.kind === 'battle' && st.npc === id, isStoryTalk = st?.kind === 'talk' && st.npc === id;
     let lines = np.routeTrainer ? [[id, np.routeTrainer.line]] : QS.npcLines(id);
@@ -1233,7 +1338,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         o.onShot?.(i, S);
         const dur = S.dur / (window.__pbxFast || 1);
         await new Promise(res => { let t = 0; cineCam = (c, dt) => { t += dt; const k = Math.min(1, t / dur), e = S.linear ? k : easeIO(k);
-          v.set(...S.cam(e)); lk.set(...S.look(e)); if (S.shake) { const a = S.shake * (1 - k); v.x += (Math.random() - .5) * a; v.y += (Math.random() - .5) * a; }
+          v.set(...S.cam(e)); lk.set(...S.look(e)); if (S.shake && hooks.shake?.() !== false) { const a = S.shake * (1 - k); v.x += (Math.random() - .5) * a; v.y += (Math.random() - .5) * a; }
           c.position.copy(v); c.lookAt(lk); const f = S.fov || 50; if (Math.abs(c.fov - f) > .05) { c.fov += (f - c.fov) * Math.min(1, dt * 4); c.updateProjectionMatrix(); }
           if (k >= 1 || stop) res(); }; });
       }
@@ -1286,6 +1391,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       { focus: [mx, mz], dur: 8, fov: 52, ...glide([mx - 50, H(mx, mz) + 30, mz + 40], [mx + 10, H(mx, mz) + 16, mz + 22], [mx - 10, 2, mz], [mx + 4, 2, mz - 6]) },
       { focus: [lx, lz], dur: 8, fov: 50, ...glide([hx + 30, 26, hz + 38], [lx + 8, H(lx, lz) + 9, lz + 18], [hx, 3, hz], [lx, H(lx, lz) + 4, lz]) },
       { focus: [sx, sz], dur: 8, fov: 50, ...orbit(sx, sz, 44, 30, 34, 18, 2.4, 3.4, 4) },
+      (() => { const [fx, fz] = at('frostline'); return { focus: [fx, fz], dur: 8, fov: 50, ...orbit(fx, fz, 60, 38, 40, 20, .4, 1.3, 4) }; })(),
+      (() => { const [vx, vz] = at('voltspire'); return { focus: [vx, vz], dur: 8, fov: 48, shake: .08, ...orbit(vx, vz, 52, 34, 46, 26, 3.6, 4.5, 10) }; })(),
+      (() => { const [dx, dz] = at('sandreach'); return { focus: [dx, dz], dur: 8, fov: 52, ...glide([dx - 60, H(dx, dz) + 34, dz - 30], [dx - 14, H(dx, dz) + 14, dz - 8], [dx, 3, dz], [dx + 6, 3, dz + 4]) }; })(),
       { focus: [rx, rz], dur: 6, fov: 38, shake: .35, ...glide([rx + 22, H(rx, rz) + 8, rz + 26], [rx + 9, H(rx, rz) + 5, rz + 11], [rx, H(rx, rz) + 14, rz], [rx, H(rx, rz) + 20, rz]) },
       { focus: [pp.x, pp.z], dur: 6.5, fov: 58, wait: 2200, ...glide([pp.x - Math.sin(ry) * 40, pp.y + 34, pp.z - Math.cos(ry) * 40], [bx, pp.y + 2.4, bz], [pp.x, pp.y + 2, pp.z], [pp.x, pp.y + 1.4, pp.z]) },
     ];
@@ -1352,8 +1460,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   /* ---------- story glue */
   let storyBusy = false, interacting = 0;
   function storyEvent(type, d) {
-    const before = QS.Q().ch, moved = QS.event(type, d);
-    if (moved) { hooks.onStep?.(QS.stepNow()); if (QS.Q().ch !== before) chapterDone(before); else setTimeout(runStoryAuto, 300); }
+    const before = QS.Q().ch, prev = QS.stepNow(), moved = QS.event(type, d);
+    if (moved) { hooks.onStep?.(QS.stepNow());
+      const next = () => { if (QS.Q().ch !== before) chapterDone(before); else setTimeout(runStoryAuto, 300); };
+      if (prev?.after?.length) { storyBusy = true; setTimeout(async () => { try { await cineTalk(prev.after); } finally { storyBusy = false; next(); } }, type === 'win' ? 900 : 200); } /* the bridge lines to the next mission */
+      else next(); }
     return moved;
   }
   async function chapterDone(chIdx) {
@@ -1362,6 +1473,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     hooks.onChapter?.(ch, chIdx); refreshNPCs(); setTimeout(runStoryAuto, 600);
   }
   async function runStoryAuto() { // steps that play by themselves
+    { const cu = !storyBusy && mode === 'explore' && QS.pendingCatchUp(); if (cu) { storyEvent(cu[0], cu[1]); return; } }
     if (paused || mode === 'battle' || interacting > 0 || uiBlocked() || document.body.classList.contains('at-title') || ((location.hash.slice(1) || 'world').split('/')[0] !== 'world')) { clearTimeout(runStoryAuto.t); runStoryAuto.t = setTimeout(runStoryAuto, 700); return; } // menus / Lattice open: story waits
     if (storyBusy || mode !== 'explore') return; const st = QS.stepNow(); if (!st) return;
     if (st.kind === 'scene') { storyBusy = true; await cineTalk(st.lines, { title: QS.chapterNow().title }); storyBusy = false; storyEvent('scene', {}); }
@@ -1394,7 +1506,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     try { res = await FB.start({ kind: 'wild', wild: w, types: [w.type] }); } catch (e) { console.warn('[world] wild battle', e); } finally { back(); w.frozen = false; mode = 'explore'; wildCool = t + 10; }
     const caught = res.result === 'caught';
     if (caught || res.result === 'win') { w.dead = true; w.g.visible = false; }
-    if (caught) storyEvent('capture', { card: res.card });
+    if (caught) { storyEvent('capture', { card: res.card }); const r = SIDE.event('capture', { card: res.card }); if (r) sideProgress(r); }
     if (res.result === 'win' || caught) setTimeout(runStoryAuto, 400);
   }
   async function trainerBattle(np, { mirror = false } = {}) {
@@ -1403,8 +1515,9 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const back = clearArena(null); let res = { result: 'none' };
     try { res = await FB.start({ kind: 'trainer', npc: np, mirror, name: np.name || npcName(np.id) }); } catch (e) { console.warn('[world] trainer battle', e); } finally { back(); mode = 'explore'; wildCool = t + 10; }
     if (res.result === 'win') { const first = !QS.beaten(np.key); QS.markBeaten(np.key); np.tag.material.map.dispose(); const t2 = label(np.name || npcName(np.id), 'Trainer · beaten'); np.tag.material.map = t2.material.map;
-      if (first) storyEvent('win', { id: np.id });
+      { const st = QS.stepNow(); if (first || (st?.kind === 'battle' && st.npc === np.id)) storyEvent('win', { id: np.id }); } /* rematch story battles (Rho) must count too */
       if (np.fest) hooks.festivalWin?.(np.fest, np.key);
+      { const r = SIDE.event('win', { id: np.id }); if (r) await sideProgress(r); }
       if (np.elite && ELITE.every(e => QS.beaten(e.id))) hooks.hallOfFame?.(); }
   }
   function teleport(x, z) { if (inside) leaveRoomNow(); const pp = player.group.position; pp.set(x, H(x, z), z); player.vel.set(0, 0, 0); vy = 0; airT = 0; onGround = true; if (pet) pet.group.position.set(x + 1.2, H(x + 1.2, z), z); snap = true; streamChunks(x, z, true); savePos(); }
@@ -1412,6 +1525,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   /* ---------- collisions: circles + oriented boxes (spatial hash) */
   function collide(p, rad = .42) {
     for (const c of nearColliders(p.x, p.z, 3)) {
+      if (c.top != null && p.y != null && p.y >= c.top - (c.step || .55)) continue; /* standing on / stepping up onto a low prop */
       if (c.box) {
         const dx = p.x - c.x, dz = p.z - c.z, lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c;
         if (Math.abs(lx) < c.hw + rad && Math.abs(lz) < c.hd + rad) {
@@ -1464,7 +1578,8 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       for (const b of pushables) { const dx = b.x - pp.x, dz = b.z - pp.z, d = Math.hypot(dx, dz), min = b.r + .42;
         if (d < min && d > 1e-4) { const nx = dx / d, nz = dz / d, along = Math.max(0, player.vel.x * nx + player.vel.z * nz);
           b.vx = nx * along * .9; b.vz = nz * along * .9; b.x += nx * (min - d); b.z += nz * (min - d); b.wob = Math.min(1, b.wob + along * .08); } }
-      const gy = Math.max(ground(pp.x, pp.z), -.45);
+      let gy = Math.max(ground(pp.x, pp.z), -.45);
+      for (const c of nearColliders(pp.x, pp.z, 2)) if (c.top != null && pp.y >= c.top - (c.step || .55) && (c.box ? (Math.abs((pp.x - c.x) * c.c - (pp.z - c.z) * c.s) < c.hw && Math.abs((pp.x - c.x) * c.s + (pp.z - c.z) * c.c) < c.hd) : Math.hypot(pp.x - c.x, pp.z - c.z) < c.r + .15)) gy = Math.max(gy, c.top); /* crates, barrels, benches, steps, station platforms */
       const wasAir = !onGround; vy -= 18 * dt; if (gliding) vy = Math.max(vy, -1.9); pp.y += vy * dt; if (pp.y <= gy) { pp.y = gy; vy = 0; onGround = true; glideOn = false; if (wasAir && airT > .35) player.play('Jump_Land', .08, { once: true, speed: 1.3 }); }
       airT = onGround ? 0 : airT + dt; climbT -= dt;
       // wind glider (press jump again in the air): a toon wing above the player while gliding
@@ -1479,7 +1594,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         const sf = swimming ? 'water' : deckAt(pp.x, pp.z) != null ? 'wood' : (() => { const nr = nearestRegion(pp.x, pp.z), b = REGIONS[nr.id]?.biome; if (nr.d < 30 && b !== 'snow' && b !== 'dunes') return 'stone'; return b === 'snow' ? 'snow' : b === 'dunes' ? 'sand' : 'grass'; })();
         hooks.sfx?.('step', sf); } } }
       player.locomote(onGround ? player.vel.length() : 0, !onGround && airT > .12 ? 'air' : swimming ? 'swim' : climbT > 0 ? 'climb' : null);
-      player.group.children[0] && (player.group.children[0].position.y += ((swimming ? SWIM_Y : 0) - player.group.children[0].position.y) * Math.min(1, dt * 6)); // float at the surface while swimming
+      player.group.children[0] && (player.group.children[0].position.y += ((swimming ? (player.swimY ?? SWIM_Y) : 0) - player.group.children[0].position.y) * Math.min(1, dt * 6)); // float at the surface while swimming
+      /* open-sea stamina: around the island you can swim freely, but far out toward the edge of the map you tire and get washed back */
+      { const edge = Math.hypot(pp.x, pp.z) > WORLD * .5 - 70; if (swimming && edge) stamina = Math.max(0, stamina - dt * 7); else stamina = Math.min(100, stamina + dt * (swimming ? 4 : 25));
+        staminaUI(stamina, swimming && (edge || stamina < 100));
+        if (stamina <= 0) { stamina = 100; hooks.toast?.('Too tired to swim on — the current washed you back to shore.'); hooks.sfx?.('whoosh'); washAshore(); } }
     }
     player.update(dt);
     for (const b of pushables) { if (!b.vx && !b.vz && b.wob < .01) continue;
@@ -1511,7 +1630,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         for (const c of nearColliders(qx, qz, 1)) { const inside = c.box ? (() => { const dx = qx - c.x, dz = qz - c.z, lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c; return Math.abs(lx) < c.hw + .3 && Math.abs(lz) < c.hd + .3; })() : c.r > 1.4 && Math.hypot(qx - c.x, qz - c.z) < c.r;
           if (inside) { clip = Math.min(clip, Math.max(1.6, dd - .6)); break; } }
         if (clip < want) break; }
-      cam.dist += (clip - cam.dist) * Math.min(1, dt * (clip < cam.dist ? 14 : 4));
+      cam.dist += (clip - cam.dist) * Math.min(1, dt * (clip < cam.dist ? 14 : clip < want ? 4 : 11)); /* zoom answers at once, standing or running; only the wall pull-back eases out slowly */
       const tY = pp.y + 1.35 + (cam.dist < 3.5 ? .15 : 0);
       camTarget.set(pp.x, tY, pp.z);
       const cx = pp.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, cz = pp.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist;
@@ -1523,11 +1642,11 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       tmp.copy(camera.position).addScaledVector(sunDir, 900).project(camera); const vis = tmp.z < 1 ? 1 - clamp((Math.max(Math.abs(tmp.x), Math.abs(tmp.y)) - .9) / .8, 0, 1) : 0;
       post.U.sunUv.value.set(tmp.x * .5 + .5, tmp.y * .5 + .5); post.U.sunVis.value = vis * (sunDir.y > .02 ? 1 : 0) * (env?.look?.night ? .25 : 1); post.U.rays.value = quality === 'low' ? 0 : 1; }
     streamT -= dt; if (streamT <= 0 && !focusOverride) { streamT = .35; streamChunks(pp.x, pp.z); for (const o of gateObjs) if (!QS.flag(o.G.flag)) o.g.visible = o.g.position.distanceTo(pp) < 160; for (const id in towns) { const r = towns[id].root, d = Math.hypot(towns[id].x - pp.x, towns[id].z - pp.z); r.visible = r.visible ? d < viewFar + 85 : d < viewFar + 70; } for (const lm of landmarks) lm.g.visible = Math.hypot(lm.x - pp.x, lm.z - pp.z) < viewFar * .85; }
-    for (const n of npcs) { const d = Math.hypot(pp.x - n.x, pp.z - n.z); n.ch.group.visible = d < 70 && n.id !== 'glyph'; if (n.glyphFx) n.glyphFx.visible = d < 120; if (d < 45) n.ch.update(dt); n.mk.rotation.y = t * 2; n.mk.position.y = 3.25 + Math.sin(t * 3) * .08;
+    for (const n of npcs) { const d = Math.hypot(pp.x - n.x, pp.z - n.z); n.ch.setDetail?.(d < 20 ? 0 : d < 38 ? 1 : 2); n.ch.group.visible = d < 70 && n.id !== 'glyph'; if (n.glyphFx) n.glyphFx.visible = d < 120; if (d < 45) n.ch.update(dt); n.mk.rotation.y = t * 2; n.mk.position.y = 3.25 + Math.sin(t * 3) * .08;
       if (d < 6) faceSmooth(n.ch, pp.x, pp.z, dt, 4); else { let dd = n.face - n.ch.group.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); n.ch.group.rotation.y += dd * Math.min(1, dt * 1.5); }
       if (n.routeTrainer && !QS.beaten(n.key) && d < 7.5 && mode === 'explore' && !busy && !n.spotted) { n.spotted = true; spotted(n); } }
     for (const v of allVillagers) {
-      const g = v.ch.group.position, dPl = Math.hypot(pp.x - g.x, pp.z - g.z); v.ch.group.visible = dPl < 55; if (dPl > 55) continue; v.x = g.x; v.z = g.z;
+      const g = v.ch.group.position, dPl = Math.hypot(pp.x - g.x, pp.z - g.z); v.ch.group.visible = dPl < 55; v.ch.setDetail?.(dPl < 18 ? 0 : dPl < 34 ? 1 : 2); if (dPl > 55) continue; v.x = g.x; v.z = g.z;
       if (v.job) { // working people: stay at their spot, loop their work motion with natural pauses, look at you when you come close
         const J = JOBS[v.job];
         if (dPl < 3.4) faceSmooth(v.ch, pp.x, pp.z, dt, 3); else faceSmooth(v.ch, g.x + Math.sin(v.face), g.z + Math.cos(v.face), dt, 1.5);
@@ -1554,7 +1673,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
       let best = null, bd = 1e9;
       for (const n of npcs) { if (!n.ch.group.visible && n.id !== 'glyph') continue; const d = Math.hypot(pp.x - n.x, pp.z - n.z); if (d < n.r && d < bd) { bd = d; best = { kind: 'npc', npc: n, id: n.key, x: n.x, z: n.z }; } }
       for (const v of allVillagers) { const d = Math.hypot(pp.x - v.x, pp.z - v.z); if (d < 2 && d < bd) { bd = d; best = { kind: 'villager', v, id: 'v' + v.x.toFixed(0), x: v.x, z: v.z }; } }
-      for (const it of allItems) { const d = Math.hypot(pp.x - it.x, pp.z - it.z); if (d < it.r && d < bd) { bd = d; best = it.kind === 'travel' ? { kind: 'travel', id: it.id, x: it.x, z: it.z } : it.kind === 'door' ? { kind: 'door', id: it.id, item: it, x: it.x, z: it.z } : it.kind === 'chest' ? { kind: 'chest', id: it.id, item: it, x: it.x, z: it.z } : { kind: 'find', id: it.id, item: it, x: it.x, z: it.z }; } }
+      for (const it of allItems) { const d = Math.hypot(pp.x - it.x, pp.z - it.z); if (d < it.r && d < bd) { bd = d; best = it.kind === 'travel' ? { kind: 'travel', id: it.id, x: it.x, z: it.z } : it.kind === 'door' ? { kind: 'door', id: it.id, item: it, x: it.x, z: it.z } : it.kind === 'chest' ? { kind: 'chest', id: it.id, item: it, x: it.x, z: it.z } : it.kind === 'side' ? { kind: 'side', id: it.id, item: it, x: it.x, z: it.z } : { kind: 'find', id: it.id, item: it, x: it.x, z: it.z }; } }
       for (const w of wilds) { if (w.dead) continue; const d = Math.hypot(pp.x - w.x, pp.z - w.z); if (d < w.r + .6 && d < bd) { bd = d; best = { kind: 'wild', w, id: 'w' + w.card.i, x: w.x, z: w.z }; } }
       if ((best ? best.kind + best.id : '') !== (near ? near.kind + near.id : '')) { near = best; hooks.prompt?.(best ? promptText(best) : null); }
     } else if (near) { near = null; hooks.prompt?.(null); }
@@ -1585,6 +1704,13 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   let goalPos = null;
   function faceSmooth(ch, x, z, dt, k = 5) { const p = ch.group.position, a = Math.atan2(x - p.x, z - p.z); let d = a - ch.group.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); ch.group.rotation.y += d * Math.min(1, dt * k); }
   const pTarget = new THREE.Vector3();
+  let stamina = 100, stEl = null;
+  function washAshore() { const pp = player.group.position; /* nearest dry land: rings of samples around you */
+    for (let r = 6; r < 260; r += 6) { let best = null; for (let k = 0; k < 32; k++) { const a = k / 32 * Math.PI * 2, x = pp.x + Math.cos(a) * r, z = pp.z + Math.sin(a) * r; if (H(x, z) > .3 && Math.hypot(x, z) < WORLD * .5 - 20) { best = [x, z]; break; } } if (best) { teleport(best[0], best[1]); return; } }
+    teleport(DEFAULT_SPAWN.x, DEFAULT_SPAWN.z); }
+  function staminaUI(v, show) {
+    if (!stEl) { stEl = document.createElement('div'); stEl.className = 'stamina'; stEl.innerHTML = '<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="bg"/><circle cx="18" cy="18" r="15" class="fg"/></svg><span>🌊</span>'; document.body.append(stEl); }
+    stEl.classList.toggle('on', show && mode === 'explore'); stEl.classList.toggle('low', v < 30); stEl.querySelector('.fg').style.strokeDashoffset = String(94.2 * (1 - v / 100)); }
   function updatePet(dt, pp) {
     if (!pet) return;
     const ry = player.group.rotation.y, sp = player.vel.length();
@@ -1593,17 +1719,18 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     const g = pet.group.position, dx = pTarget.x - g.x, dz = pTarget.z - g.z, dist = Math.hypot(dx, dz);
     if (dist > 16) g.set(pTarget.x, H(pTarget.x, pTarget.z), pTarget.z);
     const want = dist > .35 ? Math.min(sp + 1.5, dist * 3.2) : 0; tmp.set(dx, 0, dz); if (tmp.lengthSq() > 1e-6) tmp.normalize(); pet.vel.lerp(tmp.multiplyScalar(want), Math.min(1, dt * 6));
-    g.x += pet.vel.x * dt; g.z += pet.vel.z * dt; collide(g, .45); g.y = H(g.x, g.z);
+    g.x += pet.vel.x * dt; g.z += pet.vel.z * dt; collide(g, .45); { const gy = ground(g.x, g.z); g.y = gy < -.3 ? -.32 + Math.sin(t * 2.4 + g.x) * .06 : gy; } /* your partner swims beside you */
     pet.update(dt, pet.vel.length(), t, camera, pet.vel);
     if (pet.nm) { pet.nm.visible = !!ne || sp < .3; pet.nm.position.y = 2.1 + (ne ? .15 : 0); }
   }
   function promptText(n) {
     if (n.kind === 'npc') { const np = n.npc, st = QS.stepNow(), story = st?.npc === np.id; return `<b>E</b> ${story && st.kind === 'battle' ? 'Battle' : np.shop ? 'Shop with' : np.trainer && !QS.beaten(np.key) ? 'Talk & battle' : 'Talk to'} ${esc(np.name || npcName(np.id))}${story ? ' <span class="gold">★</span>' : ''}`; }
     if (n.kind === 'villager') return '<b>E</b> Chat';
-    if (n.kind === 'travel') return '<b>E</b> Relay Ferry — fast travel';
+    if (n.kind === 'travel') return String(n.id).startsWith('station:') ? '<b>E</b> Board the Relay Express' : '<b>E</b> Relay Express — train map';
     if (n.kind === 'door') return `<b>E</b> Enter the ${esc(n.item.label)}`;
     if (n.kind === 'spot') return `<b>E</b> ${esc(n.spot.label)}`;
     if (n.kind === 'chest') return P.ensure().world.found[n.id] ? '<b>E</b> Empty chest' : '<b>E</b> Open treasure chest';
+    if (n.kind === 'side') return `<b>E</b> ${esc(n.item.label || 'Look')} <span class="gold">✦</span>`;
     if (n.kind === 'wild') return `<b>E</b> Battle the wild <span style="color:${TYPE_COL[n.w.type]}">${esc(n.w.card?.n || n.w.type)}</span>`;
     const done = P.ensure().world.found[n.id]; return `<b>E</b> ${{ glyph: 'Read glyph stone', glass: 'Inspect glass silhouette', pylon: 'Stabilise relay pylon' }[n.item.kind]}${done ? ' (done)' : ''}`;
   }
@@ -1727,8 +1854,10 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
   }
 
 
+  let capT = 0;
   function loop(now) {
     if (!running) return; raf = requestAnimationFrame(loop);
+    { const cap = hooks.fpsCap?.() || 0; if (cap && now - capT < 1000 / cap - 2) return; capT = now; } /* frame cap (battery / heat on phones) */
     const dt = clamp((now - last) / 1000, 0, .05); last = now; if (!player || !built) return;
     if (!paused) update(dt);
     if (post) post.render(dt); else renderer.render(scene, camera);
@@ -1756,19 +1885,19 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
     key(code, isDown = true) { const ev = { code, key: code, target: document.body, preventDefault() {} }; if (isDown) down(ev); else up(ev); },
     teleport(x, z) { teleport(x, z); },
     setView(yaw, pitch = cam.pitch, dist = cam.tDist) { cam.yaw = cam.tYaw = yaw; cam.pitch = pitch; cam.tDist = cam.dist = dist; cam.idle = 0; snap = true; },
-    travelTo(id) { const R = REGIONS[id]; if (!R) return; teleport(R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)); },
+    travelTo(id) { const R = REGIONS[id]; if (!R) return Promise.resolve(); if (!stations[id] || !player || mode !== 'explore') { teleport(R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)); return Promise.resolve(); } return trainTrip(id).catch(e => { console.warn('[world] train', e); player.group.visible = true; teleport(R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)); }); },
     snapshot(w = 960) { if (post) post.render(0); else renderer.render(scene, camera); const src = renderer.domElement, c = document.createElement('canvas'); c.width = w; c.height = Math.round(w * src.height / src.width); c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', .82); },
     enter, start, stop, resize, refreshLook, refreshPartner: spawnCompanions, refreshPet: spawnCompanions, refreshStory() { refreshNPCs(); runStoryAuto(); },
     setPaused(v) { paused = v; if (v) for (const k in keys) keys[k] = false; }, get paused() { return paused; },
     setQuality() { applyQuality(); for (const c of [...chunks.values()]) dropChunk(c); if (player) streamChunks(player.group.position.x, player.group.position.z, true); }, setAutoQuality(v) { autoQ = v; },
     get pet() { return pet; }, get ready() { return !!player && built; }, cine: (l, o) => cineTalk(l, o), get player() { return player; }, get echoes() { return wilds; }, get area() { return lastRegion || 'harbor'; }, get running() { return running; }, size: WORLD, get mode() { return mode; },
-    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, focus: focusOverride, holds, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers, blocked: (x, z, r = .42) => { const q = { x, z }; collide(q, r); return Math.hypot(q.x - x, q.z - z) > 1e-3; }, ground, reveal: id => { const n = npcs.find(n => n.id === id); return n ? reveal(n, id === 'glyph') : null; }, pushables }; },
+    get stats() { return post?.info || renderer.info.render; }, get debug() { return { scene, renderer, camera, quality, pr, post, chunks, npcs, wilds, FB, wildBattle, H, openChest: it => openChest(it), landmarks, allItems, stations, shot: (p, t) => { battleCam = p ? (c => { c.position.set(p[0], p[1], p[2]); c.lookAt(t[0], t[1], t[2]); }) : null; }, get flags() { return { busy, mode, paused, focus: focusOverride, holds, storyBusy: typeof storyBusy !== "undefined" ? storyBusy : null, near: near && (near.id || near.kind) }; }, chests: () => allItems.filter(i => i.kind === "chest"), items: () => allItems, decorLog, villagers: allVillagers, blocked: (x, z, r = .42) => { const q = { x, z }; collide(q, r); return Math.hypot(q.x - x, q.z - z) > 1e-3; }, ground, reveal: id => { const n = npcs.find(n => n.id === id); return n ? reveal(n, id === 'glyph') : null; }, pushables }; },
     /** back to safety: the nearest checkpoint (a visited town's arrival spot or the Relay Center you last rested at) */
     respawnNearest() { if (!player || mode !== 'explore') return false; const pp = player.group.position, q = QS.Q(), c = [];
       for (const id in REGIONS) if (q.visited?.[id]) { const R = REGIONS[id]; c.push([R.x + (AREAS[id].spawn?.[0] || 0), R.z + (AREAS[id].spawn?.[1] || 18)]); }
       const rp = P.ensure().world.respawn; if (rp?.x != null) c.push([rp.x, rp.z]); if (!c.length) c.push([DEFAULT_SPAWN.x, DEFAULT_SPAWN.z]);
       c.sort((a, b) => Math.hypot(a[0] - pp.x, a[1] - pp.z) - Math.hypot(b[0] - pp.x, b[1] - pp.z)); teleport(c[0][0], c[0][1]); slideT = 0; climbT = 0; return true; },
-    cinematic: (shots, o) => cinematic(shots, o), prologue: o => cinematic(prologueShots(), o), stopCinematic() { cineStop?.(); }, get camYaw() { return cam.yaw; },
+    cinematic: (shots, o) => cinematic(shots, o), prologue: o => cinematic(prologueShots(), o), stopCinematic() { cineStop?.(); }, get camYaw() { return cam.yaw; }, groundAt() { const p = player?.group.position; return p ? Math.max(ground(p.x, p.z), -.45) : 0; },
     get indoors() { return !!inside; }, exitRoom: () => exitRoom(),
     get mapCanvas() { return mapCanvas; }, regions: REGIONS, areas: AREAS, routes: ROUTES, findPos: ids => allItems.filter(it => ids.includes(it.id)).map(it => ({ x: it.x, z: it.z })),
     breakdown() { const out = {}; scene.traverse(o => { if (!o.isMesh || !o.visible) return; const g = o.geometry, tri = (g.index ? g.index.count : g.attributes.position.count) / 3, n = (o.isInstancedMesh ? o.count : 1) * (g.isInstancedBufferGeometry ? g.instanceCount : 1); const key = (o.isInstancedMesh ? 'I:' : o.isSkinnedMesh ? 'S:' : 'M:') + (o.material.name || o.material.type); out[key] = (out[key] || 0) + Math.round(tri * n); }); return Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 30); },

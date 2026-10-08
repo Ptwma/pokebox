@@ -65,7 +65,7 @@ export function loadVRM(name) {
       }
     }
     const b = new THREE.Box3().setFromObject(vrm.scene, true), h = Math.max(.1, b.max.y - b.min.y);
-    const M = { vrm, scene: vrm.scene, clips, h, v0 }; vrmReady.set(name, M); return M;
+    const M = { vrm, scene: vrm.scene, clips, h, v0, hipsY }; vrmReady.set(name, M); return M;
   }).catch(e => { console.warn('[vrm] failed', name, e); models.delete(name); return null; });
   models.set(name, p); return p;
 }
@@ -74,7 +74,7 @@ const ALIAS = { Cheer: 'Yes', PickUp: 'Interact', Spellcast_Shoot: 'Interact', W
   Idle: 'Idle_Loop', Walk: 'Walk_Loop', Run: 'Jog_Fwd_Loop', Sprint: 'Sprint_Loop', Wave: 'Yes', Idle_Neutral: 'Idle_Loop', HitRecieve: 'Hit_Chest', Death: 'Death01', Punch_Right: 'Punch_Cross' };
 
 /** a VRM actor with the same API as chars.makeRigged(): { group, play, locomote, busy, update, parts } */
-const tintCache = new Map();
+const tintCache = new Map(), NOPE = new THREE.MeshBasicMaterial({ visible: false });
 /* colour variety without new models: hair and top/one-piece materials are multiplied by the look's colours (cached per combo) */
 function tint(m, hair, top) {
   const nm = m.name || '', isHair = /HAIR/i.test(nm) && !/EYE|BROW|LASH/i.test(nm), isTop = /Tops|Onepi|Outer|Coat|Dress|Hoodie/i.test(nm);
@@ -85,7 +85,7 @@ function tint(m, hair, top) {
 }
 export function makeVRMActor(name, { height = 2.0, scale = 1, aliases = {}, hair = null, top = null } = {}) {
   const M = vrmReady.get(name); if (!M) return null;
-  const obj = SkeletonUtils.clone(M.scene); obj.traverse(o => { if (o.isMesh) { o.frustumCulled = false;
+  const obj = SkeletonUtils.clone(M.scene); obj.traverse(o => { if (o.isMesh) { o.frustumCulled = true; /* culled again (bounds enlarged below) */
     if (hair || top) o.material = Array.isArray(o.material) ? o.material.map(m => tint(m, hair, top)) : tint(o.material, hair, top); } });
   const g = new THREE.Group(), k = height / M.h * scale * .9; obj.scale.setScalar(k); if (M.v0) obj.rotation.y = Math.PI; g.add(obj);
   const mixer = new THREE.AnimationMixer(obj), byName = Object.fromEntries(M.clips.map(c => [c.name, c])), acts = {}, AL = { ...ALIAS, ...aliases };
@@ -109,5 +109,12 @@ export function makeVRMActor(name, { height = 2.0, scale = 1, aliases = {}, hair
   const blob = new THREE.Mesh(new THREE.CircleGeometry(.5, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: .18, depthWrite: false })); blob.rotation.x = -Math.PI / 2; blob.position.y = .03; g.add(blob);
   let head = null, hand = null; const hn = M.vrm.humanoid.getRawBoneNode('head')?.name, hdn = M.vrm.humanoid.getRawBoneNode('rightHand')?.name;
   obj.traverse(o => { if (o.name === hn) head = o; if (o.name === hdn) hand = o; });
-  return { group: g, model: 'vrm:' + name, mixer, play, locomote, busy: R.busy, update: dt => mixer.update(dt), parts: { head: head || g, hand }, rigged: true, vrm: true };
+  /* level of detail without changing the look up close: 0 = full (shadow + ink outline), 1 = no shadow casting, 2 = no outline pass either */
+  const meshes = []; obj.traverse(o => { if (!o.isMesh) return; meshes.push(o);
+    if (o.isSkinnedMesh) { o.computeBoundingSphere?.(); if (o.boundingSphere) o.boundingSphere.radius *= 1.5; } else if (o.geometry.boundingSphere) o.geometry.boundingSphere.radius *= 1.5;
+    if (Array.isArray(o.material)) { o.userData.full = o.material; o.userData.lite = o.material.map(m => m.isOutline ? NOPE : m); } });
+  let lvl = 0;
+  const setDetail = l => { if (l === lvl) return; lvl = l; for (const o of meshes) { o.castShadow = l === 0; if (o.userData.full) o.material = l >= 2 ? o.userData.lite : o.userData.full; } };
+  return { group: g, model: 'vrm:' + name, mixer, play, locomote, busy: R.busy, update: dt => mixer.update(dt), parts: { head: head || g, hand }, rigged: true, vrm: true, setDetail,
+    swimY: .36 - M.hipsY * k /* swim clips keep the hips at standing height (no root motion): sink the body to the surface */ };
 }

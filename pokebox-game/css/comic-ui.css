@@ -567,3 +567,162 @@ body:not(.game) .cx-area{display:none}
 .dno{position:absolute;left:6px;top:6px;font:800 10px var(--ui);color:var(--muted)}
 @media (max-height:480px){.dexgrid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}.dexe img,.dexe i{width:60px;height:84px}.dexsum b{font-size:22px}}
 .tile.fest{text-decoration:none;color:inherit;border-left:6px solid var(--fc)}
+
+/* ================================================================== battle UI v3.18 — painterly "ink & gold" (Expedition-33-like)
+   brush-stroke command list fanned beside your partner, serif small caps, a long boss bar on top, gold hairlines */
+:root{--serif:"Cinzel","Cormorant Garamond",Georgia,"Times New Roman",serif;--gold:#d9b46a;--ink2:rgba(8,7,10,.86);
+  --brush:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath d='M6 34 C18 14 60 10 120 9 C200 6 300 4 372 8 C392 9 398 16 394 22 C386 27 396 30 390 36 C382 44 360 46 320 48 C240 53 140 55 70 52 C40 51 20 50 10 46 C2 43 0 39 6 34 Z M40 54 C90 58 160 59 210 57 C160 60 90 60 40 54 Z' fill='%23000'/%3E%3C/svg%3E")}
+.fb-ui{font-family:var(--serif)}
+.fb-title{font-family:var(--serif);font-weight:800;letter-spacing:.08em;color:#f6ead2;text-shadow:0 2px 0 #000,0 0 18px rgba(0,0,0,.8);-webkit-text-stroke:0}
+/* foe: a long bar across the top */
+.fb-plate,.fb-plate.acting{border-radius:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none!important;padding:0}
+.fb-plate.acting .fb-top b{color:#ffe2a0;text-shadow:0 0 14px rgba(255,190,90,.8),0 2px 4px #000}
+.fb-plate.e{left:50%;top:14px;transform:translateX(-50%);width:min(640px,64vw);text-align:center}
+.fb-plate.e.acting{transform:translateX(-50%) scale(1.03)}
+.fb-plate.e .fb-top{justify-content:center}
+.fb-plate .fb-top b{font-family:var(--serif);font-weight:800;font-size:clamp(18px,2.3vw,28px);letter-spacing:.06em;color:#f6ead2;text-shadow:0 2px 6px #000}
+.fb-plate .fb-lv,.fb-plate .fb-type,.fb-plate .fb-r{font-family:var(--ui)}
+.fb-plate .fb-hp{height:8px;border-radius:0;margin:6px 0 4px;background:rgba(0,0,0,.6);box-shadow:0 0 0 1px rgba(217,180,106,.7),0 2px 10px rgba(0,0,0,.6);position:relative;overflow:visible}
+.fb-plate .fb-hp::before,.fb-plate .fb-hp::after{content:"";position:absolute;top:50%;width:12px;height:12px;background:var(--gold);transform:translate(0,-50%) rotate(45deg);box-shadow:0 0 0 2px #120e08}
+.fb-plate .fb-hp::before{left:-16px}.fb-plate .fb-hp::after{right:-16px}
+.fb-plate .fb-hp i{border-radius:0;background:linear-gradient(180deg,#e0453a,#a3201c)}
+.fb-plate .fb-hp i.mid{background:linear-gradient(180deg,#e0453a,#a3201c)}.fb-plate .fb-hp i.low{background:linear-gradient(180deg,#ff6a3a,#c0281c);animation:intentPulse 1s infinite}
+.fb-plate.e .fb-bot{justify-content:center;color:#e8dcc4;text-shadow:0 1px 3px #000}
+/* you: bottom-right, ink wash behind a big serif HP number */
+.fb-plate.p{right:3vw;bottom:16px;width:min(360px,40vw);padding:18px 30px 16px 34px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath d='M6 34 C18 14 60 10 120 9 C200 6 300 4 372 8 C392 9 398 16 394 22 C386 27 396 30 390 36 C382 44 360 46 320 48 C240 53 140 55 70 52 C40 51 20 50 10 46 C2 43 0 39 6 34 Z' fill='%23080709' fill-opacity='.88'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+.fb-plate.p .fb-bot small{font-family:var(--serif);font-size:15px;font-weight:600;color:#f6ead2}
+.fb-plate.p.acting{transform:scale(1.03)}
+/* commands: brush strokes fanned diagonally beside your partner */
+.fb-dock{left:auto;right:4vw;bottom:auto;top:50%;transform:translateY(-48%);width:auto;align-items:flex-end}
+.fb-ui:not(.choose) .fb-dock{transform:translate(120%,-48%);opacity:0}
+.fb-hint{justify-content:flex-end;font-family:var(--ui)}
+.fb-hint span{border-radius:0;background:rgba(8,7,10,.78);box-shadow:inset 0 0 0 1px rgba(217,180,106,.45)}
+.fb-moves{flex-direction:column;flex-wrap:nowrap;align-items:flex-end;gap:2px;width:auto}
+.fb-moves .mv{--off:0px;min-width:min(300px,34vw);max-width:none;padding:12px 28px 12px 64px;border-radius:0;text-align:left;background:#0b0a0e!important;color:#f3e7cf;
+  -webkit-mask:var(--brush) center/100% 100% no-repeat;mask:var(--brush) center/100% 100% no-repeat;transform:translateX(var(--off)) rotate(-4deg);box-shadow:none!important;
+  transition:transform .18s cubic-bezier(.2,.8,.2,1),filter .18s,background .18s}
+.fb-moves .mv::after{content:"";position:absolute;left:40px;right:30px;bottom:9px;height:2px;background:linear-gradient(90deg,var(--gold),transparent);opacity:.8}
+.fb-moves .mv:nth-child(1){--off:-0px}.fb-moves .mv:nth-child(2){--off:-22px}.fb-moves .mv:nth-child(3){--off:-44px}.fb-moves .mv:nth-child(4){--off:-30px}.fb-moves .mv:nth-child(5){--off:-12px}.fb-moves .mv:nth-child(6){--off:4px}
+.fb-moves .mv:not(:disabled):hover,.fb-moves .mv:not(:disabled):focus-visible{transform:translateX(calc(var(--off) - 14px)) rotate(-4deg) scale(1.04);background:#1c1610!important;outline:none}
+.fb-moves .mv b{font-family:var(--serif);font-weight:800;font-size:clamp(16px,1.7vw,21px);letter-spacing:.05em;font-variant:small-caps}
+.fb-moves .mv small{display:block;font-family:var(--ui);color:#d8c9a8;opacity:.9}
+.fb-moves .mv kbd{left:18px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:700 13px var(--serif);opacity:1;color:#f3e7cf;box-shadow:inset 0 0 0 2px rgba(243,231,207,.8)}
+.fb-moves .mv.ult:not(:disabled){box-shadow:none!important;color:#ffe2a0}.fb-moves .mv.ult:not(:disabled) b{text-shadow:0 0 10px #ffb84a}
+.fb-moves .mv.cap.hint{color:#ffe2a0}
+.fb-moves .mv:disabled{opacity:.42}
+.fb-turn b{font-family:var(--serif);font-weight:800;-webkit-text-stroke:0;letter-spacing:.1em;color:#f6ead2;text-shadow:0 2px 0 #000,0 0 22px rgba(0,0,0,.7)}
+.fb-turn small{font-family:var(--serif);color:var(--gold)}
+.fb-log{font-family:var(--serif);font-size:15px;color:#f3e7cf;left:3vw}
+.fb-cut b{font-family:var(--serif);font-weight:800;letter-spacing:.06em;-webkit-text-stroke:0;text-shadow:0 2px 0 #000}
+/* phones (landscape): smaller strokes, still beside the partner */
+@media (max-height:500px){.fb-moves .mv{min-width:min(240px,36vw);padding:7px 18px 7px 48px}.fb-moves .mv kbd{left:12px;width:22px;height:22px;font-size:11px}.fb-moves .mv small{display:none}
+  .fb-plate.p{bottom:8px;padding:8px 14px 6px 20px}.fb-plate.e{top:6px}.fb-dock{top:46%}}
+body:has(.upd) .cx-area,body:has(.upd) .ch-in{display:none!important} /* the update notice always wins over the 'you are in …' banner */
+/* swim stamina ring (only far out at sea) */
+.stamina{position:fixed;left:50%;bottom:22%;width:46px;height:46px;margin-left:34px;z-index:30;pointer-events:none;opacity:0;transform:scale(.8);transition:opacity .3s,transform .3s}
+.stamina.on{opacity:1;transform:none}.stamina svg{width:100%;height:100%;transform:rotate(-90deg)}
+.stamina circle{fill:none;stroke-width:4}.stamina .bg{stroke:rgba(0,0,0,.45)}.stamina .fg{stroke:#5cd6ff;stroke-dasharray:94.2;stroke-linecap:round;transition:stroke-dashoffset .2s}
+.stamina.low .fg{stroke:#ff6a4a;animation:intentPulse .8s infinite}.stamina span{position:absolute;inset:0;display:grid;place-items:center;font-size:16px}
+/* Settings v3.18: sections, ranges; text & menu size (--uis) and joystick size (--stick) */
+:root{--uis:1;--stick:1}
+.setsec{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}.setsec button{padding:7px 14px;border-radius:999px;border:0;background:rgba(255,255,255,.08);color:inherit;font:700 14px var(--ui);cursor:pointer}
+.setsec button.on{background:var(--gold,#ffd257);color:#1b1530}
+.setrow .rng{display:flex;align-items:center;gap:10px}.setrow .rng input{width:min(220px,40vw)}.setrow .rng b{min-width:48px;text-align:right}
+#gMenu .gm,#scene>*,#toasts,.fb-dock,.fb-plate,.coach,.wmodal .wbox,#wModal .wbox{zoom:var(--uis)}
+#wStick{transform:scale(var(--stick));transform-origin:left bottom}
+#gMenu .gm{max-width:calc((100vw - 16px) / var(--uis));max-height:calc((100dvh - 16px) / var(--uis))}#scene>*{max-width:calc(100vw / var(--uis))}
+/* starter cut-scene */
+#wModal.stcine{background:radial-gradient(ellipse at 50% 60%,rgba(40,30,70,.55),rgba(4,3,10,.94) 70%);display:grid;place-items:center}
+.stc-scene{position:relative;width:min(1000px,96vw);text-align:center;color:#f6ead2}
+.stc-bars{position:fixed;left:0;right:0;height:9vh;background:#000;z-index:2;animation:stBars .8s ease-out both}.stc-bars.t{top:0}.stc-bars.b{bottom:0}
+@keyframes stBars{from{transform:scaleY(0)}to{transform:none}}
+.stc-line{font:600 clamp(15px,2vw,21px) var(--serif,Georgia);font-style:italic;min-height:2.6em;margin:0 auto 14px;max-width:760px;text-shadow:0 2px 6px #000;animation:vtFadeIn .8s both}
+.stc-row{display:flex;justify-content:center;gap:clamp(10px,3vw,40px);perspective:900px}
+.stc2{position:relative;border:0;background:none;color:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;animation:stRise .9s cubic-bezier(.2,.9,.2,1) var(--d) both}
+@keyframes stRise{from{opacity:0;transform:translateY(60px) scale(.8)}to{opacity:1;transform:none}}
+.stc-glow{position:absolute;left:50%;top:40%;width:150%;height:120%;transform:translate(-50%,-50%);background:radial-gradient(ellipse,color-mix(in srgb,var(--c) 55%,transparent),transparent 65%);filter:blur(10px);animation:stPulse 2.4s ease-in-out infinite}
+@keyframes stPulse{50%{opacity:.6}}
+.stc-card{position:relative;width:clamp(110px,18vw,190px);aspect-ratio:63/88;transform-style:preserve-3d;animation:stFlip .9s cubic-bezier(.3,.9,.3,1) calc(var(--d) + .5s) both}
+@keyframes stFlip{from{transform:rotateY(180deg)}to{transform:rotateY(0)}}
+.stc-card img,.stc-card .back{position:absolute;inset:0;width:100%;height:100%;border-radius:8px;backface-visibility:hidden;box-shadow:0 10px 30px rgba(0,0,0,.6),0 0 0 2px color-mix(in srgb,var(--c) 70%,#fff)}
+.stc-card .back{transform:rotateY(180deg);background:linear-gradient(135deg,#2a2360,#5a46b8);box-shadow:inset 0 0 0 6px #e8d9a8}
+.stc2 b{font:800 clamp(15px,1.8vw,20px) var(--serif,Georgia);letter-spacing:.04em;text-shadow:0 2px 4px #000}.stc2 small{opacity:.85;font-family:var(--ui)}
+.stc2:hover .stc-card,.stc2:focus-visible .stc-card{transform:translateY(-8px) scale(1.04)}
+.stc2.pick{animation:stPick 1.6s ease-in-out forwards}.stc2.gone{transition:opacity .6s,transform .6s;opacity:0;transform:translateY(30px) scale(.85)}
+@keyframes stPick{40%{transform:scale(1.25)}100%{transform:translateY(-12vh) scale(.6);opacity:0}}
+.stc-hint{margin-top:16px;font:700 14px var(--ui);opacity:.8;animation:vtFadeIn 1s 2.6s both}
+
+/* ================================================================== battle v3.18b — Pokémon-style layout on the ink look */
+/* intro */
+.fb-intro{position:fixed;inset:0;z-index:950;pointer-events:none;overflow:hidden;display:grid;place-items:center}
+.fbi-flash{position:absolute;inset:0;background:#fff;animation:fbiFlash .5s ease-out both}
+@keyframes fbiFlash{0%,30%,60%{opacity:1}15%,45%{opacity:0}100%{opacity:0}}
+.fbi-band{position:absolute;left:-10%;right:-10%;top:50%;height:46vh;transform:translateY(-50%) skewY(-7deg);background:linear-gradient(90deg,#120c1c,#1d1530 50%,#120c1c);box-shadow:0 0 0 4px #d9b46a,0 0 60px rgba(0,0,0,.8);animation:fbiBand .5s .35s cubic-bezier(.2,.9,.2,1) both}
+.fb-intro.wild .fbi-band{background:linear-gradient(90deg,#0d1a10,#15301c 50%,#0d1a10)}
+@keyframes fbiBand{from{transform:translateY(-50%) skewY(-7deg) scaleX(0)}to{transform:translateY(-50%) skewY(-7deg)}}
+.fbi-vs{position:relative;display:flex;align-items:center;gap:clamp(14px,5vw,70px);z-index:1}
+.fbi-vs>i{font:900 clamp(40px,7vw,90px) var(--serif,Georgia);font-style:italic;color:#ffd257;text-shadow:0 4px 0 #000,0 0 30px #ff8a3a;animation:fbiVs .5s .9s cubic-bezier(.3,1.6,.4,1) both}
+@keyframes fbiVs{from{transform:scale(3);opacity:0}to{transform:none;opacity:1}}
+.fbi-side{display:flex;flex-direction:column;align-items:center;gap:4px;color:#f6ead2;text-shadow:0 2px 4px #000}
+.fbi-side img{width:clamp(90px,15vw,170px);aspect-ratio:63/88;object-fit:cover;border-radius:8px;box-shadow:0 0 0 3px var(--tc),0 0 28px var(--tc),0 12px 30px rgba(0,0,0,.7)}
+.fbi-side b{font:800 clamp(15px,2vw,22px) var(--serif,Georgia);letter-spacing:.04em}.fbi-side small{font:600 12px var(--ui);opacity:.85}
+.fbi-side.e{animation:fbiL .6s .55s cubic-bezier(.2,.9,.2,1) both}.fbi-side.p{animation:fbiR .6s .55s cubic-bezier(.2,.9,.2,1) both}
+@keyframes fbiL{from{transform:translateX(-70vw)}to{transform:none}}@keyframes fbiR{from{transform:translateX(70vw)}to{transform:none}}
+.fbi-title{position:absolute;bottom:14vh;left:0;right:0;text-align:center;font:800 clamp(18px,2.6vw,30px) var(--serif,Georgia);color:#fff;text-shadow:0 2px 0 #000,0 0 16px rgba(0,0,0,.9);animation:vtFadeIn .4s 1.1s both}
+.fb-intro.out{animation:fbiOut .6s ease-in forwards}@keyframes fbiOut{to{opacity:0;transform:scale(1.15)}}
+/* foe plate: top-left like the games; HP bar in the classic green → yellow → red */
+.fb-plate.e{left:3vw;top:16px;transform:none;width:min(380px,44vw);text-align:left;padding:10px 18px 10px 16px;background:linear-gradient(100deg,rgba(8,7,10,.88),rgba(8,7,10,.72) 70%,transparent);clip-path:polygon(0 0,100% 0,92% 100%,0 100%)}
+.fb-plate.e.acting{transform:scale(1.03)}.fb-plate.e .fb-top,.fb-plate.e .fb-bot{justify-content:flex-start}
+.fb-plate .fb-hp i{background:linear-gradient(180deg,#6be36b,#2fa83a)}
+.fb-plate .fb-hp i.mid{background:linear-gradient(180deg,#ffe066,#e0b020)}
+.fb-plate .fb-hp i.low{background:linear-gradient(180deg,#ff7a5a,#d0302a)}
+.fb-plate .fb-hp::before{content:"HP";left:-30px;width:auto;height:auto;padding:0 4px;background:#d9b46a;color:#1a1208;font:900 10px var(--ui);transform:translateY(-50%);box-shadow:none;border-radius:3px}
+.fb-plate .fb-hp::after{display:none}.fb-plate .fb-hp{margin-left:30px}
+/* moves: each command pill carries its type colour (Scarlet/Violet style) */
+.fb-moves .mv{background:linear-gradient(90deg,color-mix(in srgb,var(--tc,#888) 78%,#000) 0,color-mix(in srgb,var(--tc,#888) 35%,#0b0a0e) 55%,#0b0a0e 100%)!important}
+.fb-moves .mv.cap{--tc:#e8483a}.fb-moves .mv.run{--tc:#5a6a7a}
+.fb-moves .mv:not(:disabled):hover,.fb-moves .mv:not(:disabled):focus-visible{filter:brightness(1.2)}
+.fb-intro{background:radial-gradient(ellipse at 50% 50%,rgba(30,22,50,.82),rgba(4,3,8,.95));animation:fbiIn .18s ease-out both}
+@keyframes fbiIn{from{opacity:0}to{opacity:1}}
+.fb-intro.out{animation:fbiOut .6s ease-in forwards}
+body.fb-introing .fb-ui{opacity:0}
+/* train travel */
+.tr-fade{position:fixed;inset:0;z-index:940;background:#05040a;opacity:0;pointer-events:none;transition:opacity .42s}.tr-fade.on{opacity:1}
+.tr-card{position:fixed;inset:0;z-index:945;display:grid;place-content:center;text-align:center;color:#f6ead2;background:linear-gradient(180deg,#0c1424,#1b2a44);overflow:hidden;animation:vtFadeIn .4s both}
+.tr-card small{font:700 13px var(--ui);letter-spacing:.4em;text-transform:uppercase;color:#9fd8ff;position:relative}
+.tr-card b{font:800 clamp(24px,4vw,46px) var(--serif,Georgia);letter-spacing:.05em;text-shadow:0 3px 0 #000;position:relative}
+.tr-card i{font-style:normal;font-size:44px;margin-top:10px;position:relative;animation:trBob .5s ease-in-out infinite alternate}
+@keyframes trBob{to{transform:translateY(-4px)}}
+.tr-lines{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 60px,rgba(159,216,255,.12) 60px 64px);animation:trRush .35s linear infinite}
+@keyframes trRush{to{background-position:-128px 0}}
+.tr-card.out{animation:fbiOut .6s ease-in forwards}
+.av3{display:inline-block;flex:none;line-height:0}.av3 img.pav{width:100%;height:100%}.av3 svg{width:100%;height:100%}
+
+/* ---- v3.18 touch controls: thumb arc (big Jump in the corner, Use above it, Roll beside it), line icons + labels */
+.wb svg,.tb svg{width:58%;height:58%;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.wb svg{width:22px;height:22px}
+.tb{position:relative;display:grid;place-items:center}
+.tb small{position:absolute;bottom:-17px;left:50%;transform:translateX(-50%);font:800 11px var(--display,system-ui);letter-spacing:.08em;text-transform:uppercase;color:#fff;text-shadow:0 1px 3px #000c;pointer-events:none;white-space:nowrap}
+html.touch .wtbtns{display:block;width:calc(var(--tbs) * 2.55);height:calc(var(--tbs) * 2.45);--tbs:clamp(56px, 17vh, 84px);grid-template-columns:none;grid-template-rows:none}
+html.touch .wtbtns .tb{position:absolute;width:calc(var(--tbs) * .78);height:calc(var(--tbs) * .78)}
+html.touch .wtbtns .tb.jump{right:0;bottom:0;width:var(--tbs);height:var(--tbs);--lg-tint:color-mix(in srgb,#5cf2d6 26%,transparent)}
+html.touch .wtbtns .tb.roll{right:calc(var(--tbs) * 1.18);bottom:calc(var(--tbs) * .06)}
+html.touch .wtbtns .tb.use{right:calc(var(--tbs) * .62);bottom:calc(var(--tbs) * 1.32);width:calc(var(--tbs) * .86);height:calc(var(--tbs) * .86)}
+html.touch .wtbtns .tb.use.has{animation:usePulse 1.1s ease-in-out infinite;--lg-tint:color-mix(in srgb,var(--gold) 55%,transparent)}
+@keyframes usePulse{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--gold) 35%,transparent),0 0 22px var(--gold)}}
+html.touch .wtbtns .tb.use:not(.has){opacity:.55}
+@media (orientation:portrait){html.touch .wtbtns{--tbs:clamp(60px, 18vw, 82px)}}
+html.touch .wtbtns{bottom:calc(max(26px, 6vh) + var(--sb, 0px));overflow:visible}
+/* readability on phones: the objective card is never shrunk below normal text size */
+html.touch .wquest{transform:none;margin-top:0}
+html.touch .wquest .wgoal b{font-size:14px}html.touch .wquest .eyebrow{font-size:10px}
+@media (orientation:portrait){html.touch .wquest{max-width:62vw}html.touch .wcompass{display:none}}
+.tb small{bottom:11%;font-size:clamp(8px,1.9vh,10px);text-shadow:0 1px 2px #000a}
+.tb small~svg,.tb svg{margin-bottom:14%}
+.tb svg{width:50%;height:50%}
+html.touch .wtbtns .tb.use.has{animation:usePulse2 1.1s ease-in-out infinite}
+@keyframes usePulse2{0%,100%{outline:2px solid rgba(255,210,87,.9);outline-offset:0}50%{outline:4px solid rgba(255,210,87,.35);outline-offset:5px}}
+/* v3.18: Scarlet/Violet layout: your partner's plate bottom-left, the move list owns the right side (no overlap) */
+.fb-plate.p{left:3vw;right:auto}
+.fb-log{bottom:calc(16px + 92px)!important;left:3vw;max-width:44vw}
+@media (max-height:500px){.fb-log{bottom:78px!important}}
