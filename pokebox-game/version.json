@@ -1,20 +1,14 @@
 {
-  "version": "3.18.0",
+  "version": "3.19.0",
   "launcher": "2.2",
   "minApk": 5,
   "repo": "Ptwma/pokebox",
   "notes": [
-    "Story: Rho rematches now advance the story; already-finished steps are detected and skipped automatically",
-    "Story: longer, connected dialogue for every mission, a 10-panel opening story and a first-time controls tutorial",
-    "Starter choice is now a cutscene with 3 random first-stage Pokémon of 3 different types",
-    "7 side stories with their own characters and rewards (see Journey → Side stories)",
-    "Relay Express: ride a steam train between visited towns from the station outside each town",
-    "Battles: VS intro while the cards load, Pokémon-style HP plates and type-coloured moves",
-    "New settings: view distance, grass, FPS cap, shader effects, volumes, UI scale, text speed, FOV, camera shake, stick size, haptics",
-    "Fullscreen stays on until you switch to windowed in Settings (Esc no longer exits it); right-click menu disabled",
-    "Music pauses when the app goes to the background",
-    "Physics: no more sinking into hills; stand on docks, crates, stairs and platforms; partner swims with you; swim stamina at the island edge",
-    "Phone: faster rendering on High, shader warm-up before play, new thumb-arc buttons with icons, bigger text",
-    "New painted world map, 3D anime portraits, Mondstadt-style harbor houses, smoother zoom"
+    "Fix: the Settings menu (and other panels) could be invisible on phones when the text size was not M",
+    "Controller support: Xbox/PlayStation pads on PC, built-in controls on Android handhelds and Bluetooth pads (needs the new APK on Android)",
+    "Controller: A talks/uses or jumps, B rolls/back, X interact, Y map, LB/RB zoom, Start menu; D-pad moves through every menu",
+    "AYN Thor and other dual-screen handhelds: the bottom screen shows the map (tap a town to ride the train), objective, team, big battle buttons and dialogue history (new APK)",
+    "Handhelds: 60 Hz lock and steadier dynamic resolution for smooth play on High",
+    "Settings → About: second-screen toggle and device/controller info"
   ]
 }

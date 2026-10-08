@@ -893,7 +893,9 @@ function liveAvatar(el, look, size) {
   portrait(look, size * 2).then(u => { if (u && el.dataset.pk === k) el.innerHTML = `<img class="pav" src="${u}" width="${size}" height="${size}" alt="">`; });
 }
 /* ------------------------------------------------------------------ World (3D Veyra) */
-let world = null, worldCh = -1; PAD.bindWorld(() => world);
+/* gaming handhelds (AYN Thor & co., reported by the Android app): steadier frame pacing, weaker SoC tier for the Snapdragon 865 */
+const HANDHELD = (() => { const d = deviceInfo(); if (!d?.handheld) return null; return { weak: /SM8250|kona|865/i.test(String(d.soc || '') + String(d.hardware || '')), dual: (d.displays || []).length > 1 }; })();
+let world = null, worldCh = -1; PAD.bindWorld(() => world); if (HANDHELD) PAD.assume();
 initDual({ world: () => world, travel: id => { sfx.whoosh(.5); world?.travelTo(id); }, menu: () => openLattice() });
 const AREA_REQ = { harbor: 0, mistvale: 1, sandreach: 2, starfall: 3, voltspire: 4, frostline: 5, rift: 6 };
 function worldConfirm(q, yes, no) {
@@ -971,7 +973,7 @@ function ensureWorld() {
   if (world) return world;
   world = createWorld($('#worldCanvas'), {
     quality: () => gfx().q, renderScale: () => gfx().scale, comic: () => st().settings.comic !== false, style: () => st().settings.style || 'toon', setQuality: q => { st().settings.gfx = q; C.save(); if (!$('#gMenu').hidden) renderMenu(); },
-    shadows: () => st().settings.shadows !== false, viewDist: () => st().settings.viewDist ?? 1, grassAmt: () => st().settings.grassAmt ?? 1, bloom: () => st().settings.bloom !== false, shaderFx: () => st().settings.shaderFx ?? (PHONE_UI ? 1 : 2), fpsCap: () => st().settings.fpsCap || 0, shake: () => st().settings.shake !== false, fov: () => gfx().fov, sensitivity: () => gfx().sens, invertY: () => gfx().inv,
+    shadows: () => st().settings.shadows !== false, viewDist: () => st().settings.viewDist ?? 1, grassAmt: () => st().settings.grassAmt ?? 1, bloom: () => st().settings.bloom !== false, shaderFx: () => st().settings.shaderFx ?? (PHONE_UI ? 1 : 2), fpsCap: () => st().settings.fpsCap || 0, shake: () => st().settings.shake !== false, handheld: () => HANDHELD, fov: () => gfx().fov, sensitivity: () => gfx().sens, invertY: () => gfx().inv,
     minimap: () => $('#wMini'), fps: n => { const f = $('#wFps'); if (f) f.textContent = n + ' fps'; },
     loading: (on, name) => { const l = $('#wLoad'); l.hidden = !on; if (on) $('#wLoadT').textContent = name; },
     partner: partnerInfo,
@@ -993,7 +995,7 @@ function ensureWorld() {
       playScene([['vale', 'You beat the whole Rift League. Your team goes into the Hall of Fame of Veyra — the first Ranger ever.'], ['rho', 'Champion of the Rift. I am NOT jealous. Okay, a little.']], { title: 'Hall of Fame', cine: true }).then(() => toast('🏆 <b>Hall of Fame!</b> <span class="gold">+5,000 coins</span> · rare legends now roam Veyra more often')); },
     reveal: o => vsCard(o), arrival: (id, a) => { sfx.rare?.(1); },
     onChapter: (ch, idx) => { whenFree(() => chapterCard(idx + 1)); xp(ch.reward?.xp || 0); if (ch.reward?.seal) sealToast(ch.reward.seal, idx); toast(`<b>Chapter complete:</b> ${esc(ch.title)} <span class="gold">+${fmt(ch.reward?.coins || 0)} coins</span>`); worldHud(); }, toast: m => toast(m), sfx: (n, a) => sfx[n]?.(a), xp: n => { xp(n); worldHud(); }, travel: worldTravel, go: h => { location.hash = h; },
-    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; document.querySelector('.tb.use')?.classList.toggle('has', !!html); if (!html) return; if (PAD.padActive()) html = html.replace('<b>E</b>', PAD.glyph('X'));
+    prompt: html => { const p = $('#wPrompt'); p.hidden = !html; document.querySelector('.tb.use')?.classList.toggle('has', !!html); if (!html) return; if (PAD.padActive()) html = html.replace('<b>E</b>', PAD.glyph('A'));
       if (TOUCH) { p.innerHTML = html.replace('<b>E</b>', '<b class="tap">✋</b>'); p.onclick = () => { world.key('KeyE', true); setTimeout(() => world.key('KeyE', false), 60); (st().settings.haptics !== false) && navigator.vibrate?.(8); }; }
       else p.innerHTML = html; },
     region: (id, night) => { musRegion = [id, night]; if (!battleMusic && st().settings.music !== false) music.world(id, night); },
@@ -1201,7 +1203,7 @@ function renderMenu() {
         + `<details class="small muted"><summary>Device &amp; controller info</summary><pre style="white-space:pre-wrap;font-size:11px;user-select:text">${esc(JSON.stringify(di, null, 1))}</pre></details>` : ''); }
     body = `<h3 class="display">Settings</h3><div class="setsec">${secs.map(([k, v]) => `<button type="button" class="${sec === k ? 'on' : ''}" data-sec="${k}">${v}</button>`).join('')}</div>${inner}`;
   } else if (menuTab === 'controls') {
-    body = `<h3 class="display">Controls</h3><div class="keys">${[['W A S D / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump'], ['Q / Ctrl', 'Dodge roll'], ['E / Enter', 'Talk, read, battle'], ['Mouse drag', 'Turn camera'], ['Mouse wheel', 'Zoom'], ['Left click ground', 'Walk there'], ['M / Tab', 'Map & travel'], ['F', 'Fullscreen'], ['Esc', 'Menu / pause'], ['F8', 'Performance meter']].map(([k, v]) => `<div><kbd>${k}</kbd><span>${v}</span></div>`).join('')}</div>`;
+    body = `<h3 class="display">Controls</h3><div class="keys">${[['W A S D / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump'], ['Q / Ctrl', 'Dodge roll'], ['E / Enter', 'Talk, read, battle'], ['Mouse drag', 'Turn camera'], ['Mouse wheel', 'Zoom'], ['Left click ground', 'Walk there'], ['M / Tab', 'Map & travel'], ['F', 'Fullscreen'], ['Esc', 'Menu / pause'], ['F8', 'Performance meter'], ['🎮 Left stick', 'Move (push fully to run)'], ['🎮 Right stick', 'Camera'], ['🎮 A', 'Talk/use when in reach, else jump · confirm'], ['🎮 B', 'Roll / back'], ['🎮 X', 'Talk, read, battle'], ['🎮 Y', 'Map'], ['🎮 LB / RB', 'Zoom'], ['🎮 LT / L3', 'Run'], ['🎮 Start', 'Menu'], ['🎮 Select', 'Journey'], ['🎮 D-pad', 'Move between buttons in menus']].map(([k, v]) => `<div><kbd>${k}</kbd><span>${v}</span></div>`).join('')}</div>`;
   } else {
     const s = P.ensure(), L = C.levelInfo();
     body = `<h3 class="display">${inWorld ? 'Paused' : 'Menu'}</h3><div class="mcard">${av3(s.look, 84)}<div><b>${esc(s.name)}</b><small>Level ${L.lv} · ${fmt(st().coins)} coins · ★${s.stars}</small><small>${inWorld ? esc(AREAS[world?.area]?.name || '') : ''}</small></div></div>

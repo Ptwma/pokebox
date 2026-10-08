@@ -313,6 +313,7 @@ public class MainActivity extends Activity {
             try {
                 JSONObject o = new JSONObject();
                 o.put("maker", Build.MANUFACTURER); o.put("model", Build.MODEL); o.put("device", Build.DEVICE); o.put("android", Build.VERSION.RELEASE); o.put("sdk", Build.VERSION.SDK_INT);
+                o.put("hardware", Build.HARDWARE); if (Build.VERSION.SDK_INT >= 31) o.put("soc", Build.SOC_MODEL);
                 o.put("handheld", Build.MANUFACTURER != null && Build.MANUFACTURER.toUpperCase(Locale.ROOT).contains("AYN"));
                 JSONArray ds = new JSONArray();
                 if (dm != null) for (Display d : dm.getDisplays()) {

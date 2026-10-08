@@ -3,7 +3,7 @@
 //   1. the browser Gamepad API (PC, Chrome/Edge)
 //   2. the Android app: MainActivity reads the built-in controls natively (KeyEvent / MotionEvent, reliable in a WebView)
 //      and pushes them in through window.__padKey(code, down) and window.__padAxes(lx, ly, rx, ry, lt, rt, hx, hy).
-// Layout (Xbox / Android positions: A = bottom): A jump · confirm, B roll · back, X use/talk, Y map, LB/RB zoom,
+// Layout (Xbox / Android positions: A = bottom): A talk/use when in reach, else jump · confirm, B roll · back, X use/talk, Y map, LB/RB zoom,
 // LT/L3 run, Start menu, Select journey. In menus, dialogue, battles and the map the D-pad / left stick moves a focus
 // ring between buttons and A presses the focused one.
 const DEAD = .18;
@@ -70,7 +70,7 @@ function frame(now) {
     W.setStick(s.lx, s.ly); lastStick = [s.lx, s.ly]; W.setRun(held(BTN.LT) || held(BTN.L3) || held(BTN.RT));
     const k = 2.8 * dt * (W.sens?.() || 1); W.look?.(s.rx * Math.abs(s.rx) * k * 1.3, s.ry * Math.abs(s.ry) * k * .8);
     const z = 7 * dt; if (held(BTN.LB) || held(BTN.DOWN)) W.zoomBy?.(z); if (held(BTN.RB) || held(BTN.UP)) W.zoomBy?.(-z);
-    if (down(BTN.A)) W.key('Space'), setTimeout(() => W.key('Space', false), 80);
+    if (down(BTN.A)) { const k = W.near ? 'KeyE' : 'Space'; W.key(k); setTimeout(() => W.key(k, false), 80); } /* A talks/uses when something is in reach, else jumps (like Pokémon) */
     if (down(BTN.B)) W.key('KeyQ'), setTimeout(() => W.key('KeyQ', false), 80);
     if (down(BTN.X)) W.key('KeyE'), setTimeout(() => W.key('KeyE', false), 80);
     if (down(BTN.Y)) key('KeyM', 'm');
@@ -100,3 +100,5 @@ export const onPad = f => listeners.add(f);
 export function bindWorld(fn) { getWorld = fn; }
 /* button glyphs for prompts: "E" → X button etc. */
 export const glyph = b => `<b class="padg padg-${b.toLowerCase()}">${b}</b>`;
+/* devices with built-in controls (AYN Thor): start in controller mode, touch still switches back */
+export function assume() { active = true; document.documentElement.classList.add('pad'); listeners.forEach(f => f(true)); }

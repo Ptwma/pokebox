@@ -224,6 +224,7 @@ export function createWorld(canvas, hooks = {}) {
     const scale = clamp(hooks.renderScale?.() || 1, .5, 1);
     // sharp image first: phones have dpr 2.5-3.5, rendering below ~1.3 looks smeared. Dynamic resolution (loop) keeps it smooth.
     prMax = (quality === 'high' ? Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.75 : 2) : quality === 'medium' ? Math.min(devicePixelRatio, 1.6) : Math.min(devicePixelRatio, 1.3)) * scale;
+    { const hh = hooks.handheld?.(); if (hh) prMax = Math.min(prMax, (hh.weak ? 1.2 : 1.5) * scale); } /* gaming handhelds (AYN Thor): small 6" panel, steady 60 fps matters more than the last bit of sharpness */
     pr = prMax; prDrops = prCool = prSlow = prT = 0;
     GFX.density = quality === 'high' ? 1 : quality === 'medium' ? .8 : .5; GFX.grassFar = quality === 'high' ? 60 : quality === 'medium' ? 46 : 31;
     viewFar = quality === 'high' ? 320 : quality === 'medium' ? 210 : 150; vegR = quality === 'high' ? 230 : quality === 'medium' ? 160 : 110;
@@ -1868,7 +1869,7 @@ const TREES = ['FL_Tree_A', 'FL_Tree_B', 'FL_Tree_C', 'FL_Tree_A', 'FL_Tree_B'],
         /* a pixel-ratio change re-allocates the canvas and every post-fx target, which shows as a one-frame blink. So: only on
            SUSTAINED slowness (2 windows in a row, not a chunk-streaming hitch), at most once per ~12 s, raise only after a long calm
            stretch, never bounce up/down, and re-render straight away so the cleared canvas is never shown. */
-        prCool = Math.max(0, prCool - 1); prSlow = avg > .024 ? prSlow + 1 : 0;
+        prCool = Math.max(0, prCool - 1); prSlow = avg > (hooks.handheld?.() ? .0185 : .024) ? prSlow + 1 : 0;
         let np = pr;
         if (prSlow >= 2 && pr > .7 && !prCool) np = Math.max(.7, pr - (avg > .033 ? .15 : .08));
         else if (avg < .0155 && pr < prMax && ++prT >= 12 && !prCool && prDrops < 3) np = Math.min(prMax, pr + .08);
