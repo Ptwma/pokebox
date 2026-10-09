@@ -51,7 +51,7 @@ def prism_roof(name, w, d, rise, thick, loc, m):
     for s in (-1, 1):
         ob = box(name + ('_L' if s < 0 else '_R'), w, L + .02, thick, (0, 0, 0), m, bevel=.02)
         ob.location = (loc[0], loc[1] + s * half / 2, loc[2] + rise / 2 - thick * .5)
-        ob.rotation_euler = (s * ang, 0, 0)
+        ob.rotation_euler = (-s * ang, 0, 0)
         parts.append(ob)
     ridge = box(name + '_Ridge', w + .04, .26, .16, (loc[0], loc[1], loc[2] + rise - .04), m, bevel=.03); parts.append(ridge)
     return parts
