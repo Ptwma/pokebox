@@ -198,11 +198,12 @@ def make_materials():
     S, C, F, Gm, W = master_surface(), master_color(), master_foliage(), master_ground(), master_water()
     M = {}
     # building surfaces (Blender box UVs: 1 UV = 1 m)
-    M['M_Siding_White'] = _mi('MI_Siding_White', S, {'UVScale': .5, 'RoughMul': .85}, {'Tint': (1.15, 1.15, 1.12, 1)}, _ph('painted_plaster_wall'))
-    M['M_Siding_Cream'] = _mi('MI_Siding_Cream', S, {'UVScale': .5, 'RoughMul': .85}, {'Tint': (1.2, 1.08, .86, 1)}, _ph('painted_plaster_wall'))
-    M['M_Plaster'] = _mi('MI_Plaster', S, {'UVScale': .5}, {'Tint': (.9, .9, .9, 1)}, _ph('painted_plaster_wall'))
+    # Wolf-Among-Us look: walls and roofs are flat painted colour (the modelled boards and tiles give the detail, the ink pass draws it)
+    M['M_Siding_White'] = _mi('MI_Siding_White', C, {'Roughness': .7}, {'Color': (.82, .84, .86, 1)})
+    M['M_Siding_Cream'] = _mi('MI_Siding_Cream', C, {'Roughness': .7}, {'Color': (.86, .76, .58, 1)})
+    M['M_Plaster'] = _mi('MI_Plaster', C, {'Roughness': .8}, {'Color': (.7, .7, .68, 1)})
     M['M_Roof_Red'] = _mi('MI_Roof_Red', S, {'UVScale': .45}, {'Tint': (1.25, .55, .45, 1)}, _ph('grey_roof_tiles'))
-    M['M_Roof_Blue'] = _mi('MI_Roof_Blue', S, {'UVScale': .45}, {'Tint': (.55, .75, 1.2, 1)}, _ph('grey_roof_tiles'))
+    M['M_Roof_Blue'] = _mi('MI_Roof_Blue', S, {'UVScale': .45}, {'Tint': (.45, .7, 1.35, 1)}, _ph('grey_roof_tiles'))
     M['M_Stone'] = _mi('MI_Stone', S, {'UVScale': .6}, {}, _ph('rustic_stone_wall'))
     M['M_Brick'] = _mi('MI_Brick', S, {'UVScale': .8}, {}, _ph('red_brick'))
     M['M_WoodBox'] = _mi('MI_WoodBox', S, {'UVScale': 1.0}, {'Tint': (.85, .7, .55, 1)}, _ph('brown_planks_05'))
@@ -214,7 +215,7 @@ def make_materials():
                            ('M_Red', (.8, .08, .06, 1), .4, 0), ('M_BinGreen', (.12, .3, .16, 1), .5, 0)]:
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
-    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.9, 1.05, .75, 1)}, {'Splat': 'T_TownSplat', 'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
+    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.55, 1.25, .38, 1)}, {'Splat': 'T_TownSplat', 'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
                         'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
                         'SandArm': 'coast_sand_01_arm', 'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
     M['M_Water'] = _mi('MI_Water', W)
@@ -369,11 +370,11 @@ def master_comic():
         except Exception as ex: log('blendable location', ex)
     cu = _e(m, unreal.MaterialExpressionCustom, -400, 0)
     cu.set_editor_property('code', COMIC_HLSL); cu.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
-    names = [('Thick', 1.4), ('DepthT', .02), ('DepthK', 14.0), ('NormT', .28), ('NormK', 3.0), ('FadeDist', 9000.0), ('Bands', 4.0), ('Soft', .08),
-             ('CelAmt', .55), ('Sat', 1.15), ('InkAmt', .9)]
+    names = [('Thick', 2.1), ('DepthT', .015), ('DepthK', 18.0), ('NormT', .2), ('NormK', 3.5), ('FadeDist', 12000.0), ('Bands', 3.5), ('Soft', .06),
+             ('CelAmt', .8), ('Sat', 1.22), ('InkAmt', .95)]
     ins = []
-    for k, _ in names: ins.append(unreal.CustomInput(input_name=k))
-    for k in ('Ink', 'DummyA', 'DummyB', 'DummyC'): ins.append(unreal.CustomInput(input_name=k))
+    for k in [n for n, _ in names] + ['Ink', 'DummyA', 'DummyB', 'DummyC']:
+        ci = unreal.CustomInput(); ci.set_editor_property('input_name', k); ins.append(ci)
     cu.set_editor_property('inputs', ins)
     y = 0
     for k, v in names: MEL.connect_material_expressions(_scalar(m, k, v, -900, y), '', cu, k); y += 70

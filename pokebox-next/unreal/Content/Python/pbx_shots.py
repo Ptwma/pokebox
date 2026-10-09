@@ -46,6 +46,8 @@ def make_tick(delay=45.0, settle=6.0, views=None, res=(1920, 1080)):
         name, frm, to = views[st['i']]
         if st['phase'] == 'move':
             ues.set_level_viewport_camera_info(unreal.Vector(*frm), _look(frm, to))
+            got = ues.get_level_viewport_camera_info()
+            print('[shots]', name, 'cam set', [round(v) for v in frm], 'now', got)
             st['phase'] = 'settle'; st['since'] = 0.0; return False
         if st['phase'] == 'settle' and st['since'] >= settle:
             st['before'] = set(glob.glob(os.path.join(SHOTDIR, '**', '*.png'), recursive=True))
@@ -56,6 +58,6 @@ def make_tick(delay=45.0, settle=6.0, views=None, res=(1920, 1080)):
             if new:
                 time.sleep(0.3); shutil.copy(max(new, key=os.path.getmtime), os.path.join(OUT, name + '.png'))
                 print('[shots] saved', name); st['i'] += 1; st['phase'] = 'move'
-            elif st['since'] > 40: print('[shots] no file for', name); st['i'] += 1; st['phase'] = 'move'
+            elif st['since'] > 120: print('[shots] no file for', name); st['i'] += 1; st['phase'] = 'move'
         return False
     return tick
