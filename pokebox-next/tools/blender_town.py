@@ -287,9 +287,20 @@ def ground(plan):
     bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Ground.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
                              axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
 
+def splat(plan, res=512):
+    """ground mask texture (R = dirt path, G = sand, B = flagstone plaza) covering the TOWN square; Unreal samples it by world XY"""
+    S = TOWN['size']; px = [0.0] * (res * res * 4)
+    for j in range(res):
+        y = -S / 2 + S * (j + .5) / res
+        for i in range(res):
+            x = -S / 2 + S * (i + .5) / res; k = (j * res + i) * 4
+            px[k] = path_mask(x, y, plan); px[k + 1] = min(1, max(0, (y - 40) / 5)); px[k + 2] = 1.0 if (abs(x) < 9 and -27 < y < -17) else 0.0; px[k + 3] = 1.0
+    im = bpy.data.images.new('T_TownSplat', res, res, alpha=False, float_buffer=False); im.colorspace_settings.name = 'Non-Color'
+    im.pixels = px; im.filepath_raw = os.path.join(OUT, 'tex', 'T_TownSplat.png'); im.file_format = 'PNG'; im.save()
+
 def water_plane():
     bm = bmesh.new(); bmesh.ops.create_grid(bm, x_segments=40, y_segments=20, size=1)
-    bmesh.ops.scale(bm, vec=Vector((300, 120, 1)), verts=bm.verts)
+    bmesh.ops.scale(bm, vec=Vector((1600, 700, 1)), verts=bm.verts)
     ob = mesh_obj('SM_Water', bm); set_mat(ob, 'M_Water'); return export(ob, 'SM_Water')
 
 # ------------------------------------------------------------------ the town plan
@@ -298,7 +309,7 @@ def plan_town():
          'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None):
         P['objects'].append(dict(mesh=mesh, x=round(x, 3), y=round(y, 3), z=round(height(x, y) if z is None else z, 3), rot=round(rot, 2), s=round(s, 3)))
-    add('SM_House_Player', -15, -5); add('SM_House_Rival', 15, -5); add('SM_Lab', 0, -34)
+    add('SM_House_Player', -15, -5, 180); add('SM_House_Rival', 15, -5, 180); add('SM_Lab', 0, -34, 180)  # fronts face the village street (+y)
     add('SM_Mailbox', -12.3, 2.2, 90); add('SM_Mailbox', 17.7, 2.2, 90)
     add('SM_Sign', 4, 9, 0); add('SM_Sign', -4, -20, 0)
     for x in (-6, 6):
@@ -338,7 +349,7 @@ def plan_town():
     for k in range(40):                  # pebbles and rocks along the paths
         x = (R.random() - .5) * 6; y = -20 + R.random() * 60
         if abs(x) > 2.2: add(R.choice(['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Square_3', 'Rock_Medium_1']), x, y, R.random() * 360, .6 + R.random() * .5)
-    P['water'] = dict(x=0, y=110, z=-1.2)
+    P['water'] = dict(x=0, y=380, z=-1.2)
     P['player_start'] = dict(x=0, y=10, z=height(0, 10) + 1.0, rot=-90)
     return P
 
@@ -351,7 +362,7 @@ def run():
     for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin):
         ob = f(); export(ob, ob.name); reset()
     water_plane(); reset()
-    ground(plan); reset()
+    ground(plan); reset(); splat(plan)
     with open(os.path.join(OUT, 'town_plan.json'), 'w') as fh: json.dump(plan, fh, indent=1)
     print('town built:', len(plan['objects']), 'placements')
 

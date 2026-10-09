@@ -12,6 +12,14 @@ MEL = unreal.MaterialEditingLibrary
 
 def log(*a): print('[pbx]', *a)
 
+def sp(obj, **kw):
+    """set editor properties, trying alternative names; logs what does not exist in this engine version"""
+    for k, v in kw.items():
+        for name in (k, 'b_' + k, 'enable_' + k, 'b_enable_' + k):
+            try: obj.set_editor_property(name, v); break
+            except Exception: continue
+        else: log('no property', type(obj).__name__, k)
+
 # ------------------------------------------------------------------ import
 def _import(files, dest):
     tasks = []
@@ -36,7 +44,7 @@ def import_textures():
         if n.endswith('_nor') or n.endswith('_normal'):
             a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_NORMALMAP); a.set_editor_property('srgb', False)
             if n.endswith('_nor'): a.set_editor_property('flip_green_channel', True)  # Poly Haven ships OpenGL normals
-        elif n.endswith('_arm'):
+        elif n.endswith('_arm') or n.startswith('t_townsplat'):
             a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_MASKS); a.set_editor_property('srgb', False)
         a.set_editor_property('max_texture_size', 2048)
         EAL.save_loaded_asset(a)
@@ -97,7 +105,7 @@ def master_color():
     MEL.connect_material_property(_mul(m, _vec(m, 'Emissive', (0, 0, 0, 1), -700, 250), _scalar(m, 'EmissiveMul', 0.0, -700, 400), -500, 300), '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
 
-def master_foliage():
+def master_foliage(wind=False):
     m = _fresh('M_PBX_Foliage', G + '/Materials')
     m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED); m.set_editor_property('two_sided', True)
     t = _texp(m, 'Tex', -800, 0, default=WHITE); tint = _vec(m, 'Tint', (1, 1, 1, 1), -800, -250)
@@ -105,19 +113,29 @@ def master_foliage():
     MEL.connect_material_property(t, 'A', unreal.MaterialProperty.MP_OPACITY_MASK)
     MEL.connect_material_property(_scalar(m, 'Roughness', .65, -500, 150), '', unreal.MaterialProperty.MP_ROUGHNESS)
     # gentle wind sway (engine material function)
-    try:
+    if wind:
+     try:
         fn = unreal.load_asset('/Engine/Functions/Engine_MaterialFunctions01/WorldPositionOffset/SimpleGrassWind.SimpleGrassWind')
         w = _e(m, unreal.MaterialExpressionMaterialFunctionCall, -500, 350); w.set_editor_property('material_function', fn)
+        log('wind inputs', MEL.get_material_expression_input_names(w))
         MEL.connect_material_expressions(_scalar(m, 'WindIntensity', .15, -800, 300), '', w, 'WindIntensity')
         MEL.connect_material_expressions(_scalar(m, 'WindSpeed', .25, -800, 400), '', w, 'WindSpeed')
         MEL.connect_material_expressions(_scalar(m, 'WindWeight', 1.0, -800, 500), '', w, 'WindWeight')
         MEL.connect_material_property(w, '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
-    except Exception as ex: log('wind skipped', ex)
-    MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
+     except Exception as ex: log('wind skipped', ex)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    st = MEL.get_statistics(m); log('foliage instr', st.num_pixel_shader_instructions)
+    return m
 
 def master_ground():
     m = _fresh('M_PBX_Ground', G + '/Materials')
-    uv = _e(m, unreal.MaterialExpressionTextureCoordinate, -2200, 0); vc = _e(m, unreal.MaterialExpressionVertexColor, -800, -900)
+    uv = _e(m, unreal.MaterialExpressionTextureCoordinate, -2200, 0)
+    # layer mask from the town splat texture, sampled by world XY (town square = 220 m centred on the origin)
+    wp = _e(m, unreal.MaterialExpressionWorldPosition, -1600, -1100); cm = _e(m, unreal.MaterialExpressionComponentMask, -1400, -1100)
+    cm.set_editor_property('r', True); cm.set_editor_property('g', True); MEL.connect_material_expressions(wp, '', cm, '')
+    dv = _e(m, unreal.MaterialExpressionDivide, -1200, -1100); dv.set_editor_property('const_b', 22000.0); MEL.connect_material_expressions(cm, '', dv, 'A')
+    ad = _e(m, unreal.MaterialExpressionAdd, -1000, -1100); ad.set_editor_property('const_b', 0.5); MEL.connect_material_expressions(dv, '', ad, 'A')
+    vc = _texp(m, 'Splat', -800, -1100, MASKS, WHITE); MEL.connect_material_expressions(ad, '', vc, 'UVs')
     layers = []
     for i, key in enumerate(['Grass', 'Dirt', 'Sand', 'Stone']):
         sc = _scalar(m, key + 'UV', 2.0 if key != 'Stone' else 2.5, -2200, 200 + i * 900); uvs = _mul(m, uv, sc, -2000, 100 + i * 900)
@@ -196,7 +214,7 @@ def make_materials():
                            ('M_Red', (.8, .08, .06, 1), .4, 0), ('M_BinGreen', (.12, .3, .16, 1), .5, 0)]:
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
-    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.9, 1.05, .75, 1)}, {'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
+    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.9, 1.05, .75, 1)}, {'Splat': 'T_TownSplat', 'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
                         'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
                         'SandArm': 'coast_sand_01_arm', 'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
     M['M_Water'] = _mi('MI_Water', W)
@@ -268,17 +286,14 @@ def build_level():
     # ---- light & atmosphere (warm late-morning sun like the reference)
     sun = _spawn_cls(unreal.DirectionalLight, (0, 0, 1000), (0, -38, 35), 'Sun')
     lc = sun.get_component_by_class(unreal.DirectionalLightComponent)
-    lc.set_editor_property('intensity', 8.0); lc.set_editor_property('light_color', unreal.Color(255, 244, 228, 255))
-    lc.set_editor_property('atmosphere_sun_light', True); lc.set_editor_property('mobility', unreal.ComponentMobility.MOVABLE)
-    lc.set_editor_property('light_source_angle', 1.2)
+    sp(lc, intensity=8.0, light_color=unreal.Color(r=255, g=244, b=228, a=255), atmosphere_sun_light=True, mobility=unreal.ComponentMobility.MOVABLE, light_source_angle=1.2)
     _spawn_cls(unreal.SkyAtmosphere, label='SkyAtmosphere')
     sky = _spawn_cls(unreal.SkyLight, (0, 0, 800), label='SkyLight'); sc = sky.get_component_by_class(unreal.SkyLightComponent)
-    sc.set_editor_property('real_time_capture', True); sc.set_editor_property('mobility', unreal.ComponentMobility.MOVABLE); sc.set_editor_property('intensity', 1.1)
+    sp(sc, mobility=unreal.ComponentMobility.MOVABLE, real_time_capture=True, intensity=1.1)
     try: _spawn_cls(unreal.VolumetricCloud, label='Clouds')
     except Exception as ex: log('clouds', ex)
     fog = _spawn_cls(unreal.ExponentialHeightFog, (0, 0, -200), label='Fog'); fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
-    fc.set_editor_property('fog_density', .006); fc.set_editor_property('fog_height_falloff', .25); fc.set_editor_property('volumetric_fog', True)
-    fc.set_editor_property('start_distance', 1500.0)
+    sp(fc, fog_density=.006, fog_height_falloff=.25, volumetric_fog=True, start_distance=1500.0)
     pp = _spawn_cls(unreal.PostProcessVolume, label='PostProcess'); pp.set_editor_property('unbound', True)
     s = pp.get_editor_property('settings')
     for k, v in [('auto_exposure_bias', .3), ('bloom_intensity', .55), ('ambient_occlusion_intensity', .75),
@@ -315,3 +330,69 @@ def build_level():
 
 def all_steps():
     import_textures(); import_meshes(); M = make_materials(); assign_materials(M); build_level()
+
+# ------------------------------------------------------------------ "graphic novel" look (The Wolf Among Us style)
+# A post-process material: thick ink outlines from depth + normal discontinuities, soft cel bands on the lighting,
+# a touch of extra saturation, and a paper-warm ink colour. Mirrors js/comic.js of the web version.
+COMIC_HLSL = r'''
+float2 uv = GetDefaultSceneTextureUV(Parameters, 14);
+float2 px = View.BufferSizeAndInvSize.zw * Thick;
+float3 c = SceneTextureLookup(uv, 14, false).rgb;
+float d = SceneTextureLookup(uv, 1, false).r;
+float3 n = SceneTextureLookup(uv, 8, false).rgb;
+float dd = 0, nd = 0;
+float2 o[8] = { float2(px.x,0), float2(-px.x,0), float2(0,px.y), float2(0,-px.y), px, -px, float2(px.x,-px.y), float2(-px.x,px.y) };
+for (int i = 0; i < 8; i++) {
+    float di = SceneTextureLookup(uv + o[i], 1, false).r;
+    dd = max(dd, abs(di - d) / max(min(d, di), 1.0));
+    float3 ni = SceneTextureLookup(uv + o[i], 8, false).rgb;
+    nd = max(nd, 1.0 - saturate(dot(normalize(ni), normalize(n))));
+}
+float fade = saturate(1.0 - d / FadeDist);
+float edge = saturate(max((dd - DepthT) * DepthK, (nd - NormT) * NormK)) * fade;
+float L = dot(c, float3(0.299, 0.587, 0.114));
+float B = Bands; float f = frac(L * B);
+float Lq = (floor(L * B) + smoothstep(0.5 - Soft, 0.5 + Soft, f)) / B;
+float3 cel = c * (max(Lq, 0.02) / max(L, 0.02));
+float3 col = lerp(c, cel, CelAmt);
+float g = dot(col, float3(0.299, 0.587, 0.114)); col = lerp(g.xxx, col, Sat);
+col = lerp(col, Ink, edge * InkAmt);
+return col + (DummyA.rgb + DummyB.rrr + DummyC.rgb) * 0.0;
+'''
+
+def master_comic():
+    m = _fresh('M_PBX_Comic', G + '/Materials')
+    m.set_editor_property('material_domain', unreal.MaterialDomain.MD_POST_PROCESS)
+    try: m.set_editor_property('blendable_location', unreal.BlendableLocation.BL_SCENE_COLOR_AFTER_TONEMAPPING)
+    except Exception:
+        try: m.set_editor_property('blendable_location', unreal.BlendableLocation.BL_AFTER_TONEMAPPING)
+        except Exception as ex: log('blendable location', ex)
+    cu = _e(m, unreal.MaterialExpressionCustom, -400, 0)
+    cu.set_editor_property('code', COMIC_HLSL); cu.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+    names = [('Thick', 1.4), ('DepthT', .02), ('DepthK', 14.0), ('NormT', .28), ('NormK', 3.0), ('FadeDist', 9000.0), ('Bands', 4.0), ('Soft', .08),
+             ('CelAmt', .55), ('Sat', 1.15), ('InkAmt', .9)]
+    ins = []
+    for k, _ in names: ins.append(unreal.CustomInput(input_name=k))
+    for k in ('Ink', 'DummyA', 'DummyB', 'DummyC'): ins.append(unreal.CustomInput(input_name=k))
+    cu.set_editor_property('inputs', ins)
+    y = 0
+    for k, v in names: MEL.connect_material_expressions(_scalar(m, k, v, -900, y), '', cu, k); y += 70
+    MEL.connect_material_expressions(_vec(m, 'Ink', (.035, .028, .04, 1), -900, y), '', cu, 'Ink')
+    for k, sid in (('DummyA', unreal.SceneTextureId.PPI_POST_PROCESS_INPUT0), ('DummyB', unreal.SceneTextureId.PPI_SCENE_DEPTH), ('DummyC', unreal.SceneTextureId.PPI_WORLD_NORMAL)):
+        st = _e(m, unreal.MaterialExpressionSceneTexture, -700, y); st.set_editor_property('scene_texture_id', sid); y += 120
+        MEL.connect_material_expressions(st, 'Color', cu, k)
+    MEL.connect_material_property(cu, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    st = MEL.get_statistics(m); log('comic instr', st.num_pixel_shader_instructions)
+    return m
+
+def apply_comic(on=True):
+    m = master_comic()
+    mi = _mi('MI_PBX_Comic', m)
+    for a in EAS.get_all_level_actors():
+        if isinstance(a, unreal.PostProcessVolume):
+            s = a.get_editor_property('settings')
+            wb = unreal.WeightedBlendables(); wb.set_editor_property('array', [unreal.WeightedBlendable(weight=1.0 if on else 0.0, object=mi)])
+            s.set_editor_property('weighted_blendables', wb); a.set_editor_property('settings', s)
+    unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
+    log('comic applied', on)
