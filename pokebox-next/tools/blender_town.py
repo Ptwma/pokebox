@@ -151,8 +151,9 @@ def house(name, W, D, H, roof_m, siding_m, porch=True, chimney=True, two_storey=
     # stone foundation
     parts.append(box(f'{name}_found', W + .3, D + .3, .55, (0, 0, -.1), 'M_Stone', bevel=.04))
     base = .45
-    # core walls (behind the boards)
-    parts.append(box(f'{name}_core', W, D, H, (0, 0, base), 'M_Plaster', bevel=.0))
+    # walls: one flat box; the clapboard boards are PAINTED into the siding texture (T_Siding_*), not modelled —
+    # modelled 3 cm boards turned into sub-pixel moiré + black slivers under the ink pass (Wolf Among Us paints them)
+    parts.append(box(f'{name}_core', W, D, H, (0, 0, base), siding_m, bevel=.0))
     # window layout per facade (wall-local u from the wall start)
     rows = [1.25] if not two_storey else [1.2, 1.2 + H / 2]
     winw, winh = (1.25, 1.35) if not lab else (1.5, 1.7)
@@ -172,7 +173,6 @@ def house(name, W, D, H, roof_m, siding_m, porch=True, chimney=True, two_storey=
              'left': ('y', (-W / 2, -D / 2, base), -1, D), 'right': ('y', (W / 2, -D / 2, base), 1, D)}
     for k, (along, org, sgn, L) in walls.items():
         ops, wins = F[k]
-        parts += clapboard_wall(f'{name}_{k}', L, H, along, org, sgn, ops, siding_m)
         for j, (u, vz) in enumerate(wins):
             if along == 'x': c = (org[0] + u, org[1] + sgn * .03, base + vz)
             else: c = (org[0] + sgn * .03, org[1] + u, base + vz)
@@ -207,11 +207,12 @@ def house(name, W, D, H, roof_m, siding_m, porch=True, chimney=True, two_storey=
     if chimney:
         parts.append(box(f'{name}_chimney', .8, .8, rise + 1.6, (W * .28, D * .18, base + H - .2), 'M_Brick', bevel=.02))
         parts.append(box(f'{name}_chimcap', 1.0, 1.0, .14, (W * .28, D * .18, base + H + rise + 1.4), 'M_Stone', bevel=.02))
-    if lab:  # satellite dish + columns at the entrance, wider canopy
-        parts.append(cyl(f'{name}_dishpole', .06, 1.2, (W * .35, -D * .1, base + H + rise * .55), 'M_Metal'))
-        bm = bmesh.new(); bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=8, radius=.75)
-        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > .1], context='VERTS')
-        dish = mesh_obj(f'{name}_dish', bm); set_mat(dish, 'M_Metal'); dish.location = (W * .35, -D * .1 - .2, base + H + rise * .55 + 1.3); dish.rotation_euler = (math.radians(-60), 0, 0); parts.append(dish)
+    if lab:  # matte white radar dish (shallow cone, not a chrome half-sphere) + columns at the entrance
+        px_, py_, pz_ = W * .35, -D * .1, base + H + rise * .55
+        parts.append(cyl(f'{name}_dishpole', .07, 1.3, (px_, py_, pz_), 'M_Iron'))
+        bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=False, segments=20, radius1=.12, radius2=.85, depth=.32)
+        dish = mesh_obj(f'{name}_dish', bm); set_mat(dish, 'M_Trim'); dish.location = (px_, py_ - .15, pz_ + 1.45); dish.rotation_euler = (math.radians(55), 0, 0); parts.append(dish)
+        parts.append(cyl(f'{name}_dishfeed', .03, .55, (px_, py_ - .15, pz_ + 1.3), 'M_Red', rot=(math.radians(55), 0, 0), seg=8))
         for s in (-1, 1): parts.append(cyl(f'{name}_col{s}', .14, 2.8, (s * 1.25, -D / 2 - 1.2, base), 'M_Trim'))
     ob = join(parts, name)
     return ob
@@ -303,6 +304,73 @@ def water_plane():
     bmesh.ops.scale(bm, vec=Vector((1600, 700, 1)), verts=bm.verts)
     ob = mesh_obj('SM_Water', bm); set_mat(ob, 'M_Water'); return export(ob, 'SM_Water')
 
+# ------------------------------------------------------------------ painted textures (graphic-novel look)
+def _save_png(name, arr):
+    """arr: float32 HxWx4 in 0..1, row 0 = bottom (Blender order)"""
+    import numpy as np
+    h, w = arr.shape[:2]
+    im = bpy.data.images.new(name, w, h, alpha=True, float_buffer=False)
+    if name.endswith('_nor') or name.endswith('_arm'): im.colorspace_settings.name = 'Non-Color'
+    im.pixels.foreach_set(np.ascontiguousarray(arr, dtype=np.float32).ravel())
+    im.filepath_raw = os.path.join(OUT, 'tex', name + '.png'); im.file_format = 'PNG'; im.save(); bpy.data.images.remove(im)
+
+def _noise(np, h, w, cells, seed):
+    """smooth value noise (bilinear upsampled random grid), tileable"""
+    rng = np.random.default_rng(seed); g = rng.random((cells, cells))
+    ys = np.arange(h) * cells / h; xs = np.arange(w) * cells / w
+    y0 = ys.astype(int); x0 = xs.astype(int); fy = (ys - y0)[:, None]; fx = (xs - x0)[None, :]
+    y1 = (y0 + 1) % cells; x1 = (x0 + 1) % cells
+    a = g[y0][:, x0]; b = g[y0][:, x1]; c = g[y1][:, x0]; d = g[y1][:, x1]
+    fy = fy * fy * (3 - 2 * fy); fx = fx * fx * (3 - 2 * fx)
+    return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy
+
+def _normal_from_height(np, hgt, strength):
+    gy, gx = np.gradient(hgt)
+    n = np.dstack([-gx * strength, -gy * strength, np.ones_like(hgt)])
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    return np.dstack([n * .5 + .5, np.ones_like(hgt)])   # OpenGL convention (+Y up) like Poly Haven -> flipped on import
+
+def painted_textures(res=512):
+    """1 texture = 1 m (box UVs are 1 UV per metre). Greyscale albedo: the material instance tints it.
+    T_Siding: 5 clapboards per metre, painted shadow under each lap + a thin ink line, faint brush grain.
+    T_Roof: staggered shingles (4 rows / m) with painted gaps and per-tile value jitter."""
+    import numpy as np
+    os.makedirs(os.path.join(OUT, 'tex'), exist_ok=True)
+    H = W = res; v = (np.arange(H) + .5) / H; u = (np.arange(W) + .5) / W
+    # ---- siding
+    nb = 5; t = (v * nb) % 1.0                       # 0 at the bottom edge of each board, 1 at its top
+    lap = np.clip((t - .80) / .20, 0, 1) ** 1.5       # shadow cast by the board above onto the top of this one
+    alb = .93 - .20 * lap
+    alb = np.where(t < .035, .30, alb)                # ink line at the lap edge (painted, ~2 px at 512)
+    alb = np.where((t >= .035) & (t < .07), .99, alb) # highlight on the board's lower lip
+    A = np.repeat(alb[:, None], W, axis=1)
+    grain = _noise(np, H, W, 64, 3)[:, :] * .5 + _noise(np, H, W, 8, 4) * .5
+    A = A * (.95 + .07 * grain)
+    # occasional butt joints (vertical seams), different per board
+    rng = np.random.default_rng(11); bi = (v * nb).astype(int)
+    for b in range(nb):
+        x = rng.random(); rows = bi == b; col = int(x * W)
+        A[rows, max(0, col - 1):col + 1] = .45
+    hgt = np.repeat((1 - t)[:, None], W, axis=1) * .9
+    _save_png('T_Siding_diff', np.dstack([A, A, A, np.ones_like(A)]))
+    _save_png('T_Siding_nor', _normal_from_height(np, hgt, 6.0))
+    # ---- roof shingles (rows along U, the ridge direction)
+    nr = 4; tr = (v * nr) % 1.0; row = (v * nr).astype(int)
+    R2 = np.zeros((H, W)); ntile = 3
+    for r in range(nr):
+        rows = row == r; off = .5 / ntile if r % 2 else 0.0
+        tu = ((u + off) * ntile) % 1.0; ti = ((u + off) * ntile).astype(int) % ntile
+        jit = np.random.default_rng(100 + r).random(ntile)[ti] * .14 - .07
+        R2[rows] = (.80 + jit)[None, :]
+        gap = (tu < .025) | (tu > .975)
+        R2[np.ix_(rows, gap)] = .32
+    edge = (tr < .06)
+    R2 = R2 - .22 * np.repeat(np.clip(1 - tr / .35, 0, 1)[:, None] ** 2, W, axis=1)   # each row darker under the row above
+    R2[edge, :] = .28
+    R2 = R2 * (.94 + .1 * _noise(np, H, W, 32, 9))
+    _save_png('T_Roof_diff', np.dstack([R2, R2, R2, np.ones_like(R2)]))
+    print('painted textures written')
+
 # ------------------------------------------------------------------ the town plan
 def plan_town():
     P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2)],
@@ -349,6 +417,56 @@ def plan_town():
     for k in range(40):                  # pebbles and rocks along the paths
         x = (R.random() - .5) * 6; y = -20 + R.random() * 60
         if abs(x) > 2.2: add(R.choice(['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Square_3', 'Rock_Medium_1']), x, y, R.random() * 360, .6 + R.random() * .5)
+    # ---- kit props (Quaternius Fantasy Props = QProps/, Kenney kits = KTown/ KPirate/ KSurvival/). h / w = target
+    # height / footprint in metres; Unreal scales each mesh from its bounds, so the kits' differing units don't matter.
+    def kit(mesh, x, y, rot=0.0, h=None, w=None, z=None):
+        add(mesh, x, y, rot, 1.0, z); o = P['objects'][-1]
+        if h: o['h'] = h
+        if w: o['w'] = w
+    # plaza in front of the lab: fountain + a small market
+    kit('KTown/fountain_round', 0, -20.5, 0, w=3.4)
+    kit('QProps/Stall_Empty', -6.8, -19.5, 90, h=2.6); kit('QProps/Stall_Cart_Empty', 6.8, -23.5, -90, h=2.1)
+    for (m, x, y, r, h) in [('QProps/FarmCrate_Apple', -5.4, -21.4, 10, .45), ('QProps/FarmCrate_Carrot', -5.6, -17.8, -8, .45),
+                            ('QProps/Barrel_Apples', -7.9, -22.0, 0, .95), ('QProps/Crate_Wooden', 5.3, -25.4, 15, .7),
+                            ('QProps/Crate_Wooden', 5.5, -25.3, 40, .7), ('QProps/Barrel', 8.3, -25.6, 0, 1.0), ('KTown/cart', 9.6, -21.5, 70, 1.4)]:
+        kit(m, x, y, r, h=h)
+    kit('QProps/Crate_Wooden', 5.4, -25.35, 25, h=.7, z=height(5.4, -25.35) + .7)          # stacked crate
+    # lab flanked by hedges
+    for s in (-1, 1):
+        for k in range(4): kit('KTown/hedge', s * 10.6, -30.5 - k * 2.0, 90, w=2.0)
+    # homes: barrels, buckets, flower pots, wood pile
+    for (m, x, y, r, h) in [('QProps/Barrel', -20.2, -2.6, 0, 1.0), ('QProps/Bucket_Wooden_1', -19.4, -1.9, 0, .4), ('QProps/Pot_1', -16.9, -.9, 0, .5),
+                            ('QProps/Pot_1', -13.1, -.9, 0, .5), ('QProps/Barrel', 20.3, -2.4, 0, 1.0), ('QProps/Barrel', 20.4, -3.6, 30, 1.0),
+                            ('QProps/Crate_Wooden', 19.6, -1.5, 12, .7), ('QProps/Pot_1', 13.1, -.9, 0, .5), ('QProps/Pot_1', 16.9, -.9, 0, .5),
+                            ('KSurvival/resource_wood', -21.0, -7.0, 90, .6), ('QProps/Workbench', 21.0, -8.0, -90, 1.0)]:
+        kit(m, x, y, r, h=h)
+    # path ends: signposts towards the routes
+    kit('KSurvival/signpost', -23.0, 8.2, 90, h=2.0); kit('KSurvival/signpost', 23.0, 8.2, -90, h=2.0); kit('KSurvival/signpost', 2.6, 40.0, 0, h=2.0)
+    # beach: wooden pier, row boats, campfire with log seats, sandy rocks
+    kit('KPirate/structure_platform_dock', 9.0, 47.8, 0, w=6.0, z=-.35); kit('KPirate/structure_platform_dock', 9.0, 53.6, 0, w=6.0, z=-.35)
+    kit('KPirate/boat_row_small', 13.5, 52.0, 25, w=3.2, z=-1.15); kit('KPirate/boat_row_large', -9.0, 46.2, -60, w=4.2)
+    kit('KSurvival/campfire_pit', -15.0, 42.5, 0, w=1.4)
+    for a in (0, 120, 240):
+        kit('KSurvival/tree_log_small', -15.0 + 1.8 * math.cos(math.radians(a)), 42.5 + 1.8 * math.sin(math.radians(a)), a + 90, w=1.6)
+    for (m, x, y, w) in [('KPirate/rocks_sand_a', -25, 47, 2.4), ('KPirate/rocks_sand_b', 22, 45, 2.0), ('KPirate/rocks_sand_c', 30, 49, 3.0), ('KPirate/rocks_sand_a', -34, 44, 2.6)]:
+        kit(m, x, y, R.random() * 360, w=w)
+    # extra nature from the full Stylized Nature kit: short grass carpet, clover, mushrooms, more tree variety
+    n = 0
+    while n < 320:
+        x, y = (R.random() - .5) * 110, (R.random() - .5) * 96 - 8
+        if not free(x, y, .3): continue
+        k = R.random()
+        if k < .55: kit('Grass_Common_Short', x, y, R.random() * 360, h=.32 + R.random() * .12)
+        elif k < .75: kit(R.choice(['Clover_1', 'Clover_2']), x, y, R.random() * 360, w=.6 + R.random() * .4)
+        elif k < .83: kit('Plant_7', x, y, R.random() * 360, h=.5 + R.random() * .3)
+        elif k < .9: kit(R.choice(['Mushroom_Common', 'Mushroom_Laetiporus']), x, y, R.random() * 360, h=.18)
+        else: kit(R.choice(['Petal_1', 'Petal_2', 'Petal_3']), x, y, R.random() * 360, w=.5)
+        n += 1
+    n = 0
+    while n < 40:
+        a = R.random() * math.tau; d = 50 + R.random() * 50; x, y = math.cos(a) * d, math.sin(a) * d - 10
+        if y > 34 or not free(x, y, 2): continue
+        add(R.choice(['Pine_4', 'Pine_5', 'TwistedTree_1', 'TwistedTree_3', 'CommonTree_5']), x, y, R.random() * 360, .9 + R.random() * .4); n += 1
     P['water'] = dict(x=0, y=380, z=-1.2)
     P['player_start'] = dict(x=0, y=10, z=height(0, 10) + 1.0, rot=-90)
     return P
@@ -362,6 +480,7 @@ def run():
     for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin):
         ob = f(); export(ob, ob.name); reset()
     water_plane(); reset()
+    painted_textures()
     ground(plan); reset(); splat(plan)
     with open(os.path.join(OUT, 'town_plan.json'), 'w') as fh: json.dump(plan, fh, indent=1)
     print('town built:', len(plan['objects']), 'placements')

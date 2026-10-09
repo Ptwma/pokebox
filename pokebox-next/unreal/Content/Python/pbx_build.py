@@ -5,6 +5,12 @@
 import unreal, os, json, math
 
 SRC = r"E:\GAME-APP-DEV\POKEMON\PokeboxNext_src"
+KITS = os.path.join(SRC, 'kits')
+# full Quaternius Stylized Nature MegaKit (Standard) when present, else the old free subset
+NATURE = os.path.join(KITS, 'q_nature') if os.path.isdir(os.path.join(KITS, 'q_nature')) else os.path.join(SRC, 'nature')
+# kit folder in Unreal -> FBX folder on disk
+KIT_DIRS = {'QProps': os.path.join(KITS, 'q_props', 'Exports', 'FBX'), 'KTown': os.path.join(KITS, 'k_town', 'Models', 'FBX format'),
+            'KPirate': os.path.join(KITS, 'k_pirate', 'Models', 'FBX format'), 'KSurvival': os.path.join(KITS, 'k_survival', 'Models', 'FBX format')}
 G = '/Game/PBX'
 AT = unreal.AssetToolsHelpers.get_asset_tools()
 EAL = unreal.EditorAssetLibrary
@@ -35,7 +41,8 @@ def _import(files, dest):
 
 def import_textures():
     tex = os.path.join(SRC, 'tex'); files = [os.path.join(tex, f) for f in sorted(os.listdir(tex)) if f.endswith('.jpg') and os.path.getsize(os.path.join(tex, f)) > 0]
-    ntex = os.path.join(SRC, 'nature', 'Textures'); files += [os.path.join(ntex, f) for f in sorted(os.listdir(ntex)) if f.endswith('.png')]
+    files += [os.path.join(tex, f) for f in sorted(os.listdir(tex)) if f.startswith('T_') and f.endswith('.png') and not f.startswith('T_TownSplat')]
+    ntex = os.path.join(NATURE, 'Textures'); files += [os.path.join(ntex, f) for f in sorted(os.listdir(ntex)) if f.endswith('.png')]
     paths = _import(files, G + '/Tex')
     for p in EAL.list_assets(G + '/Tex', recursive=False):
         a = EAL.load_asset(p)
@@ -51,10 +58,46 @@ def import_textures():
     log('textures', len(paths))
 
 def import_meshes():
-    fbx = os.path.join(SRC, 'fbx'); nat = os.path.join(SRC, 'nature', 'FBX')
+    fbx = os.path.join(SRC, 'fbx'); nat = os.path.join(NATURE, 'FBX')
     a = _import([os.path.join(fbx, f) for f in sorted(os.listdir(fbx)) if f.endswith('.fbx')], G + '/Meshes')
     b = _import([os.path.join(nat, f) for f in sorted(os.listdir(nat)) if f.endswith('.fbx')], G + '/Nature')
     log('meshes', len(a), 'nature', len(b))
+
+def fix_kit_materials():
+    """Quaternius Fantasy Props come in as material instances without their trim-sheet textures (white props).
+    Re-parent every MI_Trim_* to our PBR master and plug in BaseColor / ORM / (Unreal-convention) Normal."""
+    td = os.path.join(KITS, 'q_props', 'Textures'); nd = os.path.join(td, 'Normals-UnrealEngine')
+    files = [os.path.join(td, f) for f in os.listdir(td) if f.startswith('T_Trim_') and ('BaseColor' in f or 'ORM' in f)]
+    files += [os.path.join(nd, f) for f in os.listdir(nd) if f.endswith('.png')]
+    dest = f'{G}/Kits/QProps/Tex'; _import(files, dest)
+    for p in EAL.list_assets(dest, recursive=False):
+        t = EAL.load_asset(p)
+        if not isinstance(t, unreal.Texture2D): continue
+        n = t.get_name()
+        if n.endswith('_Normal'): t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_NORMALMAP); t.set_editor_property('srgb', False)
+        elif n.endswith('_ORM'): t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_MASKS); t.set_editor_property('srgb', False)
+        t.set_editor_property('max_texture_size', 2048); EAL.save_loaded_asset(t)
+    S = unreal.load_asset(f'{G}/Materials/M_PBX_Surface'); n = 0
+    for p in EAL.list_assets(f'{G}/Kits/QProps', recursive=False):
+        mi = EAL.load_asset(p)
+        if not isinstance(mi, unreal.MaterialInstanceConstant) or not mi.get_name().startswith('MI_Trim_'): continue
+        kind = mi.get_name()[len('MI_Trim_'):].replace('_Vertex', '')
+        MEL.set_material_instance_parent(mi, S)
+        for prm, suf in (('BaseTex', 'BaseColor'), ('NormalTex', 'Normal'), ('ArmTex', 'ORM')):
+            t = unreal.load_asset(f'{dest}/T_Trim_{kind}_{suf}')
+            if t: MEL.set_material_instance_texture_parameter_value(mi, prm, t)
+            else: log('qprops missing tex', kind, suf)
+        MEL.set_material_instance_scalar_parameter_value(mi, 'UVScale', 1.0)
+        MEL.update_material_instance(mi); EAL.save_loaded_asset(mi); n += 1
+    log('qprops materials fixed', n)
+
+def import_kits(only=None):
+    """Quaternius Fantasy Props + Kenney kits, each into /Game/PBX/Kits/<name> with the materials the FBX brings"""
+    for k, d in KIT_DIRS.items():
+        if only and k not in only: continue
+        if not os.path.isdir(d): log('kit missing', k, d); continue
+        got = _import([os.path.join(d, f) for f in sorted(os.listdir(d)) if f.lower().endswith('.fbx')], f'{G}/Kits/{k}')
+        log('kit', k, len(got))
 
 # ------------------------------------------------------------------ materials
 def _fresh(name, path, cls=unreal.Material, factory=None):
@@ -146,14 +189,16 @@ def master_ground():
         l = _e(m, unreal.MaterialExpressionLinearInterpolate, x, y)
         MEL.connect_material_expressions(a, ao, l, 'A'); MEL.connect_material_expressions(b, bo, l, 'B'); MEL.connect_material_expressions(vc, alpha_ch, l, 'Alpha'); return l
     out = {}
+    tint = _vec(m, 'GrassTint', (1, 1, 1, 1), -1500, -700)
+    grass_tinted = _mul(m, layers[0][0], tint, -1400, -500, 'RGB')   # tint the grass only (sand / dirt / stone keep their colour)
+    sand_tinted = _mul(m, layers[2][0], _vec(m, 'SandTint', (1, 1, 1, 1), -1500, -900), -1400, -800, 'RGB')  # the Poly Haven sand is dark & wet-looking
     for k, (ch, idx) in {'base': ('RGB', 0), 'nor': ('RGB', 1), 'rough': ('G', 2)}.items():
-        g0 = layers[0][idx]
-        l1 = lerp(g0, ch, layers[1][idx], ch, 'R', -1200, idx * 400)
-        l2 = lerp(l1, '', layers[2][idx], ch, 'G', -1000, idx * 400)
+        g0, g0o = (grass_tinted, '') if k == 'base' else (layers[0][idx], ch)
+        l1 = lerp(g0, g0o, layers[1][idx], ch, 'R', -1200, idx * 400)
+        l2 = lerp(l1, '', *((sand_tinted, '') if k == 'base' else (layers[2][idx], ch)), 'G', -1000, idx * 400)
         l3 = lerp(l2, '', layers[3][idx], ch, 'B', -800, idx * 400)
         out[k] = l3
-    tint = _vec(m, 'GrassTint', (1, 1, 1, 1), -800, -700)
-    MEL.connect_material_property(_mul(m, out['base'], tint, -600, -300), '', unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(out['base'], '', unreal.MaterialProperty.MP_BASE_COLOR)
     MEL.connect_material_property(out['nor'], '', unreal.MaterialProperty.MP_NORMAL)
     MEL.connect_material_property(out['rough'], '', unreal.MaterialProperty.MP_ROUGHNESS)
     MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
@@ -199,11 +244,13 @@ def make_materials():
     M = {}
     # building surfaces (Blender box UVs: 1 UV = 1 m)
     # Wolf-Among-Us look: walls and roofs are flat painted colour (the modelled boards and tiles give the detail, the ink pass draws it)
-    M['M_Siding_White'] = _mi('MI_Siding_White', C, {'Roughness': .7}, {'Color': (.82, .84, .86, 1)})
-    M['M_Siding_Cream'] = _mi('MI_Siding_Cream', C, {'Roughness': .7}, {'Color': (.86, .76, .58, 1)})
+    # siding and roof tiles are painted greyscale textures (boards, lap shadows and ink lines drawn in), tinted per house
+    sid = {'BaseTex': 'T_Siding_diff', 'NormalTex': 'T_Siding_nor'}; roof = {'BaseTex': 'T_Roof_diff'}
+    M['M_Siding_White'] = _mi('MI_Siding_White', S, {'UVScale': 1.0, 'RoughMul': .75}, {'Tint': (.88, .9, .92, 1)}, sid)
+    M['M_Siding_Cream'] = _mi('MI_Siding_Cream', S, {'UVScale': 1.0, 'RoughMul': .75}, {'Tint': (.95, .8, .58, 1)}, sid)
     M['M_Plaster'] = _mi('MI_Plaster', C, {'Roughness': .8}, {'Color': (.7, .7, .68, 1)})
-    M['M_Roof_Red'] = _mi('MI_Roof_Red', S, {'UVScale': .45}, {'Tint': (1.25, .55, .45, 1)}, _ph('grey_roof_tiles'))
-    M['M_Roof_Blue'] = _mi('MI_Roof_Blue', S, {'UVScale': .45}, {'Tint': (.45, .7, 1.35, 1)}, _ph('grey_roof_tiles'))
+    M['M_Roof_Red'] = _mi('MI_Roof_Red', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.72, .2, .14, 1)}, roof)
+    M['M_Roof_Blue'] = _mi('MI_Roof_Blue', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.2, .34, .62, 1)}, roof)
     M['M_Stone'] = _mi('MI_Stone', S, {'UVScale': .6}, {}, _ph('rustic_stone_wall'))
     M['M_Brick'] = _mi('MI_Brick', S, {'UVScale': .8}, {}, _ph('red_brick'))
     M['M_WoodBox'] = _mi('MI_WoodBox', S, {'UVScale': 1.0}, {'Tint': (.85, .7, .55, 1)}, _ph('brown_planks_05'))
@@ -211,18 +258,19 @@ def make_materials():
     M['M_WoodLight'] = _mi('MI_WoodLight', S, {'UVScale': 1.0}, {'Tint': (1.05, .95, .8, 1)}, _ph('oak_wood_planks'))
     M['M_Floor'] = _mi('MI_Floor', S, {'UVScale': .5, 'RoughMul': .45}, {}, _ph('old_wood_floor'))
     for k, col, r, met in [('M_Trim', (.92, .92, .9, 1), .5, 0), ('M_Glass', (.04, .07, .1, 1), .04, 0), ('M_Door', (.18, .3, .55, 1), .45, 0),
-                           ('M_Metal', (.55, .56, .58, 1), .35, 1), ('M_Iron', (.06, .06, .07, 1), .45, 1), ('M_MailBlue', (.1, .28, .65, 1), .4, 0),
+                           ('M_Metal', (.5, .52, .55, 1), .55, .3), ('M_Iron', (.06, .06, .07, 1), .45, 1), ('M_MailBlue', (.1, .28, .65, 1), .4, 0),
                            ('M_Red', (.8, .08, .06, 1), .4, 0), ('M_BinGreen', (.12, .3, .16, 1), .5, 0)]:
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
-    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.55, 1.25, .38, 1)}, {'Splat': 'T_TownSplat', 'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
+    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.62, 1.12, .42, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_TownSplat', 'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
                         'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
                         'SandArm': 'coast_sand_01_arm', 'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
     M['M_Water'] = _mi('MI_Water', W)
     # nature kit (Quaternius): slot names in the FBX → our instances
     M['Leaves_NormalTree'] = _mi('MI_Leaves_Tree', F, {}, {'Tint': (1.0, 1.08, .9, 1)}, {'Tex': 'Leaves_NormalTree_C'})
     M['Leaves_Pine'] = _mi('MI_Leaves_Pine', F, {}, {}, {'Tex': 'Leaf_Pine_C'})
-    M['Leaves_TwistedTree'] = _mi('MI_Leaves_Twisted', F, {}, {}, {'Tex': 'Leaves_TwistedTree_C'})
+    # the kit's twisted-tree / bush leaves are autumn red; this coastal town is summer green -> reuse the green blob atlas
+    M['Leaves_TwistedTree'] = _mi('MI_Leaves_Twisted', F, {}, {'Tint': (.95, 1.08, .85, 1)}, {'Tex': 'Leaves_GiantPine_C'})
     M['Leaves_GiantPine'] = _mi('MI_Leaves_GiantPine', F, {}, {}, {'Tex': 'Leaves_GiantPine_C'})
     M['Leaves'] = _mi('MI_Leaves_Plant', F, {}, {}, {'Tex': 'Leaves'})
     M['Flowers'] = _mi('MI_Flowers', F, {'WindIntensity': .25}, {}, {'Tex': 'Flowers'})
@@ -264,9 +312,15 @@ def assign_materials(M):
 # ------------------------------------------------------------------ level
 KIT_SCALE = {'Fern_1': .22, 'Flower_3_Group': .55, 'Flower_4_Group': .55, 'Grass_Common_Tall': .5, 'Grass_Wispy_Tall': .5, 'Plant_1': .8, 'Bush_Common': .9, 'Bush_Common_Flowers': .85}
 NO_COLLIDE = ('Grass', 'Flower', 'Clover', 'Fern', 'Plant', 'Petal', 'Pebble', 'Mushroom')
+FOLIAGE_INK = NO_COLLIDE + ('CommonTree', 'Pine', 'TwistedTree', 'DeadTree', 'Bush', 'KTown/hedge')
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 
 def _mesh(name):
+    if '/' in name:   # kit mesh; Kenney keeps the hyphens of its file names, the plan uses underscores
+        for cand in (name, name.split('/')[0] + '/' + name.split('/')[1].replace('_', '-')):
+            p = f'{G}/Kits/{cand}'
+            if EAL.does_asset_exist(p): return unreal.load_asset(p)
+        return None
     for f in ('Meshes', 'Nature'):
         p = f'{G}/{f}/{name}'
         if EAL.does_asset_exist(p): return unreal.load_asset(p)
@@ -290,7 +344,7 @@ def build_level():
     sp(lc, intensity=8.0, light_color=unreal.Color(r=255, g=244, b=228, a=255), atmosphere_sun_light=True, mobility=unreal.ComponentMobility.MOVABLE, light_source_angle=1.2)
     _spawn_cls(unreal.SkyAtmosphere, label='SkyAtmosphere')
     sky = _spawn_cls(unreal.SkyLight, (0, 0, 800), label='SkyLight'); sc = sky.get_component_by_class(unreal.SkyLightComponent)
-    sp(sc, mobility=unreal.ComponentMobility.MOVABLE, real_time_capture=True, intensity=1.1)
+    sp(sc, mobility=unreal.ComponentMobility.MOVABLE, real_time_capture=True, intensity=1.5)
     try: _spawn_cls(unreal.VolumetricCloud, label='Clouds')
     except Exception as ex: log('clouds', ex)
     fog = _spawn_cls(unreal.ExponentialHeightFog, (0, 0, -200), label='Fog'); fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
@@ -304,20 +358,30 @@ def build_level():
         except Exception as ex: log('pp', k, ex)
     pp.set_editor_property('settings', s)
     # ---- ground, water, buildings, props, foliage
-    def put(mesh, x, y, z, rot=0.0, scale=1.0, label=None):
+    missing = set()
+    def put(mesh, x, y, z, rot=0.0, scale=1.0, label=None, h=None, w=None):
         sm = _mesh(mesh)
-        if not sm: log('missing mesh', mesh); return None
+        if not sm:
+            if mesh not in missing: log('missing mesh', mesh); missing.add(mesh)
+            return None
+        if h or w:   # kits come in different units: scale from the mesh bounds to the wanted size in metres
+            b = sm.get_bounding_box(); e = b.max - b.min
+            size = e.z if h else max(e.x, e.y)
+            scale = ((h or w) * 100.0) / max(size, 1e-3)
         a = EAS.spawn_actor_from_object(sm, unreal.Vector(x * 100, -y * 100, z * 100), unreal.Rotator(0, 0, -rot))
         a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
         if label: a.set_actor_label(label)
-        if mesh.startswith(NO_COLLIDE):
-            a.get_component_by_class(unreal.StaticMeshComponent).set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
-        a.set_folder_path('Town/' + ('Nature' if not mesh.startswith('SM_') else 'Built'))
+        c = a.get_component_by_class(unreal.StaticMeshComponent)
+        if mesh.startswith(NO_COLLIDE) or mesh.startswith(FOLIAGE_INK):
+            if mesh.startswith(NO_COLLIDE): c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+            # stencil 1 = foliage: the comic pass draws only soft silhouette ink here (no normal-crease scribble)
+            c.set_editor_property('render_custom_depth', True); c.set_editor_property('custom_depth_stencil_value', 1)
+        a.set_folder_path('Town/' + ('Nature' if not (mesh.startswith('SM_') or '/' in mesh) else 'Built'))
         return a
     put('SM_Ground', 0, 0, 0, label='Ground')
     w = plan['water']; put('SM_Water', w['x'], w['y'], w['z'], label='Sea')
     for o in plan['objects']:
-        put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0))
+        put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'))
     ps = plan['player_start']
     _spawn_cls(unreal.PlayerStart, (ps['x'] * 100, -ps['y'] * 100, ps['z'] * 100 + 100), (0, 0, -ps['rot']), 'PlayerStart')
     # game mode: the template's third-person setup
@@ -332,54 +396,102 @@ def build_level():
 def all_steps():
     import_textures(); import_meshes(); M = make_materials(); assign_materials(M); build_level()
 
-# ------------------------------------------------------------------ "graphic novel" look (The Wolf Among Us style)
-# A post-process material: thick ink outlines from depth + normal discontinuities, soft cel bands on the lighting,
-# a touch of extra saturation, and a paper-warm ink colour. Mirrors js/comic.js of the web version.
-COMIC_HLSL = r'''
+# ------------------------------------------------------------------ "graphic novel" look (The Wolf Among Us style) — v2
+# Runs BEFORE DOF / TSR (HDR scene colour), so the temporal upscaler anti-aliases the ink instead of shredding it.
+#  * Light is banded, not colour: light = sceneColour / baseColour (G-buffer), quantised to shadow / mid / lit steps and
+#    multiplied back, so albedo detail (painted boards, roof tiles) survives and hues don't shift.
+#  * Shadows take a cool violet tint (the WAU palette), lit areas stay warm and clean. No global saturation boost.
+#  * Ink: inverse-depth Laplacian (flat ground/walls give zero even at grazing angles, silhouettes give big values) +
+#    normal creases, both sampled InkPx screen pixels away; fades with distance. Foliage (custom stencil 1) gets only a
+#    soft silhouette, no crease scribble. The sky (huge depth) is left untouched.
+COMIC_HLSL = r"""
 float2 uv = GetDefaultSceneTextureUV(Parameters, 14);
-float2 px = View.BufferSizeAndInvSize.zw * Thick;
+float2 px = View.BufferSizeAndInvSize.zw * InkPx;
 float3 c = SceneTextureLookup(uv, 14, false).rgb;
 float d = SceneTextureLookup(uv, 1, false).r;
-float3 n = SceneTextureLookup(uv, 8, false).rgb;
-float dd = 0, nd = 0;
-float2 o[8] = { float2(px.x,0), float2(-px.x,0), float2(0,px.y), float2(0,-px.y), px, -px, float2(px.x,-px.y), float2(-px.x,px.y) };
-for (int i = 0; i < 8; i++) {
-    float di = SceneTextureLookup(uv + o[i], 1, false).r;
-    dd = max(dd, abs(di - d) / max(min(d, di), 1.0));
-    float3 ni = SceneTextureLookup(uv + o[i], 8, false).rgb;
-    nd = max(nd, 1.0 - saturate(dot(normalize(ni), normalize(n))));
+if (d > SkyDepth) return c;
+float3 base = SceneTextureLookup(uv, BASE_ID, false).rgb;
+float3 n = normalize(SceneTextureLookup(uv, 8, false).rgb);
+float stencil = SceneTextureLookup(uv, STENCIL_ID, false).r;
+float cdep = SceneTextureLookup(uv, CDEPTH_ID, false).r;
+// custom depth/stencil is drawn without occlusion: only trust it where the foliage is the visible surface
+bool leafy = abs(stencil - 1.0) < 0.5 && abs(cdep - d) < max(d * 0.02, 5.0);
+// ---------- banded light
+float3 W3 = float3(0.2126, 0.7152, 0.0722);
+// light = colour / albedo, averaged over a small cross so GI noise doesn't break the bands into blotches
+float2 q = View.BufferSizeAndInvSize.zw * 2.0;
+float2 t5[4] = { float2(q.x, 0), float2(-q.x, 0), float2(0, q.y), float2(0, -q.y) };
+float sc = dot(c, W3), sb = dot(base, W3);
+for (int k = 0; k < 4; k++) {
+    sc += dot(SceneTextureLookup(uv + t5[k], 14, false).rgb, W3);
+    sb += dot(SceneTextureLookup(uv + t5[k], BASE_ID, false).rgb, W3);
 }
-float fade = saturate(1.0 - d / FadeDist);
-float edge = saturate(max((dd - DepthT) * DepthK, (nd - NormT) * NormK)) * fade;
-float L = dot(c, float3(0.299, 0.587, 0.114));
-float B = Bands; float f = frac(L * B);
-float Lq = (floor(L * B) + smoothstep(0.5 - Soft, 0.5 + Soft, f)) / B;
-float3 cel = c * (max(Lq, 0.02) / max(L, 0.02));
-float3 col = lerp(c, cel, CelAmt);
-float g = dot(col, float3(0.299, 0.587, 0.114)); col = lerp(g.xxx, col, Sat);
-col = lerp(col, Ink, edge * InkAmt);
-return col + (DummyA.rgb + DummyB.rrr + DummyC.rgb) * 0.0;
-'''
+float Lx = sc / max(sb, 0.2) * Exp;               // exposed light intensity hitting the surface
+float Lp0 = dot(c, W3) / max(dot(base, W3), 0.04) * Exp;
+if (Debug > 3.5) {                                          // debug 4: false-colour light level (red<.125<orange<.25<yellow<.5<green<1<cyan<2<blue<4<magenta)
+    float lv = clamp(floor(log2(max(Lx, 1e-4)) + 4.0), 0.0, 6.0);
+    float3 pal[7] = { float3(1,0,0), float3(1,.5,0), float3(1,1,0), float3(0,1,0), float3(0,1,1), float3(0,0,1), float3(1,0,1) };
+    return pal[(int)lv] * 0.5 / max(Exp, 1e-4);
+}
+if (Debug > 2.5) return base / max(Exp, 1e-4);              // debug 3: G-buffer base colour
+if (Debug > 1.5) return (Lp0 / 4.0).xxx / max(Exp, 1e-4);   // debug 2: per-pixel light level / 4
+if (Debug > 0.5) return (Lx / 4.0).xxx / max(Exp, 1e-4);   // debug 1: smoothed light level / 4 as grey
+float s1 = smoothstep(T1 - Soft, T1 + Soft, Lx);  // out of shadow
+float s2 = smoothstep(T2 - Soft, T2 + Soft, Lx);  // into full light
+float Lq = lerp(lerp(ShadowLvl, MidLvl, s1), LitLvl, s2);
+float keep = smoothstep(HiCut, HiCut * 1.6, Lx);  // lamps, emissive, speculars: leave alone
+float amt = CelAmt * (1.0 - keep) * (leafy ? 0.6 : 1.0);
+float Lf = Lq;
+float Lp = dot(c, W3) / max(dot(base, W3), 0.04) * Exp;   // this pixel's own light, for the ratio
+float3 col = c * (lerp(Lp, Lf, amt) / max(Lp, 1e-4));
+col *= lerp(ShadowTint, float3(1, 1, 1), lerp(1.0, s1, amt));
+float g = dot(col, W3); col = lerp(g.xxx, col, Sat);
+// ---------- ink
+float iz = 1.0 / max(d, 1.0);
+float zl = 1.0 / max(SceneTextureLookup(uv - float2(px.x, 0), 1, false).r, 1.0);
+float zr = 1.0 / max(SceneTextureLookup(uv + float2(px.x, 0), 1, false).r, 1.0);
+float zu = 1.0 / max(SceneTextureLookup(uv - float2(0, px.y), 1, false).r, 1.0);
+float zd = 1.0 / max(SceneTextureLookup(uv + float2(0, px.y), 1, false).r, 1.0);
+float lap = (abs(zl + zr - 2.0 * iz) + abs(zu + zd - 2.0 * iz)) / iz;
+float de = saturate((lap - DepthT) * DepthK);
+float ne = 0.0;
+if (!leafy) {
+    float2 o[4] = { float2(px.x, 0), float2(-px.x, 0), float2(0, px.y), float2(0, -px.y) };
+    for (int i = 0; i < 4; i++) {
+        float3 ni = normalize(SceneTextureLookup(uv + o[i], 8, false).rgb);
+        ne = max(ne, 1.0 - dot(ni, n));
+    }
+    ne = saturate((ne - NormT) * NormK);
+}
+float fade = 1.0 - smoothstep(FadeNear, FadeFar, d);
+float edge = max(de * (leafy ? 0.55 : 1.0), ne) * fade * InkAmt;
+col = lerp(col, Ink / max(Exp, 1e-4), edge);
+return col + (DA.rgb + DB.rrr + DC.rgb + DD.rgb + DE.rrr + DF.rrr) * 0.0;
+"""
+
+COMIC_PARAMS = [('InkPx', 1.6), ('SkyDepth', 5.0e6), ('T1', .25), ('T2', .26), ('Soft', .08), ('ShadowLvl', .4), ('MidLvl', .7), ('LitLvl', 1.0),
+                ('HiCut', 8.0), ('CelAmt', .8), ('Sat', 1.0), ('DepthT', .015), ('DepthK', 10.0), ('NormT', .3), ('NormK', 3.5),
+                ('FadeNear', 2500.0), ('FadeFar', 16000.0), ('InkAmt', .9), ('Debug', 0.0)]
 
 def master_comic():
     m = _fresh('M_PBX_Comic', G + '/Materials')
     m.set_editor_property('material_domain', unreal.MaterialDomain.MD_POST_PROCESS)
-    try: m.set_editor_property('blendable_location', unreal.BlendableLocation.BL_SCENE_COLOR_AFTER_TONEMAPPING)
-    except Exception:
-        try: m.set_editor_property('blendable_location', unreal.BlendableLocation.BL_AFTER_TONEMAPPING)
-        except Exception as ex: log('blendable location', ex)
+    m.set_editor_property('blendable_location', unreal.BlendableLocation.BL_SCENE_COLOR_BEFORE_DOF)
+    STI = unreal.SceneTextureId
+    code = COMIC_HLSL.replace('BASE_ID', str(int(STI.PPI_BASE_COLOR.value))).replace('STENCIL_ID', str(int(STI.PPI_CUSTOM_STENCIL.value))).replace('CDEPTH_ID', str(int(STI.PPI_CUSTOM_DEPTH.value)))
     cu = _e(m, unreal.MaterialExpressionCustom, -400, 0)
-    cu.set_editor_property('code', COMIC_HLSL); cu.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
-    names = [('Thick', 2.1), ('DepthT', .015), ('DepthK', 18.0), ('NormT', .2), ('NormK', 3.5), ('FadeDist', 12000.0), ('Bands', 3.5), ('Soft', .06),
-             ('CelAmt', .8), ('Sat', 1.22), ('InkAmt', .95)]
+    cu.set_editor_property('code', code); cu.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+    keys = [k for k, _ in COMIC_PARAMS] + ['ShadowTint', 'Ink', 'Exp', 'DA', 'DB', 'DC', 'DD', 'DE', 'DF']
     ins = []
-    for k in [n for n, _ in names] + ['Ink', 'DummyA', 'DummyB', 'DummyC']:
+    for k in keys:
         ci = unreal.CustomInput(); ci.set_editor_property('input_name', k); ins.append(ci)
     cu.set_editor_property('inputs', ins)
     y = 0
-    for k, v in names: MEL.connect_material_expressions(_scalar(m, k, v, -900, y), '', cu, k); y += 70
-    MEL.connect_material_expressions(_vec(m, 'Ink', (.035, .028, .04, 1), -900, y), '', cu, 'Ink')
-    for k, sid in (('DummyA', unreal.SceneTextureId.PPI_POST_PROCESS_INPUT0), ('DummyB', unreal.SceneTextureId.PPI_SCENE_DEPTH), ('DummyC', unreal.SceneTextureId.PPI_WORLD_NORMAL)):
+    for k, v in COMIC_PARAMS: MEL.connect_material_expressions(_scalar(m, k, v, -900, y), '', cu, k); y += 70
+    MEL.connect_material_expressions(_vec(m, 'ShadowTint', (.78, .8, 1.0, 1), -900, y), '', cu, 'ShadowTint'); y += 120
+    MEL.connect_material_expressions(_vec(m, 'Ink', (.03, .025, .045, 1), -900, y), '', cu, 'Ink'); y += 120
+    MEL.connect_material_expressions(_e(m, unreal.MaterialExpressionEyeAdaptation, -900, y), '', cu, 'Exp'); y += 100
+    for k, sid in (('DA', STI.PPI_POST_PROCESS_INPUT0), ('DB', STI.PPI_SCENE_DEPTH), ('DC', STI.PPI_WORLD_NORMAL), ('DD', STI.PPI_BASE_COLOR), ('DE', STI.PPI_CUSTOM_STENCIL), ('DF', STI.PPI_CUSTOM_DEPTH)):
         st = _e(m, unreal.MaterialExpressionSceneTexture, -700, y); st.set_editor_property('scene_texture_id', sid); y += 120
         MEL.connect_material_expressions(st, 'Color', cu, k)
     MEL.connect_material_property(cu, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
@@ -394,6 +506,11 @@ def apply_comic(on=True):
         if isinstance(a, unreal.PostProcessVolume):
             s = a.get_editor_property('settings')
             wb = unreal.WeightedBlendables(); wb.set_editor_property('array', [unreal.WeightedBlendable(weight=1.0 if on else 0.0, object=mi)])
-            s.set_editor_property('weighted_blendables', wb); a.set_editor_property('settings', s)
+            s.set_editor_property('weighted_blendables', wb)
+            # comic grade: no sharpening (it chews the ink), gentler bloom, neutral saturation (the bands carry the punch)
+            for k, v in [('sharpen', 0.0), ('bloom_intensity', .3), ('color_saturation', unreal.Vector4(1.03, 1.03, 1.03, 1)), ('vignette_intensity', .3)]:
+                try: s.set_editor_property('override_' + k, True); s.set_editor_property(k, v)
+                except Exception as ex: log('pp', k, ex)
+            a.set_editor_property('settings', s)
     unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
     log('comic applied', on)
