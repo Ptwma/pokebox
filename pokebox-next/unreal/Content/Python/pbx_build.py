@@ -10,7 +10,8 @@ KITS = os.path.join(SRC, 'kits')
 NATURE = os.path.join(KITS, 'q_nature') if os.path.isdir(os.path.join(KITS, 'q_nature')) else os.path.join(SRC, 'nature')
 # kit folder in Unreal -> FBX folder on disk
 KIT_DIRS = {'QProps': os.path.join(KITS, 'q_props', 'Exports', 'FBX'), 'KTown': os.path.join(KITS, 'k_town', 'Models', 'FBX format'),
-            'KPirate': os.path.join(KITS, 'k_pirate', 'Models', 'FBX format'), 'KSurvival': os.path.join(KITS, 'k_survival', 'Models', 'FBX format')}
+            'KPirate': os.path.join(KITS, 'k_pirate', 'Models', 'FBX format'), 'KSurvival': os.path.join(KITS, 'k_survival', 'Models', 'FBX format'),
+            'KFurniture': os.path.join(KITS, 'k_furniture', 'Models', 'FBX format')}
 G = '/Game/PBX'
 AT = unreal.AssetToolsHelpers.get_asset_tools()
 EAL = unreal.EditorAssetLibrary
@@ -91,6 +92,45 @@ def fix_kit_materials():
         MEL.update_material_instance(mi); EAL.save_loaded_asset(mi); n += 1
     log('qprops materials fixed', n)
 
+def import_echoes():
+    """paper Echo cut-outs (made from the user's local card images — never in git) + their master material"""
+    d = os.path.join(SRC, 'echo'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.png')]
+    _import(files, G + '/Echo')
+    for p in EAL.list_assets(G + '/Echo', recursive=False):
+        t = EAL.load_asset(p)
+        if isinstance(t, unreal.Texture2D):
+            t.set_editor_property('max_texture_size', 1024); t.set_editor_property('lod_group', unreal.TextureGroup.TEXTUREGROUP_UI if False else unreal.TextureGroup.TEXTUREGROUP_WORLD)
+            EAL.save_loaded_asset(t)
+    m = _fresh('M_PBX_Echo', G + '/Materials')
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED); m.set_editor_property('two_sided', True)
+    t = _texp(m, 'Tex', -900, 0, default=WHITE)
+    MEL.connect_material_property(t, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(t, 'A', unreal.MaterialProperty.MP_OPACITY_MASK)
+    fl = _mul(m, _vec(m, 'FlashColor', (1, 1, 1, 1), -900, 300), _scalar(m, 'Flash', 0.0, -900, 450), -600, 350)
+    MEL.connect_material_property(_mul(m, t, fl, -400, 250, 'RGB'), '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    MEL.connect_material_property(_scalar(m, 'Roughness', .85, -600, 100), '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    log('echoes', len(files))
+
+def import_outfits():
+    d = os.path.join(SRC, 'outfits'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.startswith('T_Outfit_') and f.endswith('.png')]
+    _import(files, G + '/Characters/Outfits'); log('outfits', len(files))
+
+def import_hair():
+    d = os.path.join(KITS, 'q_chars', 'Universal Base Characters[Standard]', 'Hairstyles', 'Rigged to Head Bone', 'glTF (Godot -Unreal)')
+    files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.gltf')]
+    got = _import(files, G + '/Characters/Hair'); log('hair', len(files), len(got))
+
+def link_skeletons():
+    """UAL animations play on the Quaternius characters through skeleton remapping (same bone names)"""
+    sks = [EAL.load_asset(p) for p in EAL.list_assets(G + '/Characters', recursive=True) if str(EAL.find_asset_data(p).asset_class_path.asset_name) == 'Skeleton']
+    for s in sks:
+        others = [o for o in sks if o != s]
+        try:
+            s.set_editor_property('compatible_skeletons', [o for o in others]); EAL.save_loaded_asset(s)
+        except Exception as ex: log('compat', s.get_name(), ex)
+    log('skeletons', [s.get_path_name() for s in sks])
+
 def import_kits(only=None):
     """Quaternius Fantasy Props + Kenney kits, each into /Game/PBX/Kits/<name> with the materials the FBX brings"""
     for k, d in KIT_DIRS.items():
@@ -103,7 +143,10 @@ def import_kits(only=None):
 def _fresh(name, path, cls=unreal.Material, factory=None):
     full = f'{path}/{name}'
     if EAL.does_asset_exist(full): EAL.delete_asset(full)
-    return AT.create_asset(name, path, cls, factory or unreal.MaterialFactoryNew())
+    m = AT.create_asset(name, path, cls, factory or unreal.MaterialFactoryNew())
+    try: m.set_editor_property('used_with_nanite', True)   # imported meshes are Nanite: without the flag a packaged/-game run shows the default material
+    except Exception as ex: log('nanite flag', ex)
+    return m
 
 def _e(m, cls, x, y): return MEL.create_material_expression(m, cls, x, y)
 
@@ -249,6 +292,9 @@ def make_materials():
     M['M_Siding_White'] = _mi('MI_Siding_White', S, {'UVScale': 1.0, 'RoughMul': .75}, {'Tint': (.88, .9, .92, 1)}, sid)
     M['M_Siding_Cream'] = _mi('MI_Siding_Cream', S, {'UVScale': 1.0, 'RoughMul': .75}, {'Tint': (.95, .8, .58, 1)}, sid)
     M['M_Plaster'] = _mi('MI_Plaster', C, {'Roughness': .8}, {'Color': (.7, .7, .68, 1)})
+    M['M_Wallpaper_Home'] = _mi('MI_Wallpaper_Home', S, {'UVScale': 1.0, 'RoughMul': .8}, {'Tint': (.95, .82, .62, 1)}, sid)
+    M['M_Wallpaper_Lab'] = _mi('MI_Wallpaper_Lab', C, {'Roughness': .6}, {'Color': (.78, .84, .88, 1)})
+    M['M_WindowLight'] = _mi('MI_WindowLight', C, {'Roughness': .3, 'EmissiveMul': 6.0}, {'Color': (.9, .95, 1, 1), 'Emissive': (.85, .93, 1.0, 1)})
     M['M_Roof_Red'] = _mi('MI_Roof_Red', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.72, .2, .14, 1)}, roof)
     M['M_Roof_Blue'] = _mi('MI_Roof_Blue', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.2, .34, .62, 1)}, roof)
     M['M_Stone'] = _mi('MI_Stone', S, {'UVScale': .6}, {}, _ph('rustic_stone_wall'))
@@ -352,7 +398,7 @@ def build_level():
     pp = _spawn_cls(unreal.PostProcessVolume, label='PostProcess'); pp.set_editor_property('unbound', True)
     s = pp.get_editor_property('settings')
     for k, v in [('auto_exposure_bias', .3), ('bloom_intensity', .55), ('ambient_occlusion_intensity', .75),
-                 ('ambient_occlusion_radius', 120.0), ('vignette_intensity', .25), ('color_saturation', unreal.Vector4(1.12, 1.12, 1.12, 1)),
+                 ('ambient_occlusion_radius', 120.0), ('motion_blur_amount', 0.0), ('vignette_intensity', .25), ('color_saturation', unreal.Vector4(1.12, 1.12, 1.12, 1)),
                  ('color_contrast', unreal.Vector4(1.04, 1.04, 1.04, 1)), ('white_temp', 6200.0), ('sharpen', .4)]:
         try: s.set_editor_property('override_' + k, True); s.set_editor_property(k, v)
         except Exception as ex: log('pp', k, ex)
@@ -378,10 +424,27 @@ def build_level():
             c.set_editor_property('render_custom_depth', True); c.set_editor_property('custom_depth_stencil_value', 1)
         a.set_folder_path('Town/' + ('Nature' if not (mesh.startswith('SM_') or '/' in mesh) else 'Built'))
         return a
+    def put_o(o):
+        a = put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'))
+        if a and o.get('tag'): a.tags = [unreal.Name(o['tag'])]
+        return a
     put('SM_Ground', 0, 0, 0, label='Ground')
     w = plan['water']; put('SM_Water', w['x'], w['y'], w['z'], label='Sea')
-    for o in plan['objects']:
-        put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'))
+    for o in plan['objects']: put_o(o)
+    # interiors: warm ceiling lights + a cool 'window daylight' fill
+    for r in plan.get('rooms', []):
+        cx, cy, cz = r['c']; W, D, H = r['W'], r['D'], r['H']
+        n = 2 if W > 1200 else 1
+        for i in range(n):
+            x = cx + (i - (n - 1) / 2) * W / 2
+            pl = _spawn_cls(unreal.PointLight, (x, cy, cz + H - 40), (0, 0, 0), 'RoomLight')
+            c = pl.get_component_by_class(unreal.PointLightComponent)
+            sp(c, intensity=9000.0, attenuation_radius=max(W, D) * 1.1, light_color=unreal.Color(r=255, g=226, b=190, a=255), source_radius=20.0)
+            pl.set_folder_path('Interiors')
+        rl = _spawn_cls(unreal.RectLight, (cx, cy + D / 2 - 60, cz + H * .55), (0, -15, -90), 'WindowFill')   # from the window wall side
+        c = rl.get_component_by_class(unreal.RectLightComponent)
+        sp(c, intensity=1800.0, attenuation_radius=max(W, D) * 1.5, light_color=unreal.Color(r=200, g=220, b=255, a=255), source_width=W * .8, source_height=H * .6)
+        rl.set_folder_path('Interiors')
     ps = plan['player_start']
     _spawn_cls(unreal.PlayerStart, (ps['x'] * 100, -ps['y'] * 100, ps['z'] * 100 + 100), (0, 0, -ps['rot']), 'PlayerStart')
     # game mode: the template's third-person setup

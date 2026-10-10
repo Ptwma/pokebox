@@ -217,6 +217,43 @@ def house(name, W, D, H, roof_m, siding_m, porch=True, chimney=True, two_storey=
     ob = join(parts, name)
     return ob
 
+# ------------------------------------------------------------------ interiors (rooms live 60 m under their buildings)
+INTERIOR_Z = -60.0
+def room(name, W, D, H, wall_m, n_windows=2, door_w=1.5, door_h=2.5):
+    """closed room shell, inner size W x D x H, floor top at z=0, door opening centred in the +Y wall,
+    'daylight' window panes (emissive) in the -Y wall. Walls are 0.25 m boxes OUTSIDE the inner rectangle."""
+    P = []; t = .25
+    P.append(box(f'{name}_floor', W + 2 * t, D + 2 * t, .3, (0, 0, -.3), 'M_Floor', bevel=0))
+    P.append(box(f'{name}_ceil', W + 2 * t, D + 2 * t, .3, (0, 0, H), 'M_Plaster', bevel=0))
+    for s in (-1, 1): P.append(box(f'{name}_side{s}', t, D, H, (s * (W / 2 + t / 2), 0, 0), wall_m, bevel=0))
+    # back wall (-Y) with window openings
+    wins = [W * (i + 1) / (n_windows + 1) - W / 2 for i in range(n_windows)]; ww, wh, wz = 1.6, 1.5, 1.0
+    xs = [-W / 2] + sum([[c - ww / 2, c + ww / 2] for c in wins], []) + [W / 2]
+    for i in range(0, len(xs), 2):
+        a, b = xs[i], xs[i + 1]
+        if b - a > .01: P.append(box(f'{name}_back{i}', b - a, t, H, ((a + b) / 2, -D / 2 - t / 2, 0), wall_m, bevel=0))
+    for j, c in enumerate(wins):
+        P.append(box(f'{name}_wlo{j}', ww, t, wz, (c, -D / 2 - t / 2, 0), wall_m, bevel=0))
+        P.append(box(f'{name}_whi{j}', ww, t, H - wz - wh, (c, -D / 2 - t / 2, wz + wh), wall_m, bevel=0))
+        P.append(box(f'{name}_pane{j}', ww, .05, wh, (c, -D / 2 - t + .02, wz), 'M_WindowLight', bevel=0))
+        for k in (-1, 1): P.append(box(f'{name}_wf{j}{k}', .09, .14, wh, (c + k * (ww / 2 - .045), -D / 2 + .03, wz), 'M_Trim', bevel=.01))
+        P.append(box(f'{name}_wft{j}', ww, .14, .09, (c, -D / 2 + .03, wz + wh - .09), 'M_Trim', bevel=.01))
+        P.append(box(f'{name}_wfm{j}', .06, .12, wh, (c, -D / 2 + .03, wz), 'M_Trim', bevel=0))
+        P.append(box(f'{name}_sill{j}', ww + .2, .26, .07, (c, -D / 2 + .1, wz - .07), 'M_Trim', bevel=.01))
+    # front wall (+Y) with the door opening + a closed door leaf you walk "through" (interaction teleports)
+    for s in (-1, 1):
+        L = W / 2 - door_w / 2; P.append(box(f'{name}_front{s}', L, t, H, (s * (door_w / 2 + L / 2), D / 2 + t / 2, 0), wall_m, bevel=0))
+    P.append(box(f'{name}_lintel', door_w, t, H - door_h, (0, D / 2 + t / 2, door_h), wall_m, bevel=0))
+    P.append(box(f'{name}_door', door_w, .08, door_h, (0, D / 2 + .05, 0), 'M_Door', bevel=.02))
+    P.append(box(f'{name}_knob', .08, .08, .08, (door_w * .32, D / 2 - .02, 1.05), 'M_Metal', bevel=0))
+    for s in (-1, 1): P.append(box(f'{name}_jamb{s}', .12, .16, door_h + .1, (s * (door_w / 2 + .06), D / 2 - .02, 0), 'M_Trim', bevel=.01))
+    P.append(box(f'{name}_head', door_w + .36, .16, .12, (0, D / 2 - .02, door_h), 'M_Trim', bevel=.01))
+    # baseboards + a ceiling cornice: the comic ink loves these edges
+    for (sx, sy, lx, ly) in [(W, .05, 0, -D / 2 + .025), (.05, D, -W / 2 + .025, 0), (.05, D, W / 2 - .025, 0)]:
+        P.append(box(f'{name}_base{lx}{ly}', sx, sy, .14, (lx, ly, 0), 'M_Trim', bevel=0))
+        P.append(box(f'{name}_corn{lx}{ly}', sx, sy, .1, (lx, ly, H - .1), 'M_Trim', bevel=0))
+    return join(P, name)
+
 # ------------------------------------------------------------------ props
 def fence_segment():
     P = [box('f_post0', .14, .14, 1.1, (-1, 0, 0), 'M_WoodDark', bevel=.02), box('f_post1', .14, .14, 1.1, (1, 0, 0), 'M_WoodDark', bevel=.02)]
@@ -299,6 +336,17 @@ def splat(plan, res=512):
     im = bpy.data.images.new('T_TownSplat', res, res, alpha=False, float_buffer=False); im.colorspace_settings.name = 'Non-Color'
     im.pixels = px; im.filepath_raw = os.path.join(OUT, 'tex', 'T_TownSplat.png'); im.file_format = 'PNG'; im.save()
 
+def echo_card():
+    """1 x 1 m upright quad for the paper Echoes / display cards: bottom-centre origin, faces -Y (Unreal +Y), UV 0..1"""
+    me = bpy.data.meshes.new('SM_EchoCard')
+    me.from_pydata([(-.5, 0, 0), (.5, 0, 0), (.5, 0, 1), (-.5, 0, 1)], [], [(0, 1, 2, 3)])
+    uv = me.uv_layers.new(name='UV')
+    for i, l in enumerate(me.loops): uv.data[i].uv = [(0, 0), (1, 0), (1, 1), (0, 1)][l.vertex_index]
+    ob = bpy.data.objects.new('SM_EchoCard', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_EchoPaper')
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_EchoCard.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL', axis_forward='-Z', axis_up='Y',
+                             mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
+
 def water_plane():
     bm = bmesh.new(); bmesh.ops.create_grid(bm, x_segments=40, y_segments=20, size=1)
     bmesh.ops.scale(bm, vec=Vector((1600, 700, 1)), verts=bm.verts)
@@ -372,8 +420,50 @@ def painted_textures(res=512):
     print('painted textures written')
 
 # ------------------------------------------------------------------ the town plan
+TALL_GRASS = [(-44.0, -9.0, -29.0, 2.5), (-44.0, 10.0, -31.0, 18.0)]   # rectangles (x0, y0, x1, y1), metres
+GATE = (-47.0, 6.0)                                                  # Route 1 gate on the west road
+ROOMS = {'house': dict(c=(-15.0, -5.0), W=9.0, D=7.0, H=3.2, mesh='SM_Room_House'),
+         'lab': dict(c=(0.0, -34.0), W=18.0, D=11.0, H=4.2, mesh='SM_Room_Lab')}
+
+def _ue(x, y, z): return [round(x * 100, 1), round(-y * 100, 1), round(z * 100, 1)]
+def _yaw(dx, dy): return round(math.degrees(math.atan2(-dy, dx)), 1)   # Blender facing direction -> Unreal yaw
+def gameplay_data():
+    """everything the C++ game needs to know about this map (Unreal cm / degrees) -> Content/PBX/Data/L_Town.json"""
+    G = {}
+    def spot(x, y, z=None, face=(0, 1)): return {'pos': _ue(x, y, height(x, y) if z is None else z), 'yaw': _yaw(*face)}
+    hc, lc = ROOMS['house'], ROOMS['lab']; HZ = INTERIOR_Z
+    def inside(r, lx, ly, face=(0, -1)): return spot(r['c'][0] + lx, r['c'][1] + ly, HZ, face)
+    G['new_game'] = inside(hc, -1.6, -1.2, (1, 0))                  # wake up next to the bed
+    G['doors'] = [
+        {'id': 'house', 'label': 'Home', 'outside': spot(-15, .7, None, (0, 1)), 'inside': inside(hc, 0, hc['D'] / 2 - 1.2, (0, -1)),
+         'out_door': _ue(-15, -1.45, height(-15, -1.45) + .5), 'in_door': _ue(hc['c'][0], hc['c'][1] + hc['D'] / 2 - .2, HZ)},
+        {'id': 'lab', 'label': 'Pokébox Labs', 'outside': spot(0, -26.2, None, (0, 1)), 'inside': inside(lc, 0, lc['D'] / 2 - 1.3, (0, -1)),
+         'out_door': _ue(0, -28.45, height(0, -28.45) + .5), 'in_door': _ue(lc['c'][0], lc['c'][1] + lc['D'] / 2 - .2, HZ)},
+        {'id': 'rival', 'label': "Rho's house", 'locked': True, 'out_door': _ue(15, -1.45, height(15, -1.45) + .5)}]
+    G['npcs'] = [
+        {'id': 'mom', 'outfit': 'mom', 'hair_color': [0.3, 0.16, 0.08], 'name': 'Mum', 'body': 'f', 'hair': 'Hair_Buns', 'anim': 'Idle_Loop', **inside(hc, 2.2, 1.6, (-1, 0))},
+        {'id': 'vale', 'outfit': 'vale', 'hair_color': [0.78, 0.78, 0.8], 'name': 'Dr. Vale', 'body': 'f', 'hair': 'Hair_Long', 'anim': 'Idle_FoldArms_Loop', **inside(lc, 0, -1.4, (0, 1))},
+        {'id': 'aide', 'outfit': 'aide', 'hair_color': [0.25, 0.15, 0.08], 'name': 'Lab Aide Pim', 'body': 'm', 'hair': 'Hair_SimpleParted', 'anim': 'Idle_TalkingPhone_Loop', **inside(lc, 6.0, -2.9, (0, 1))},
+        {'id': 'rho', 'outfit': 'rho', 'hair_color': [0.08, 0.1, 0.22], 'name': 'Rho', 'body': 'm', 'hair': 'Hair_Buzzed', 'anim': 'Idle_FoldArms_Loop', **spot(-12.6, 3.6, None, (-1, -.4))},
+        {'id': 'fisher', 'outfit': 'fisher', 'hair_color': [0.65, 0.65, 0.65], 'name': 'Old Fisher Gus', 'body': 'm', 'hair': 'Hair_Beard', 'anim': 'Idle_Rail_Loop', **spot(9.0, 50.2, -.35 + .1, (0, 1))},
+        {'id': 'gardener', 'outfit': 'gardener', 'hair_color': [0.55, 0.22, 0.08], 'name': 'Gardener Ines', 'body': 'f', 'hair': 'Hair_Buns', 'anim': 'Farm_Watering', **spot(19.5, .2, None, (1, 0))},
+        {'id': 'merchant', 'outfit': 'merchant', 'hair_color': [0.05, 0.04, 0.04], 'name': 'Fruit Seller Dora', 'body': 'f', 'hair': 'Hair_BuzzedFemale', 'anim': 'Idle_Talking_Loop', **spot(-5.4, -19.6, None, (1, 0))},
+        {'id': 'kid', 'outfit': 'kid', 'hair_color': [0.85, 0.62, 0.2], 'name': 'Little Leo', 'body': 'm', 'hair': 'Hair_Buzzed', 'anim': 'Idle_Loop', 'scale': .72, **spot(3.2, -17.6, None, (-1, -.3))},
+        {'id': 'guard', 'outfit': 'guard', 'hair_color': [0.06, 0.05, 0.05], 'name': 'Gate Warden Bo', 'body': 'm', 'hair': 'Hair_SimpleParted', 'anim': 'Idle_FoldArms_Loop', **spot(-44.6, 9.4, None, (1, 0))}]
+    G['spots'] = {'rho_greet': spot(-12.6, 3.6, None, (-1, -.4)), 'rho_gate': spot(-42.5, 3.4, None, (1, .3)),
+                  'starter_table': _ue(lc['c'][0], lc['c'][1] - 3.0, HZ + .95), 'bed': _ue(hc['c'][0] - 3.3, hc['c'][1] - 2.2, HZ + .5),
+                  'battle_center_hint': _ue(-36, 6, 0)}
+    G['grass'] = [{'min': _ue(x0, y1, 0)[:2], 'max': _ue(x1, y0, 0)[:2]} for (x0, y0, x1, y1) in TALL_GRASS]   # (y flips sign)
+    G['wild_spawns'] = [_ue(x, y, height(x, y)) for (x, y) in [(-40, -5), (-33, -2), (-37, 14), (-41, 15.5), (-34, 1)]]
+    G['gate'] = {'pos': _ue(GATE[0], GATE[1], height(*GATE)), 'exit_x': round((GATE[0] - 3.0) * 100, 1), 'barrier_mesh': 'fence-gate'}
+    G['bounds'] = {'center': _ue(0, -8, 0)[:2], 'radius': 9000.0, 'water_z': -110.0, 'safe': spot(0, 10)}
+    G['signs'] = [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nto Mistvale'},
+                  {'pos': _ue(4, 9, height(4, 9) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN HARBOR'},
+                  {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'POKEBOX LABS'}]
+    return G
+
 def plan_town():
-    P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2)],
+    P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2), (-24, 6, -52, 6, 3.0)],
          'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None):
         P['objects'].append(dict(mesh=mesh, x=round(x, 3), y=round(y, 3), z=round(height(x, y) if z is None else z, 3), rot=round(rot, 2), s=round(s, 3)))
@@ -391,9 +481,11 @@ def plan_town():
         for k in range(5): add('SM_Fence', cx - 7.4 * (1 if cx < 0 else -1), 1.9 - k * 2.1 - 1, 90)
     for k in range(10): add('SM_Fence', 7 + k * 2.1, 22, 0); add('SM_Fence', -7 - k * 2.1, 22, 0)
     # foliage (Quaternius Stylized Nature MegaKit names), kept off paths, houses and the beach
-    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13)]
+    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (-47, 6, 7)]
+    def in_grass(x, y, pad=0.0): return any(x0 - pad < x < x1 + pad and y0 - pad < y < y1 + pad for (x0, y0, x1, y1) in TALL_GRASS)
     def free(x, y, r=1.5):
         if path_mask(x, y, P) > .05: return False
+        if in_grass(x, y, r + .5): return False
         if y > 38 or abs(x) > 104 or abs(y) > 104: return False
         return all(math.hypot(x - bx, y - by) > br + r for bx, by, br in blocked)
     trees = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_4', 'CommonTree_5']
@@ -433,7 +525,7 @@ def plan_town():
     kit('QProps/Crate_Wooden', 5.4, -25.35, 25, h=.7, z=height(5.4, -25.35) + .7)          # stacked crate
     # lab flanked by hedges
     for s in (-1, 1):
-        for k in range(4): kit('KTown/hedge', s * 10.6, -30.5 - k * 2.0, 90, w=2.0)
+        for k in range(5): kit(R.choice(['Bush_Common', 'Bush_Common_Flowers']), s * 10.8, -29.5 - k * 1.8, R.random() * 360, h=1.2 + R.random() * .3)
     # homes: barrels, buckets, flower pots, wood pile
     for (m, x, y, r, h) in [('QProps/Barrel', -20.2, -2.6, 0, 1.0), ('QProps/Bucket_Wooden_1', -19.4, -1.9, 0, .4), ('QProps/Pot_1', -16.9, -.9, 0, .5),
                             ('QProps/Pot_1', -13.1, -.9, 0, .5), ('QProps/Barrel', 20.3, -2.4, 0, 1.0), ('QProps/Barrel', 20.4, -3.6, 30, 1.0),
@@ -467,6 +559,48 @@ def plan_town():
         a = R.random() * math.tau; d = 50 + R.random() * 50; x, y = math.cos(a) * d, math.sin(a) * d - 10
         if y > 34 or not free(x, y, 2): continue
         add(R.choice(['Pine_4', 'Pine_5', 'TwistedTree_1', 'TwistedTree_3', 'CommonTree_5']), x, y, R.random() * 360, .9 + R.random() * .4); n += 1
+    # ---- west road: tall grass where the wild Echoes live, and the Route 1 gate (closed until the chapter is done)
+    for (x0, y0, x1, y1) in TALL_GRASS:
+        n = int((x1 - x0) * (y1 - y0) * 1.1)
+        for k in range(n):
+            x, y = x0 + R.random() * (x1 - x0), y0 + R.random() * (y1 - y0)
+            kit(R.choice(['Grass_Common_Tall', 'Grass_Wispy_Tall', 'Grass_Common_Tall']), x, y, R.random() * 360, h=.85 + R.random() * .45)
+    gx, gy = GATE
+    for s in (-1, 1): kit('KTown/pillar-stone', gx, gy + s * 2.3, 0, h=3.2)
+    kit('KTown/fence-gate', gx, gy, 90, w=4.0)                         # the barrier: hidden by the game when the gate opens
+    P['objects'][-1]['tag'] = 'PBX_GateBarrier'
+    add('SM_Sign', gx + 2.5, gy + 3.6, 90)
+    for k in range(6):                                                  # hedges either side of the gate so the road is the only way out
+        for sgn in (1, -1): kit(R.choice(['Bush_Common', 'Bush_Common_Flowers']), gx + R.uniform(-.4, .4), gy + sgn * (3.4 + k * 1.9), R.random() * 360, h=1.5 + R.random() * .4)
+    # ---- interiors (60 m below their buildings). Furniture: Kenney Furniture Kit, footprints in metres
+    def furn(room, mesh, lx, ly, rot=0.0, h=None, w=None, dz=0.0):
+        cx, cy = ROOMS[room]['c']; kit(mesh, cx + lx, cy + ly, rot, h=h, w=w, z=INTERIOR_Z + dz)
+    for room, r in ROOMS.items(): add(r['mesh'], r['c'][0], r['c'][1], 0, 1.0, INTERIOR_Z)
+    F = 'KFurniture/'
+    for (m, lx, ly, rot, h, w, dz) in [
+        (F + 'bedSingle', -3.3, -2.2, 0, None, 2.1, 0), (F + 'sideTable', -1.9, -3.0, 0, .55, None, 0), (F + 'lampRoundTable', -1.9, -3.0, 0, .5, None, .55),
+        (F + 'bookcaseOpen', .3, -3.15, 0, 1.9, None, 0), (F + 'books', .3, -3.1, 0, None, .5, 1.0),
+        (F + 'desk', 2.8, -3.0, 0, None, 1.4, 0), (F + 'computerScreen', 2.8, -3.15, 0, .45, None, .76), (F + 'chairDesk', 2.8, -2.1, 180, 1.0, None, 0),
+        (F + 'tableRound', 2.6, .6, 0, None, 1.1, 0), (F + 'chair', 1.8, .6, 90, .95, None, 0), (F + 'chair', 3.4, .6, -90, .95, None, 0),
+        (F + 'loungeSofa', -3.7, .9, 90, None, 2.0, 0), (F + 'rugRectangle', -.6, -.2, 0, None, 3.2, 0), (F + 'tableCoffee', -2.2, .9, 0, None, 1.0, 0),
+        (F + 'pottedPlant', 4.0, 2.9, 0, 1.1, None, 0), (F + 'pottedPlant', -4.0, -3.0, 0, 1.1, None, 0), (F + 'coatRackStanding', 1.6, 3.0, 0, 1.8, None, 0),
+        (F + 'rugDoormat', 0, 2.95, 0, None, 1.1, 0), (F + 'kitchenCabinet', -2.9, 3.0, 180, .9, None, 0), (F + 'kitchenStove', -3.9, 3.0, 180, .9, None, 0),
+        (F + 'kitchenFridge', -1.8, 3.05, 180, 1.9, None, 0), (F + 'radio', 2.6, .6, 30, .25, None, .75)]:
+        furn('house', m, lx, ly, rot, h, w, dz)
+    for (m, lx, ly, rot, h, w, dz) in [
+        ('QProps/Table_Large', 0, -3.0, 0, None, 2.6, 0),
+        (F + 'desk', -6.0, -4.6, 0, None, 1.6, 0), (F + 'computerScreen', -6.0, -4.8, 0, .5, None, .76), (F + 'chairDesk', -6.0, -3.7, 180, 1.0, None, 0),
+        (F + 'desk', 6.0, -4.6, 0, None, 1.6, 0), (F + 'computerScreen', 6.0, -4.8, 0, .5, None, .76), (F + 'laptop', 5.5, -4.5, 0, None, .4, .76),
+        (F + 'chairDesk', 6.0, -3.7, 180, 1.0, None, 0),
+        (F + 'bookcaseClosedWide', -8.6, -2.5, 90, 2.2, None, 0), (F + 'bookcaseClosedWide', -8.6, .5, 90, 2.2, None, 0), (F + 'bookcaseClosedWide', -8.6, 3.5, 90, 2.2, None, 0),
+        (F + 'cabinetTelevision', 8.6, -1.5, -90, .7, None, 0), (F + 'televisionModern', 8.6, -1.5, -90, .9, None, .7),
+        (F + 'loungeSofaLong', 8.4, 2.5, -90, None, 2.6, 0), (F + 'tableCoffeeGlass', 7.2, 2.5, 0, None, 1.0, 0),
+        (F + 'rugRectangle', 0, -.5, 0, None, 6.0, 0), (F + 'pottedPlant', -8.5, 5.0, 0, 1.3, None, 0), (F + 'pottedPlant', 8.5, 5.0, 0, 1.3, None, 0),
+        (F + 'pottedPlant', -8.5, -5.0, 0, 1.3, None, 0), (F + 'pottedPlant', 8.5, -5.0, 0, 1.3, None, 0), (F + 'rugDoormat', 0, 5.2, 0, None, 1.2, 0),
+        ('QProps/Shelf_Small_Bottles', -3.2, -5.2, 0, 1.2, None, 0), ('QProps/BookStand', 3.2, -5.1, 0, 1.3, None, 0), ('QProps/Cauldron', 3.6, 1.5, 0, .8, None, 0)]:
+        furn('lab', m, lx, ly, rot, h, w, dz)
+    P['rooms'] = [dict(c=_ue(r['c'][0], r['c'][1], INTERIOR_Z), W=r['W'] * 100, D=r['D'] * 100, H=r['H'] * 100) for r in ROOMS.values()]
+    P['gameplay'] = gameplay_data()
     P['water'] = dict(x=0, y=380, z=-1.2)
     P['player_start'] = dict(x=0, y=10, z=height(0, 10) + 1.0, rot=-90)
     return P
@@ -480,9 +614,15 @@ def run():
     for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin):
         ob = f(); export(ob, ob.name); reset()
     water_plane(); reset()
+    echo_card(); reset()
+    for r in ROOMS.values():
+        export(room(r['mesh'], r['W'], r['D'], r['H'], 'M_Wallpaper_Home' if r['mesh'] == 'SM_Room_House' else 'M_Wallpaper_Lab'), r['mesh']); reset()
     painted_textures()
     ground(plan); reset(); splat(plan)
     with open(os.path.join(OUT, 'town_plan.json'), 'w') as fh: json.dump(plan, fh, indent=1)
+    gd = os.environ.get('PBX_GAMEDATA', os.path.join(os.path.dirname(OUT), 'PokeboxNext', 'Content', 'PBX', 'Data'))
+    os.makedirs(gd, exist_ok=True)
+    with open(os.path.join(gd, 'L_Town.json'), 'w', encoding='utf-8') as fh: json.dump(plan['gameplay'], fh, indent=1, ensure_ascii=False)
     print('town built:', len(plan['objects']), 'placements')
 
 if __name__ == '__main__' or True:
