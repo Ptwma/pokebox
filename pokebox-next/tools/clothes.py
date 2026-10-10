@@ -409,6 +409,29 @@ def g_scarf(B, col):
         _sphere(bm, (0, cy + r * ky(B) * .95, zc - .02), (.04, .03, .04))   # knot at the back
     rigid(B, 'scarf', build, 'Head', col)
 
+def palette_uvs(ob, role):
+    """vertex colours do not survive Unreal's glTF import: bake them into a tiny palette texture (one 8x8 cell per
+    colour, T_ClothPal_<role>.png) and point every face's UVs at the centre of its colour's cell"""
+    import numpy as np
+    me = ob.data; col = me.color_attributes['Col']
+    def key(c): return tuple(round(v, 3) for v in c[:3])
+    pal = []; idx = {}
+    for poly in me.polygons:
+        k = key(col.data[poly.loop_indices[0]].color)
+        if k not in idx: idx[k] = len(pal); pal.append(k)
+    while me.uv_layers: me.uv_layers.remove(me.uv_layers[0])
+    uv = me.uv_layers.new(name='UVPal'); n = max(1, len(pal)); C = 8
+    for poly in me.polygons:
+        i = idx[key(col.data[poly.loop_indices[0]].color)]
+        for li in poly.loop_indices: uv.data[li].uv = ((i + .5) / n, .5)
+    img = np.ones((C, n * C, 4), np.float32)
+    def srgb(x): return 1.055 * x ** (1 / 2.4) - .055 if x > .0031308 else 12.92 * x
+    for i, c in enumerate(pal): img[:, i * C:(i + 1) * C, :3] = [srgb(v) for v in c]
+    im = bpy.data.images.new('T_ClothPal_' + role, n * C, C, alpha=True); im.colorspace_settings.name = 'sRGB'
+    # bpy images store linear floats for float buffers only; this is a byte image -> write sRGB values directly
+    im.pixels.foreach_set(img.ravel())
+    im.filepath_raw = os.path.join(OUT, f'T_ClothPal_{role}.png'); im.file_format = 'PNG'; im.save(); bpy.data.images.remove(im)
+
 # ------------------------------------------------------------------ build + export one role
 def build_role(role):
     S = ROLES[role]; B = Body(S['body'])
@@ -442,6 +465,7 @@ def build_role(role):
     ca = ob.data.color_attributes
     for a in [a for a in ca if a.name != 'Col']: ca.remove(a)
     i = [a.name for a in ca].index('Col'); ca.active_color_index = i; ca.render_color_index = i
+    palette_uvs(ob, role)
     for o in B.extra + [B.body]: bpy.data.objects.remove(o, do_unlink=True)
     path = os.path.join(OUT, f'SK_Cloth_{role}.gltf')
     with bpy.context.temp_override(window=bpy.context.window, scene=B.sc, view_layer=vl):

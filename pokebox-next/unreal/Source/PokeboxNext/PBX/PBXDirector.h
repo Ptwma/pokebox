@@ -9,6 +9,7 @@
 #include "PBX/PBXCore.h"
 #include "PBX/PBXUI.h"
 #include "PBX/PBXGame.h"
+#include "PBX/PBXFX.h"
 #include "PBXDirector.generated.h"
 
 class APBXPlayer; class APBXNPC; class APBXEcho; class ACameraActor; class AStaticMeshActor; class UInputAction; class UInputMappingContext;
@@ -114,7 +115,12 @@ private:
 		FPBXBattle B; TWeakObjectPtr<APBXEcho> Foe; TWeakObjectPtr<APBXEcho> Mine; FVector A, Bp, D, Side; bool bOwnsFoe = false;
 		FName Trainer; float CamS = 1.f; TArray<int32> MoveCodes; int32 FoeLv = 10; TArray<int32> PreHP[2]; int32 PreAct[2] = { 0, 0 };
 		TWeakObjectPtr<AStaticMeshActor> Ball;
+		FVector CamBase = FVector::ZeroVector; FRotator CamRot = FRotator::ZeroRotator; float Punch = 0.f, Clock = 0.f;   // cinematic camera
 	} Bt;
+	UPROPERTY() TObjectPtr<APBXFX> FX;
+	bool ToScreen(const FVector& W, FVector2D& Out) const;
+	void BattleBanner(const FString& T, FLinearColor C, float Secs = 1.2f);
+	void HitFX(int32 TargetSide, const FPBXEvent& E);
 	void StartWildBattle(APBXEcho* W);
 	void StartTrainerBattle(FName Who);
 	void SetupStage(const FVector& FoePos);

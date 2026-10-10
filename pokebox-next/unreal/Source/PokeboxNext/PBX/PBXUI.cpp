@@ -14,6 +14,8 @@
 #include "Styling/CoreStyle.h"
 #include "Engine/Texture2D.h"
 #include "Misc/Paths.h"
+#include "Widgets/SLeafWidget.h"
+#include "Rendering/DrawElements.h"
 
 static const FLinearColor InkC(.03f, .025f, .04f);
 static const FLinearColor PaperC(1.f, .98f, .93f);
@@ -45,10 +47,78 @@ TSharedPtr<FSlateBrush> PBXUI::TextureBrush(UTexture2D* T, FVector2D Size)
 
 static const FSlateBrush* White() { return FCoreStyle::Get().GetBrush("WhiteBrush"); }
 
+// ------------------------------------------------------------------ UI particles
+void PBXUI::SparkBurst(FPBXUIModel& M, FVector2D At, FLinearColor C, int32 N, float Speed, float Size)
+{
+	for (int32 i = 0; i < N && M.Sparks.Num() < 600; i++)
+	{
+		FPBXSpark S; S.P = At; const float A = FMath::FRand() * 2.f * PI; S.V = FVector2D(FMath::Cos(A), FMath::Sin(A)) * Speed * FMath::FRandRange(.3f, 1.f);
+		S.C = C * FMath::FRandRange(.85f, 1.15f); S.C.A = 1.f; S.Size = Size * FMath::FRandRange(.5f, 1.3f); S.Life = FMath::FRandRange(.35f, .8f); S.Grav = 700.f;
+		M.Sparks.Add(S);
+	}
+}
+
+void PBXUI::Confetti(FPBXUIModel& M, int32 N)
+{
+	static const FLinearColor Cols[] = { FLinearColor(1, .82f, .2f), FLinearColor(.95f, .3f, .3f), FLinearColor(.3f, .7f, 1), FLinearColor(.4f, .9f, .4f), FLinearColor(1, 1, 1), FLinearColor(.9f, .5f, 1) };
+	for (int32 i = 0; i < N && M.Sparks.Num() < 600; i++)
+	{
+		FPBXSpark S; S.P = FVector2D(FMath::FRand() * M.ViewSize.X, -FMath::FRand() * M.ViewSize.Y * .4f);
+		S.V = FVector2D(FMath::FRandRange(-120.f, 120.f), FMath::FRandRange(180.f, 420.f)); S.C = Cols[FMath::RandRange(0, 5)];
+		S.Size = FMath::FRandRange(10.f, 20.f); S.Life = FMath::FRandRange(2.5f, 4.f); S.Grav = 60.f; S.bConfetti = true; S.Phase = FMath::FRand() * 6.f; S.Spin = FMath::FRandRange(4.f, 10.f);
+		M.Sparks.Add(S);
+	}
+}
+
+void PBXUI::TickSparks(FPBXUIModel& M, float Dt)
+{
+	for (int32 i = M.Sparks.Num() - 1; i >= 0; i--)
+	{
+		FPBXSpark& S = M.Sparks[i]; S.Age += Dt;
+		if (S.Age >= S.Life) { M.Sparks.RemoveAtSwap(i); continue; }
+		S.V.Y += S.Grav * Dt; if (!S.bConfetti) S.V *= FMath::Max(0.f, 1.f - 2.2f * Dt);
+		else S.V.X += FMath::Sin(S.Age * 3.f + S.Phase) * 90.f * Dt;
+		S.P += S.V * Dt; S.Phase += S.Spin * Dt;
+	}
+}
+
+class SPBXSparks : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SPBXSparks) {}
+	SLATE_END_ARGS()
+	void Construct(const FArguments&, TSharedPtr<FPBXUIModel> InM) { M = InM; Dot = MakeShared<FSlateRoundedBoxBrush>(FLinearColor::White, 64.f); }
+	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(8, 8); }
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+	{
+		if (!M.IsValid()) return Layer;
+		for (const FPBXSpark& S : M->Sparks)
+		{
+			const float K = S.Age / S.Life; FLinearColor C = S.C; C.A = FMath::Clamp(S.bConfetti ? (1.f - FMath::Max(0.f, K - .8f) * 5.f) : 1.f - K * K, 0.f, 1.f);
+			FVector2f Sz = S.bConfetti ? FVector2f(S.Size * FMath::Max(.15f, FMath::Abs(FMath::Cos(S.Phase))), S.Size * .6f) : FVector2f(S.Size * (1.f - K * .5f));
+			if (!S.bConfetti)   // glow halo under each spark
+			{
+				FLinearColor H = C; H.A *= .25f; const FVector2f Hs = Sz * 2.6f;
+				FSlateDrawElement::MakeBox(Out, Layer, G.ToPaintGeometry(Hs, FSlateLayoutTransform(FVector2f(S.P) - Hs * .5f)), Dot.Get(), ESlateDrawEffect::None, H);
+			}
+			FSlateDrawElement::MakeBox(Out, Layer + 1, G.ToPaintGeometry(Sz, FSlateLayoutTransform(FVector2f(S.P) - Sz * .5f)), S.bConfetti ? White() : Dot.Get(), ESlateDrawEffect::None, C);
+		}
+		return Layer + 1;
+	}
+private:
+	TSharedPtr<FPBXUIModel> M; TSharedPtr<FSlateBrush> Dot;
+};
+
 TSharedRef<SWidget> SPBXHud::Panel(TSharedRef<SWidget> Content, FLinearColor Fill, float Pad)
 {
 	TSharedPtr<FSlateBrush> B = MakeShared<FSlateRoundedBoxBrush>(Fill, 10.f, InkC, 4.f); Sink->Add(B);
 	return SNew(SBorder).BorderImage(B.Get()).Padding(Pad)[Content];
+}
+
+/** shear (x by y) + scale + translation as one Slate render transform */
+static FSlateRenderTransform XForm(float Shear, float Sx, float Sy, FVector2D T = FVector2D::ZeroVector)
+{
+	return FSlateRenderTransform(FMatrix2x2(Sx, 0.f, Shear, Sy), FVector2f(T));
 }
 
 static EVisibility Vis(bool b) { return b ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; }
@@ -59,6 +129,8 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 	ForceVolatile(true);
 	TSharedPtr<FSlateBrush> TagB = MakeShared<FSlateRoundedBoxBrush>(GoldC, 6.f, InkC, 3.f); Keep.Add(TagB);
 	TSharedPtr<FSlateBrush> Dark = MakeShared<FSlateColorBrush>(FLinearColor(0, 0, 0, .55f)); Keep.Add(Dark);
+	TSharedPtr<FSlateBrush> LogB = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.05f, .045f, .07f, .82f), 8.f, FLinearColor(1, .82f, .2f, .9f), 2.f); Keep.Add(LogB);
+	TSharedPtr<FSlateBrush> BannerB = MakeShared<FSlateColorBrush>(FLinearColor::White); Keep.Add(BannerB);
 
 	TSharedRef<SCanvas> Canvas = SNew(SCanvas);
 	for (int32 i = 0; i < 8; i++)
@@ -66,8 +138,9 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		Canvas->AddSlot().Position_Lambda([this, i] { return M->Floaters[i].Screen; }).Size(FVector2D(360, 90)).HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(STextBlock).Text_Lambda([this, i] { return FText::FromString(M->Floaters[i].T < 1.2f ? M->Floaters[i].Text : FString()); })
-			.Font(PBXUI::Font(TEXT("title"), 44, 3)).ColorAndOpacity_Lambda([this, i] { FLinearColor C = M->Floaters[i].Color; C.A = FMath::Clamp(1.2f - M->Floaters[i].T, 0.f, 1.f) * 2.f; return FSlateColor(C); })
-			.RenderTransform_Lambda([this, i] { return FSlateRenderTransform(M->Floaters[i].Scale); }).RenderTransformPivot(FVector2D(.5f, .5f))
+			.Font(PBXUI::Font(TEXT("title"), 58, 4)).ColorAndOpacity_Lambda([this, i] { FLinearColor C = M->Floaters[i].Color; C.A = FMath::Clamp(1.2f - M->Floaters[i].T, 0.f, 1.f) * 2.f; return FSlateColor(C); })
+			.RenderTransform_Lambda([this, i] { const FPBXFloater& F = M->Floaters[i]; const float Pop = F.T < .15f ? F.T / .15f * 1.35f : FMath::Lerp(1.35f, 1.f, FMath::Min(1.f, (F.T - .15f) * 5.f));
+				return XForm(0.f, F.Scale * .6f * Pop, F.Scale * .6f * Pop, FVector2D(0, -F.T * 70.f)); }).RenderTransformPivot(FVector2D(.5f, .5f))
 		];
 	}
 
@@ -142,22 +215,64 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		+ SOverlay::Slot()
 		[
 			SNew(SOverlay).Visibility_Lambda([this] { return M->Mode == EPBXUIMode::Battle ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
-			.RenderTransform_Lambda([this] { const float s = M->ShakeT > 0.f ? 10.f * M->ShakeT : 0.f; return FSlateRenderTransform(FVector2D(FMath::Sin(M->ShakeT * 90.f) * s, FMath::Cos(M->ShakeT * 70.f) * s)); })
-			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(40, 36)[MakePlate(1)]
-			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(40, 36)[MakePlate(0)]
-			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 40)
+			.RenderTransform_Lambda([this] { const float s = M->ShakeT > 0.f ? 14.f * M->ShakeT : 0.f; return FSlateRenderTransform(FVector2D(FMath::Sin(M->ShakeT * 90.f) * s, FMath::Cos(M->ShakeT * 70.f) * s)); })
+			// letterbox bars: cinematic frame while the battle runs
+			+ SOverlay::Slot().VAlign(VAlign_Top)[SNew(SBox).HeightOverride(54)[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, .85f))]]
+			+ SOverlay::Slot().VAlign(VAlign_Bottom)[SNew(SBox).HeightOverride(54)[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, .85f))]]
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(48, 78)[MakePlate(1)]
+			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(48, 78)[MakePlate(0)]
+			// battle log: slim dark strip under the top bar
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 66)
 			[
-				SNew(SBox).WidthOverride(760).Visibility_Lambda([this] { return Vis(!M->Log.IsEmpty()); })
-				[Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Log); }).Font(PBXUI::Font(TEXT("bold"), 26)).ColorAndOpacity(InkC).AutoWrapText(true).Justification(ETextJustify::Center), PaperC, 12.f)]
+				SNew(SBox).WidthOverride(820).Visibility_Lambda([this] { return Vis(!M->Log.IsEmpty() && M->IntroT <= 0.f); })
+				[
+					SNew(SBorder).BorderImage(LogB.Get()).Padding(FMargin(26, 10))
+					[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Log); }).Font(PBXUI::Font(TEXT("bold"), 27, 1)).ColorAndOpacity(FLinearColor::White).AutoWrapText(true).Justification(ETextJustify::Center)]
+				]
 			]
-			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(40, 36)
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(48, 78)
 			[
-				SAssignNew(MovesHost, SBox).WidthOverride(620).Visibility_Lambda([this] { return M->bMoves ? EVisibility::Visible : EVisibility::Collapsed; })
+				SAssignNew(MovesHost, SBox).WidthOverride(700).Visibility_Lambda([this] { return M->bMoves ? EVisibility::Visible : EVisibility::Collapsed; })
+				.RenderTransform_Lambda([this] { const float k = FMath::Clamp(M->MovesIn, 0.f, 1.f); return FSlateRenderTransform(FVector2D((1.f - FMath::Sin(k * PI * .5f)) * 760.f, 0)); })
 			]
-			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+			// banner: slanted colour strip that pops in (wild appeared / super effective / critical)
+			+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Center)
 			[
-				SNew(SBorder).BorderImage(Dark.Get()).Padding(FMargin(80, 26)).Visibility_Lambda([this] { return Vis(M->BannerT > 0.f && !M->Banner.IsEmpty()); })
-				[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Banner); }).Font(PBXUI::Font(TEXT("title"), 72, 4)).ColorAndOpacity(FLinearColor::White)]
+				SNew(SBorder).BorderImage(BannerB.Get()).BorderBackgroundColor_Lambda([this] { return FSlateColor(M->BannerColor); }).Padding(FMargin(0, 18)).HAlign(HAlign_Center)
+				.Visibility_Lambda([this] { return Vis(M->BannerT > 0.f && !M->Banner.IsEmpty()); })
+				.RenderTransform_Lambda([this] { const float In = FMath::Clamp((M->BannerMax - M->BannerT) * 6.f, 0.f, 1.f); const float Out = FMath::Clamp(M->BannerT * 5.f, 0.f, 1.f);
+					return XForm(-.18f, 1.f, FMath::Max(.001f, In * Out)); }).RenderTransformPivot(FVector2D(.5f, .5f))
+				[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Banner.ToUpper()); }).Font(PBXUI::Font(TEXT("title"), 84, 5)).ColorAndOpacity(FLinearColor::White)
+					.RenderTransform_Lambda([this] { const float In = FMath::Clamp((M->BannerMax - M->BannerT) * 4.f, 0.f, 1.f); return FSlateRenderTransform(FVector2D((1.f - In) * -900.f, 0)); })]
+			]
+			// VS intro: two team-coloured bars slam in from the sides, VS pops in the middle
+			+ SOverlay::Slot()
+			[
+				SNew(SOverlay).Visibility_Lambda([this] { return Vis(M->IntroT > 0.f); })
+				+ SOverlay::Slot().VAlign(VAlign_Center).HAlign(HAlign_Left).Padding(0, 0, 0, 170)
+				[
+					SNew(SBox).WidthOverride_Lambda([this] { return FOptionalSize(M->ViewSize.X * .62f); }).HeightOverride(150)
+					.RenderTransform_Lambda([this] { const float k = FMath::Clamp((1.9f - M->IntroT) * 4.f, 0.f, 1.f) * FMath::Clamp(M->IntroT * 4.f, 0.f, 1.f); return XForm(-.25f, 1.f, 1.f, FVector2D((k - 1.f) * M->ViewSize.X * .7f, 0)); })
+					[
+						SNew(SBorder).BorderImage(White()).BorderBackgroundColor_Lambda([this] { return FSlateColor(M->IntroColA); }).HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->IntroA.ToUpper()); }).Font(PBXUI::Font(TEXT("title"), 88, 5)).ColorAndOpacity(FLinearColor::White)]
+					]
+				]
+				+ SOverlay::Slot().VAlign(VAlign_Center).HAlign(HAlign_Right).Padding(0, 170, 0, 0)
+				[
+					SNew(SBox).WidthOverride_Lambda([this] { return FOptionalSize(M->ViewSize.X * .62f); }).HeightOverride(150)
+					.RenderTransform_Lambda([this] { const float k = FMath::Clamp((1.75f - M->IntroT) * 4.f, 0.f, 1.f) * FMath::Clamp(M->IntroT * 4.f, 0.f, 1.f); return XForm(-.25f, 1.f, 1.f, FVector2D((1.f - k) * M->ViewSize.X * .7f, 0)); })
+					[
+						SNew(SBorder).BorderImage(White()).BorderBackgroundColor_Lambda([this] { return FSlateColor(M->IntroColB); }).HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->IntroB.ToUpper()); }).Font(PBXUI::Font(TEXT("title"), 88, 5)).ColorAndOpacity(FLinearColor::White)]
+					]
+				]
+				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(TEXT("VS"))).Font(PBXUI::Font(TEXT("title"), 190, 8)).ColorAndOpacity(GoldC)
+					.RenderTransform_Lambda([this] { const float t = 1.9f - M->IntroT; const float k = t < .45f ? 0.f : FMath::Min(1.f, (t - .45f) * 5.f); const float s = k * (1.f + .35f * FMath::Sin(FMath::Min(1.f, (t - .45f) * 3.f) * PI)); return XForm(0.f, FMath::Max(.001f, s), FMath::Max(.001f, s)); })
+					.RenderTransformPivot(FVector2D(.5f, .5f))
+				]
 			]
 			+ SOverlay::Slot()[Canvas]
 		]
@@ -216,28 +331,70 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 TSharedRef<SWidget> SPBXHud::MakePlate(int32 Side)
 {
 	auto P = [this, Side]() -> FPBXPlate& { return M->Plate[Side]; };
-	return SNew(SBox).WidthOverride(420).Visibility_Lambda([this, Side] { return Vis(M->Plate[Side].bShow); })
+	TSharedPtr<FSlateBrush> Bg = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.045f, .04f, .06f, .9f), 14.f, FLinearColor(1, 1, 1, .9f), 3.f); Sink->Add(Bg);
+	TSharedPtr<FSlateBrush> Badge = MakeShared<FSlateRoundedBoxBrush>(FLinearColor::White, 8.f); Sink->Add(Badge);
+	TSharedPtr<FSlateBrush> Bar = MakeShared<FSlateRoundedBoxBrush>(FLinearColor::White, 6.f); Sink->Add(Bar);
+	TSharedPtr<FSlateBrush> Pip = MakeShared<FSlateRoundedBoxBrush>(FLinearColor::White, 9.f, FLinearColor(1, 1, 1, .5f), 1.5f); Sink->Add(Pip);
+	const float W = 420.f;
+	TSharedRef<SHorizontalBox> Pips = SNew(SHorizontalBox);
+	for (int32 i = 0; i < 5; i++)
+		Pips->AddSlot().AutoWidth().Padding(3, 0)
+		[
+			SNew(SBox).WidthOverride(18).HeightOverride(18)
+			[
+				SNew(SImage).Image(Pip.Get()).ColorAndOpacity_Lambda([this, P, i]
+				{
+					const bool bOn = i < P().Energy; FLinearColor C = PBXData::TypeColor(P().Type);
+					if (!bOn) return FSlateColor(FLinearColor(.18f, .17f, .2f));
+					const float Glow = 1.f + .35f * FMath::Sin(M->Time * 6.f + i);   // charged pips shimmer
+					return FSlateColor(FLinearColor(C.R * Glow, C.G * Glow, C.B * Glow, 1.f));
+				})
+			]
+		];
+	return SNew(SBox).WidthOverride(W).Visibility_Lambda([this, Side] { return Vis(M->Plate[Side].bShow); })
+		// slides in from its screen edge after the VS intro
+		.RenderTransform_Lambda([this, Side] { const float k = M->IntroT > 0.f ? 0.f : 1.f; (void)k; const float In = FMath::Clamp(1.f - M->IntroT * 2.f, 0.f, 1.f); return XForm(0.f, 1.f, 1.f, FVector2D((1.f - In) * (Side == 0 ? -520.f : 520.f), 0)); })
 	[
-		Panel(SNew(SVerticalBox)
+		SNew(SBorder).BorderImage(Bg.Get()).Padding(FMargin(18, 12))
+		[
+			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(P().Name); }).Font(PBXUI::Font(TEXT("title"), 36)).ColorAndOpacity(InkC)]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(FString::Printf(TEXT("%s  Lv %d"), *P().Type, P().Lv)); }).Font(PBXUI::Font(TEXT("bold"), 20)).ColorAndOpacity_Lambda([P] { return FSlateColor(PBXData::TypeColor(P().Type) * .75f); })]
+				+ SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(P().Name.ToUpper()); }).Font(PBXUI::Font(TEXT("title"), 38, 2)).ColorAndOpacity(FLinearColor::White)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0)
+				[
+					SNew(SBorder).BorderImage(Badge.Get()).BorderBackgroundColor_Lambda([P] { return FSlateColor(PBXData::TypeColor(P().Type)); }).Padding(FMargin(10, 2))
+					[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(P().Type.ToUpper()); }).Font(PBXUI::Font(TEXT("bold"), 17, 1)).ColorAndOpacity(FLinearColor::White)]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(FString::Printf(TEXT("Lv %d"), P().Lv)); }).Font(PBXUI::Font(TEXT("title"), 28, 2)).ColorAndOpacity(GoldC)]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot()[SNew(SBox).HeightOverride(16).WidthOverride(388)[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(.15f, .13f, .14f))]]
-				+ SOverlay::Slot().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(16).WidthOverride_Lambda([P] { const float Shown = P().ShownHP < 0.f ? P().HP : P().ShownHP; return FOptionalSize(388.f * FMath::Clamp(Shown / FMath::Max(1, P().MaxHP), 0.f, 1.f)); })
-					[SNew(SImage).Image(White()).ColorAndOpacity_Lambda([P] { const float k = float(P().HP) / FMath::Max(1, P().MaxHP); return FSlateColor(k > .5f ? FLinearColor(.3f, .8f, .35f) : k > .2f ? FLinearColor(.95f, .75f, .2f) : FLinearColor(.9f, .25f, .2f)); })]]
+				+ SOverlay::Slot()[SNew(SBox).HeightOverride(20).WidthOverride(W - 36)[SNew(SImage).Image(Bar.Get()).ColorAndOpacity(FLinearColor(.16f, .14f, .17f))]]
+				// damage trail (white, catches up with the real HP)
+				+ SOverlay::Slot().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(20).WidthOverride_Lambda([P, W] { const float Shown = P().ShownHP < 0.f ? P().HP : P().ShownHP; return FOptionalSize((W - 36) * FMath::Clamp(Shown / FMath::Max(1, P().MaxHP), 0.f, 1.f)); })
+					[SNew(SImage).Image(Bar.Get()).ColorAndOpacity(FLinearColor(1.f, .95f, .85f))]]
+				+ SOverlay::Slot().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(20).WidthOverride_Lambda([P, W] { return FOptionalSize((W - 36) * FMath::Clamp(float(FMath::Max(0, P().HP)) / FMath::Max(1, P().MaxHP), 0.f, 1.f)); })
+					[SNew(SImage).Image(Bar.Get()).ColorAndOpacity_Lambda([this, P] { const float k = float(P().HP) / FMath::Max(1, P().MaxHP);
+						FLinearColor C = k > .5f ? FLinearColor(.25f, .9f, .4f) : k > .2f ? FLinearColor(1.f, .78f, .15f) : FLinearColor(1.f, .22f, .18f);
+						if (k <= .2f) C *= 1.f + .4f * FMath::Abs(FMath::Sin(M->Time * 8.f));   // low HP blinks
+						return FSlateColor(C); })]]
+				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0, 0, 8, 0)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(FString::Printf(TEXT("%d / %d"), FMath::Max(0, P().HP), P().MaxHP)); }).Font(PBXUI::Font(TEXT("bold"), 16, 1)).ColorAndOpacity(FLinearColor::White)]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(FString::Printf(TEXT("HP %d / %d   %s"), FMath::Max(0, P().HP), P().MaxHP, *P().Status.ToUpper())); }).Font(PBXUI::Font(TEXT("bold"), 18)).ColorAndOpacity(FLinearColor(.3f, .27f, .25f))]
-				+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text_Lambda([P] { FString E; for (int32 i = 0; i < 5; i++) E += i < P().Energy ? TEXT("o") : TEXT("."); return FText::FromString(TEXT("Energy ") + E); }).Font(PBXUI::Font(TEXT("bold"), 18)).ColorAndOpacity(FLinearColor(.2f, .45f, .8f))]
-			], PaperC, 14.f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 6, 0)[SNew(STextBlock).Text(FText::FromString(TEXT("ENERGY"))).Font(PBXUI::Font(TEXT("bold"), 15)).ColorAndOpacity(FLinearColor(.7f, .68f, .75f))]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[Pips]
+				+ SHorizontalBox::Slot().FillWidth(1).HAlign(HAlign_Right).VAlign(VAlign_Center)
+				[
+					SNew(SBorder).BorderImage(Badge.Get()).BorderBackgroundColor(FLinearColor(.95f, .45f, .15f)).Padding(FMargin(8, 1)).Visibility_Lambda([P] { return Vis(!P().Status.IsEmpty()); })
+					[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(P().Status.ToUpper()); }).Font(PBXUI::Font(TEXT("bold"), 15, 1)).ColorAndOpacity(FLinearColor::White)]
+				]
+			]
+		]
 	];
 }
 
@@ -274,34 +431,46 @@ TSharedRef<SWidget> SPBXHud::MakeMoves()
 	TSharedPtr<SHorizontalBox> Row;
 	for (int32 i = 0; i < M->Moves.Num(); i++)
 	{
-		if (i % 2 == 0) { Row = SNew(SHorizontalBox); Col->AddSlot().AutoHeight().Padding(0, 5)[Row.ToSharedRef()]; }
+		if (i % 2 == 0) { Row = SNew(SHorizontalBox); Col->AddSlot().AutoHeight().Padding(0, 6)[Row.ToSharedRef()]; }
 		const FPBXOption& O = M->Moves[i];
-		TSharedPtr<FSlateBrush> Sel = MakeShared<FSlateRoundedBoxBrush>(PaperC, 10.f, GoldC, 6.f); Sink->Add(Sel);
-		TSharedPtr<FSlateBrush> Nor = MakeShared<FSlateRoundedBoxBrush>(PaperC, 10.f, InkC, 4.f); Sink->Add(Nor);
-		TSharedPtr<FSlateBrush> Off = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.62f, .6f, .57f), 10.f, InkC, 4.f); Sink->Add(Off);
-		auto Brush = [this, i, Sel, Nor, Off] { return !M->Moves.IsValidIndex(i) || !M->Moves[i].bEnabled ? Off.Get() : M->MoveSel == i ? Sel.Get() : Nor.Get(); };
+		const FLinearColor Base = O.Color;
+		TSharedPtr<FSlateBrush> Card = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(Base.R * .55f, Base.G * .55f, Base.B * .55f, .97f), 10.f, FLinearColor(1, 1, 1, .85f), 3.f); Sink->Add(Card);
+		TSharedPtr<FSlateBrush> Sel = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(Base.R * .8f, Base.G * .8f, Base.B * .8f, 1.f), 10.f, GoldC, 6.f); Sink->Add(Sel);
+		TSharedPtr<FSlateBrush> Off = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.2f, .19f, .22f, .9f), 10.f, FLinearColor(.4f, .4f, .42f), 2.f); Sink->Add(Off);
+		TSharedPtr<FSlateBrush> Key = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(0, 0, 0, .45f), 16.f); Sink->Add(Key);
+		auto Brush = [this, i, Sel, Card, Off] { return !M->Moves.IsValidIndex(i) || !M->Moves[i].bEnabled ? Off.Get() : M->MoveSel == i ? Sel.Get() : Card.Get(); };
 		auto OnDown = [this, i](const FGeometry&, const FPointerEvent&) { M->MoveSel = i; if (M->OnMove && M->Moves.IsValidIndex(i) && M->Moves[i].bEnabled) M->OnMove(i); return FReply::Handled(); };
-		Row->AddSlot().FillWidth(1).Padding(5, 0)
+		auto OnHover = [this, i](const FGeometry&, const FPointerEvent&) { M->MoveSel = i; };
+		Row->AddSlot().FillWidth(1).Padding(6, 0)
 		[
-			SNew(SBox).HeightOverride(76)[SNew(SBorder).BorderImage_Lambda(Brush).Padding(FMargin(16, 8)).OnMouseButtonDown_Lambda(OnDown)
+			SNew(SBox).HeightOverride(84)
+			.RenderTransform_Lambda([this, i] { const bool bSel = M->MoveSel == i; const float s = bSel ? 1.05f + .02f * FMath::Sin(M->Time * 7.f) : 1.f; return XForm(-.14f, s, s); })
+			.RenderTransformPivot(FVector2D(.5f, .5f))
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 12, 0)[SNew(STextBlock).Text(FText::FromString(O.Key)).Font(PBXUI::Font(TEXT("title"), 30)).ColorAndOpacity(O.Color * .7f)]
-				+ SHorizontalBox::Slot().FillWidth(1)
+				SNew(SBorder).BorderImage_Lambda(Brush).Padding(FMargin(14, 8)).OnMouseButtonDown_Lambda(OnDown).OnMouseMove_Lambda([OnHover](const FGeometry& G, const FPointerEvent& E) { OnHover(G, E); return FReply::Unhandled(); })
 				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(TEXT("bold"), 25)).ColorAndOpacity(InkC)]
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("body"), 17)).ColorAndOpacity(FLinearColor(.35f, .32f, .3f))]
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 12, 0)
+					[SNew(SBorder).BorderImage(Key.Get()).Padding(FMargin(11, 2))[SNew(STextBlock).Text(FText::FromString(O.Key)).Font(PBXUI::Font(TEXT("title"), 30, 1)).ColorAndOpacity(GoldC)]]
+					+ SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Title.ToUpper())).Font(PBXUI::Font(TEXT("title"), 31, 2)).ColorAndOpacity(FLinearColor::White)]
+						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("bold"), 17)).ColorAndOpacity(FLinearColor(1, 1, 1, .8f))]
+					]
 				]
-			]]
+			]
 		];
 	}
-	return Panel(Col, FLinearColor(.12f, .11f, .14f, .92f), 10.f);
+	return Col;
 }
 
 void SPBXHud::Tick(const FGeometry& G, const double Time, const float Dt)
 {
 	SCompoundWidget::Tick(G, Time, Dt);
+	M->ViewSize = FVector2D(G.GetLocalSize()); M->Time += Dt;
+	PBXUI::TickSparks(*M, Dt);
+	M->MovesIn = M->bMoves ? FMath::Min(1.f, M->MovesIn + Dt * 4.f) : 0.f;
 	// rebuild the option / move buttons when the model changed; the old brushes die after the old widgets
 	if (M->OptionsRev != BuiltOptions && ChoiceHost.IsValid())
 	{

@@ -145,11 +145,28 @@ def import_outfits():
 def import_clothes():
     d = os.path.join(SRC, 'clothes'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.startswith('SK_Cloth_') and f.endswith('.gltf')]
     got = _import(files, G + '/Characters/Clothes'); log('clothes', len(files), len(got))
+    pals = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.startswith('T_ClothPal_') and f.endswith('.png')]
+    _import(pals, G + '/Characters/Clothes/Pal')
+    for p in EAL.list_assets(G + '/Characters/Clothes/Pal', recursive=False):
+        t = EAL.load_asset(p)
+        if isinstance(t, unreal.Texture2D):
+            t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_VECTOR_DISPLACEMENTMAP); t.set_editor_property('srgb', True)
+            t.set_editor_property('filter', unreal.TextureFilter.TF_NEAREST); t.set_editor_property('mip_gen_settings', unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+            EAL.save_loaded_asset(t)
+    log('clothes palettes', len(pals))
 
 def import_hair():
     d = os.path.join(KITS, 'q_chars', 'Universal Base Characters[Standard]', 'Hairstyles', 'Rigged to Head Bone', 'glTF (Godot -Unreal)')
     files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.gltf')]
     got = _import(files, G + '/Characters/Hair'); log('hair', len(files), len(got))
+
+def fix_usage_flags():
+    """materials used on Nanite meshes need the usage flag, else a cooked / -game run shows the default material"""
+    for p in ('/Game/Shader_Water/MM_Water', '/Game/PBX/Materials/M_PBX_Echo'):
+        m = unreal.load_asset(p)
+        if not m: continue
+        try: m.set_editor_property('used_with_nanite', True); MEL.recompile_material(m); EAL.save_loaded_asset(m); log('nanite flag', p)
+        except Exception as ex: log('flag', p, ex)
 
 def link_skeletons():
     """UAL animations play on the Quaternius characters through skeleton remapping (same bone names)"""
@@ -313,8 +330,8 @@ def master_cloth():
     m = _fresh('M_PBX_Cloth', G + '/Materials'); m.set_editor_property('two_sided', True)
     try: m.set_editor_property('used_with_skeletal_mesh', True)
     except Exception as ex: log('cloth flag', ex)
-    vc = _e(m, unreal.MaterialExpressionVertexColor, -800, -200)
-    MEL.connect_material_property(vc, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
+    t = _texp(m, 'Pal', -800, -200, default=WHITE)          # per-role palette (tools/clothes.py), UVs point into its cells
+    MEL.connect_material_property(t, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
     MEL.connect_material_property(_scalar(m, 'Roughness', .85, -500, 150), '', unreal.MaterialProperty.MP_ROUGHNESS)
     MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
 
@@ -329,6 +346,27 @@ def master_sky():
     t = _texp(m, 'SkyTex', -900, 0, default=WHITE)
     MEL.connect_material_property(_mul(m, t, _scalar(m, 'Intensity', 1.0, -900, 250), -500, 50, 'RGB'), '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
+
+def master_fx():
+    """glowing particle sprites (C++ APBXFX): additive, unlit, colour + alpha from the instance's custom data"""
+    m = _fresh('M_PBX_FX', G + '/Materials')
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_ADDITIVE); m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property('two_sided', True)
+    for k in ('used_with_instanced_static_meshes',):
+        try: m.set_editor_property(k, True)
+        except Exception as ex: log('fx flag', k, ex)
+    t = _texp(m, 'Tex', -1100, 0, default=WHITE)
+    cd = []
+    for i in range(4):
+        e = _e(m, unreal.MaterialExpressionPerInstanceCustomData, -1100, 300 + i * 120); e.set_editor_property('data_index', i); cd.append(e)
+    rg = _e(m, unreal.MaterialExpressionAppendVector, -850, 330); MEL.connect_material_expressions(cd[0], '', rg, 'A'); MEL.connect_material_expressions(cd[1], '', rg, 'B')
+    rgb = _e(m, unreal.MaterialExpressionAppendVector, -700, 360); MEL.connect_material_expressions(rg, '', rgb, 'A'); MEL.connect_material_expressions(cd[2], '', rgb, 'B')
+    a = _mul(m, t, cd[3], -850, 100, 'R')
+    c = _mul(m, rgb, a, -550, 200)
+    MEL.connect_material_property(_mul(m, c, _scalar(m, 'Intensity', 6.0, -550, 400), -350, 250), '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    _mi('MI_FX_Dot', m, {'Intensity': 6.0}, {}, {'Tex': 'T_FX_Dot'}); _mi('MI_FX_Star', m, {'Intensity': 7.0}, {}, {'Tex': 'T_FX_Star'})
+    return m
 
 def _mi(name, parent, scalars=None, vectors=None, textures=None):
     path = G + '/Materials/Inst'; full = f'{path}/{name}'
@@ -517,7 +555,8 @@ def build_level():
     s = pp.get_editor_property('settings')
     for k, v in [('auto_exposure_bias', .2), ('bloom_intensity', .45), ('ambient_occlusion_intensity', .6),
                  ('ambient_occlusion_radius', 120.0), ('motion_blur_amount', 0.0), ('vignette_intensity', .22), ('color_saturation', unreal.Vector4(1.08, 1.08, 1.08, 1)),
-                 ('color_contrast', unreal.Vector4(1.05, 1.05, 1.05, 1)), ('white_temp', 6200.0), ('sharpen', .3)]:
+                 ('color_contrast', unreal.Vector4(1.05, 1.05, 1.05, 1)), ('white_temp', 6200.0), ('sharpen', .3),
+                 ('auto_exposure_speed_up', 5.0), ('auto_exposure_speed_down', 5.0)]:   # doors / teleports: adapt fast
         try: s.set_editor_property('override_' + k, True); s.set_editor_property(k, v)
         except Exception as ex: log('pp', k, ex)
     pp.set_editor_property('settings', s)

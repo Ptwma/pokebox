@@ -83,7 +83,16 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 	Clothes->SetSkeletalMesh(C); Clothes->SetVisibility(C != nullptr);
 	if (C)
 		if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Cloth.M_PBX_Cloth")))
-			for (int32 i = 0; i < Clothes->GetNumMaterials(); i++) Clothes->SetMaterial(i, CM);
+		{
+			const FString PN = TEXT("T_ClothPal_") + Outfit;
+			UTexture2D* Pal = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/PBX/Characters/Clothes/Pal/%s.%s"), *PN, *PN));
+			for (int32 i = 0; i < Clothes->GetNumMaterials(); i++)
+			{
+				UMaterialInstanceDynamic* D = UMaterialInstanceDynamic::Create(CM, Clothes);
+				if (Pal) D->SetTextureParameterValue(TEXT("Pal"), Pal);
+				Clothes->SetMaterial(i, D);
+			}
+		}
 	for (USkeletalMeshComponent* X : { Eyes.Get(), Brows.Get(), Hair.Get(), Clothes.Get() }) X->SetLeaderPoseComponent(GetMesh());
 	// body paint under the clothes (tools/outfits.py): same palette, so seams between garments never show bare skin
 	if (bQ && !Outfit.IsEmpty())

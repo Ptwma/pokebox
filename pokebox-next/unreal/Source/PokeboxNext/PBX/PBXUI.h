@@ -19,6 +19,9 @@ struct FPBXPlate { FString Name, Type, Status; int32 Lv = 1, HP = 1, MaxHP = 1, 
 
 struct FPBXFloater { FVector World = FVector::ZeroVector; FString Text; FLinearColor Color = FLinearColor::White; float T = 99.f; FVector2D Screen = FVector2D::ZeroVector; float Scale = 1.f; };
 
+/** 2D UI particle (sparks / confetti), screen pixels in HUD space */
+struct FPBXSpark { FVector2D P = FVector2D::ZeroVector, V = FVector2D::ZeroVector; FLinearColor C = FLinearColor::White; float Size = 8.f, Life = 1.f, Age = 0.f, Grav = 0.f, Phase = 0.f, Spin = 0.f; bool bConfetti = false; };
+
 struct FPBXUIModel
 {
 	EPBXUIMode Mode = EPBXUIMode::None;
@@ -40,12 +43,22 @@ struct FPBXUIModel
 	FPBXFloater Floaters[8];
 	FString BigTitle, BigSub; float BigT = 0.f; // centered splash (chapter start, "Gotcha!", level complete)
 	float ShakeT = 0.f;
+	// battle juice
+	FLinearColor BannerColor = FLinearColor(.08f, .07f, .1f, .9f); float BannerMax = 1.f;   // BannerMax = BannerT when it was set (pop-in timing)
+	float MovesIn = 0.f;                                                                     // 0..1 slide-in of the move panel
+	float FlashT = 0.f; FLinearColor FlashColor = FLinearColor::White;     // full-screen flash on big hits
+	float IntroT = 0.f; FString IntroA, IntroB; FLinearColor IntroColA = FLinearColor(.9f, .3f, .2f), IntroColB = FLinearColor(.2f, .45f, .9f);
+	TArray<FPBXSpark> Sparks; FVector2D ViewSize = FVector2D(1920, 1080); float Time = 0.f;
 };
 
 namespace PBXUI
 {
 	FSlateFontInfo Font(const TCHAR* Kind, int32 Size, int32 Outline = 0);   // Kind: "title" (Bangers) | "bold" | "body"
 	TSharedPtr<FSlateBrush> TextureBrush(UTexture2D* T, FVector2D Size);
+	/** UI particles: a burst of glowing sparks at a screen point / confetti raining over the whole screen */
+	void SparkBurst(FPBXUIModel& M, FVector2D At, FLinearColor C, int32 N, float Speed = 650.f, float Size = 10.f);
+	void Confetti(FPBXUIModel& M, int32 N);
+	void TickSparks(FPBXUIModel& M, float Dt);
 }
 
 class SPBXHud : public SCompoundWidget

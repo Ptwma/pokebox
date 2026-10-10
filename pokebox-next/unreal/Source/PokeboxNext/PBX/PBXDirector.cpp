@@ -146,6 +146,7 @@ void APBXDirector::SpawnWorld()
 	Player = Cast<APBXPlayer>(UGameplayStatics::GetPlayerPawn(this, 0));
 	Cam = W->SpawnActor<ACameraActor>(FVector(4200, -3400, 2000), FRotator(-24, 140, 0));
 	if (Cam) { Cam->GetCameraComponent()->SetFieldOfView(70.f); Cam->GetCameraComponent()->bConstrainAspectRatio = false; }
+	FX = W->SpawnActor<APBXFX>(FVector::ZeroVector, FRotator::ZeroRotator);
 	for (TActorIterator<AActor> It(W); It; ++It)
 	{
 		if (It->ActorHasTag(TEXT("PBX_GateBarrier"))) GateBarrier.Add(*It);
@@ -303,6 +304,18 @@ void APBXDirector::Tick(float Dt)
 	// UI timers
 	for (int32 i = UI->Toasts.Num() - 1; i >= 0; i--) { UI->Toasts[i].T += Dt; if (UI->Toasts[i].T > 4.f) UI->Toasts.RemoveAt(i); }
 	UI->BigT = FMath::Max(0.f, UI->BigT - Dt); UI->BannerT = FMath::Max(0.f, UI->BannerT - Dt); UI->ShakeT = FMath::Max(0.f, UI->ShakeT - Dt);
+	UI->FlashT = FMath::Max(0.f, UI->FlashT - Dt * 3.f); UI->IntroT = FMath::Max(0.f, UI->IntroT - Dt);
+	if (Bt.bActive && Cam && !bTrainGo)
+	{
+		// slow cinematic drift + hit punch (FOV kick) + shake
+		Bt.Clock += Dt; Bt.Punch = FMath::Max(0.f, Bt.Punch - Dt * 2.5f);
+		const FVector Right = FRotationMatrix(Bt.CamRot).GetUnitAxis(EAxis::Y), Fwd = FRotationMatrix(Bt.CamRot).GetUnitAxis(EAxis::X);
+		const float Sh = UI->ShakeT * 18.f;
+		const FVector Off = Right * FMath::Sin(Bt.Clock * .45f) * 45.f + FVector(0, 0, FMath::Sin(Bt.Clock * .31f) * 14.f) + Fwd * Bt.Punch * 60.f
+			+ FVector(FMath::Sin(Bt.Clock * 83.f), FMath::Cos(Bt.Clock * 71.f), FMath::Sin(Bt.Clock * 97.f)) * Sh;
+		Cam->SetActorLocationAndRotation(Bt.CamBase + Off, Bt.CamRot + FRotator(0, FMath::Sin(Bt.Clock * .45f) * -1.6f, 0));
+		Cam->GetCameraComponent()->SetFieldOfView(70.f - Bt.Punch * 9.f);
+	}
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	const float Scale = FMath::Max(.1f, UWidgetLayoutLibrary::GetViewportScale(this));
 	for (FPBXFloater& F : UI->Floaters)
@@ -800,7 +813,13 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	FVector C = Bt.A - D * Dist * .62f + Side * BestS * Dist * .4f; C.Z = FMath::Max(Bt.A.Z + 210.f + Dist * .16f, PBXWorld::GroundZ(GetWorld(), C, 500.f, 2000.f, Bt.A.Z) + 150.f);
 	const FVector Look = FMath::Lerp(Bt.A, Bt.Bp, .62f) + FVector(0, 0, 90);
 	Cam->SetActorLocationAndRotation(C, (Look - C).Rotation());
+	Bt.CamBase = C; Bt.CamRot = (Look - C).Rotation(); Bt.Clock = 0.f; Bt.Punch = 0.f;
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTargetWithBlend(Cam, .6f, VTBlend_Cubic);
+	if (FX)
+	{
+		const FVector Mn(FMath::Min(Bt.A.X, Bt.Bp.X) - 300, FMath::Min(Bt.A.Y, Bt.Bp.Y) - 300, FMath::Min(Bt.A.Z, Bt.Bp.Z)), Mx(FMath::Max(Bt.A.X, Bt.Bp.X) + 300, FMath::Max(Bt.A.Y, Bt.Bp.Y) + 300, 0);
+		FX->SetAmbient(true, Mn, Mx, FLinearColor(1, .85f, .5f));
+	}
 }
 
 void APBXDirector::StartWildBattle(APBXEcho* W)
@@ -820,10 +839,15 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
 	Partner->PlaceAt(Bt.A); Partner->PopIn();
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
-	UI->Banner = FString::Printf(TEXT("A wild %s appeared!"), *C->Name); UI->BannerT = 1.7f;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
+	UI->IntroT = 1.9f; UI->IntroA = UI->Plate[0].Name; UI->IntroB = C->Name; UI->IntroColA = PBXData::TypeColor(UI->Plate[0].Type) * .85f; UI->IntroColB = PBXData::TypeColor(C->Type) * .85f;
+	UI->FlashT = .8f; UI->FlashColor = FLinearColor::White;
 	PBXLOG("[PBX] wild battle vs %s Lv%d", *C->Name, Bt.FoeLv);
-	QWait(1.7f); QDo([this] { ShowMoves(); });
+	const FString WildName = C->Name;
+	QWait(1.9f);
+	QDo([this, WildName] { BattleBanner(FString::Printf(TEXT("A wild %s appeared!"), *WildName), FLinearColor(.12f, .5f, .25f, .92f), 1.3f);
+		if (FX) { FX->Ring(Bt.Bp + FVector(0, 0, 10), FLinearColor(.5f, 1, .6f), 220.f, 30); FX->Ring(Bt.A + FVector(0, 0, 10), FLinearColor(1, .85f, .4f), 200.f, 26); } });
+	QWait(1.1f); QDo([this] { ShowMoves(); });
 }
 
 void APBXDirector::StartTrainerBattle(FName Who)
@@ -848,10 +872,15 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	Partner->PlaceAt(Bt.A); Partner->PopIn();
 	Player->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
-	UI->Banner = FString::Printf(TEXT("%s wants to battle!"), *N->DisplayName); UI->BannerT = 1.8f;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
+	UI->IntroT = 1.9f; UI->IntroA = TEXT("You"); UI->IntroB = N->DisplayName; UI->IntroColA = FLinearColor(.85f, .2f, .15f); UI->IntroColB = FLinearColor(.15f, .35f, .85f);
+	UI->FlashT = .8f; UI->FlashColor = FLinearColor::White;
 	PBXLOG("[PBX] trainer battle vs %s", *Who.ToString());
-	QWait(1.8f); QDo([this] { ShowMoves(); });
+	const FString TName = N->DisplayName;
+	QWait(1.9f);
+	QDo([this, TName] { BattleBanner(FString::Printf(TEXT("%s wants to battle!"), *TName), FLinearColor(.6f, .12f, .12f, .92f), 1.3f);
+		if (FX) { FX->Ring(Bt.Bp + FVector(0, 0, 10), FLinearColor(.6f, .7f, 1), 220.f, 30); FX->Ring(Bt.A + FVector(0, 0, 10), FLinearColor(1, .85f, .4f), 200.f, 26); } });
+	QWait(1.1f); QDo([this] { ShowMoves(); });
 }
 
 void APBXDirector::SyncPlates()
@@ -906,6 +935,27 @@ void APBXDirector::Floater(const FVector& W, const FString& T, const FLinearColo
 	FPBXFloater& F = UI->Floaters[Best]; F.World = W; F.Text = T; F.Color = C; F.T = 0.f; F.Scale = 1.8f;
 }
 
+bool APBXDirector::ToScreen(const FVector& W, FVector2D& Out) const
+{
+	APlayerController* PC = GetWorld()->GetFirstPlayerController(); if (!PC) return false;
+	const float Scale = FMath::Max(.1f, UWidgetLayoutLibrary::GetViewportScale(const_cast<APBXDirector*>(this)));
+	FVector2D S; if (!PC->ProjectWorldLocationToScreen(W, S)) return false;
+	Out = S / Scale; return true;
+}
+
+void APBXDirector::BattleBanner(const FString& T, FLinearColor C, float Secs) { UI->Banner = T; UI->BannerColor = C; UI->BannerT = Secs; UI->BannerMax = Secs; }
+
+void APBXDirector::HitFX(int32 TargetSide, const FPBXEvent& E)
+{
+	APBXEcho* V = TargetSide == 0 ? Bt.Mine.Get() : Bt.Foe.Get(); if (!V) return;
+	const FVector At = V->GetActorLocation() + FVector(0, 0, 70);
+	const float Power = (E.MoveKind == EPBXMove::Ult ? 2.f : E.MoveKind == EPBXMove::Sig ? 1.4f : 1.f) * (E.bCrit ? 1.4f : 1.f);
+	if (FX) FX->TypedHit(At, E.Type, Power);
+	FVector2D S; if (ToScreen(At, S)) PBXUI::SparkBurst(*UI, S, PBXData::TypeColor(E.Type) * 1.4f, FMath::RoundToInt(18 * Power), 700.f * Power, 11.f);
+	Bt.Punch = FMath::Min(1.f, .45f * Power);
+	if (E.bCrit || E.MoveKind == EPBXMove::Ult) { UI->FlashT = .55f; UI->FlashColor = E.bCrit ? FLinearColor(1, .95f, .7f) : PBXData::TypeColor(E.Type); }
+}
+
 void APBXDirector::PickMove(int32 i)
 {
 	if (!Bt.bActive || !UI->bMoves || !Bt.MoveCodes.IsValidIndex(i) || !UI->Moves[i].bEnabled) return;
@@ -947,12 +997,23 @@ void APBXDirector::PlayEvents(const TArray<FPBXEvent>& Ev)
 				UI->Log = FString::Printf(TEXT("%s used %s!"), *Who(E.Side, A.Name), *E.Move);
 				if (APBXEcho* M = EchoOf(E.Side)) M->Lunge(E.Side == 0 ? Bt.D : -Bt.D, E.MoveKind == EPBXMove::Ult ? 260.f : 160.f);
 				if (E.Side == 0 && Player) Player->PlayAction(E.MoveKind == EPBXMove::Attack ? TEXT("Punch_Jab") : TEXT("Spell_Simple_Shoot"), false, .1f);
+				APBXEcho* From = EchoOf(E.Side); APBXEcho* To = EchoOf(1 - E.Side);
+				if (FX && From && To)
+				{
+					const FLinearColor TC = PBXData::TypeColor(E.Type) * 1.3f;
+					const float Sz = E.MoveKind == EPBXMove::Ult ? 46.f : E.MoveKind == EPBXMove::Sig ? 34.f : 22.f;
+					FX->Beam(From->GetActorLocation() + FVector(0, 0, 70), To->GetActorLocation() + FVector(0, 0, 70), TC, .26f, Sz, E.MoveKind == EPBXMove::Attack ? 1 : 0);
+					if (E.MoveKind == EPBXMove::Ult) { FX->Ring(From->GetActorLocation(), TC, 260.f, 36, 30.f); BattleBanner(E.Move, PBXData::TypeColor(E.Type) * .7f, .9f); }
+				}
 			});
-			QWait(.24f);
+			QWait(.26f);
 			QDo([this, E, EchoOf, ShowHP, Sim]
 			{
 				const int32 T = 1 - E.Side; int32& H = Sim->HP[T][Sim->Act[T]]; H = FMath::Max(Bt.B.Team[T][Sim->Act[T]].MinHP, H - E.Dmg); ShowHP(T);
-				if (APBXEcho* V = EchoOf(T)) { V->Hurt(); V->Flash(PBXData::TypeColor(E.Type), 4.f); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), E.bCrit ? FLinearColor(1, .85f, .1f) : FLinearColor::White); }
+				if (APBXEcho* V = EchoOf(T)) { V->Hurt(); V->Flash(PBXData::TypeColor(E.Type), 4.f); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), E.bCrit ? FLinearColor(1, .85f, .1f) : E.bEff ? FLinearColor(1, .45f, .3f) : FLinearColor::White); }
+				HitFX(T, E);
+				if (E.bCrit) BattleBanner(TEXT("Critical hit!"), FLinearColor(.85f, .55f, .05f, .92f), 1.f);
+				else if (E.bEff) BattleBanner(TEXT("Super effective!"), FLinearColor(.75f, .15f, .1f, .92f), 1.f);
 				FString Extra = E.bEff ? TEXT("  It's super effective!") : E.bWeak ? TEXT("  It's not very effective...") : FString();
 				if (E.bCrit) Extra += TEXT("  A critical hit!"); if (E.bGuarded) Extra += TEXT("  (guarded)");
 				if (!Extra.IsEmpty()) UI->Log += Extra;
@@ -961,15 +1022,17 @@ void APBXDirector::PlayEvents(const TArray<FPBXEvent>& Ev)
 			QWait(.85f);
 			break;
 		}
-		case FPBXEvent::Guard: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s braces itself!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); }); QWait(.7f); break;
+		case FPBXEvent::Guard: QDo([this, E, Who, Sim, EchoOf] { UI->Log = FString::Printf(TEXT("%s braces itself!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name));
+			if (FX) if (APBXEcho* V = EchoOf(E.Side)) { FX->Ring(V->GetActorLocation() + FVector(0, 0, 20), FLinearColor(.4f, .75f, 1.f), 140.f, 28, 24.f); FX->Burst(V->GetActorLocation() + FVector(0, 0, 80), FLinearColor(.5f, .8f, 1.f), 14, 120.f, 26.f, .8f, 0.f, .5f, 0); } }); QWait(.7f); break;
 		case FPBXEvent::Para: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s is paralysed and can't move!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); }); QWait(.9f); break;
 		case FPBXEvent::Status: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s was %s!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name), E.St == TEXT("burn") ? TEXT("burned") : TEXT("paralysed")); }); QWait(.8f); break;
 		case FPBXEvent::Debuff: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s's %s fell!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name), *E.Stat); }); QWait(.7f); break;
 		case FPBXEvent::Buff: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s's %s rose!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name), *E.Stat); }); QWait(.7f); break;
-		case FPBXEvent::Heal: QDo([this, E, EchoOf, ShowHP, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] += E.Dmg; ShowHP(E.Side); if (APBXEcho* V = EchoOf(E.Side)) Floater(V->GetActorLocation(), FString::Printf(TEXT("+%d"), E.Dmg), FLinearColor(.4f, 1, .5f)); }); QWait(.5f); break;
-		case FPBXEvent::Burn: QDo([this, E, EchoOf, ShowHP, Who, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] -= E.Dmg; ShowHP(E.Side); UI->Log = FString::Printf(TEXT("%s is hurt by its burn!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side)) { V->Hurt(); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), FLinearColor(1, .5f, .2f)); } }); QWait(.8f); break;
+		case FPBXEvent::Heal: QDo([this, E, EchoOf, ShowHP, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] += E.Dmg; ShowHP(E.Side); if (APBXEcho* V = EchoOf(E.Side)) { Floater(V->GetActorLocation(), FString::Printf(TEXT("+%d"), E.Dmg), FLinearColor(.4f, 1, .5f)); if (FX) FX->Burst(V->GetActorLocation() + FVector(0, 0, 30), FLinearColor(.4f, 1.f, .5f), 22, 120.f, 22.f, 1.2f, 220.f, .9f, 1, .8f); } }); QWait(.6f); break;
+		case FPBXEvent::Burn: QDo([this, E, EchoOf, ShowHP, Who, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] -= E.Dmg; ShowHP(E.Side); UI->Log = FString::Printf(TEXT("%s is hurt by its burn!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side)) { V->Hurt(); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), FLinearColor(1, .5f, .2f)); if (FX) FX->TypedHit(V->GetActorLocation() + FVector(0, 0, 50), TEXT("Fire"), .6f); } }); QWait(.8f); break;
 		case FPBXEvent::Cure: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s recovered from its %s."), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name), *E.St.ToString()); }); QWait(.6f); break;
-		case FPBXEvent::KO: QDo([this, E, EchoOf, Who, Sim] { UI->Log = FString::Printf(TEXT("%s fainted!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side)) V->SetFaint(true); }); QWait(1.1f); break;
+		case FPBXEvent::KO: QDo([this, E, EchoOf, Who, Sim] { UI->Log = FString::Printf(TEXT("%s fainted!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side))
+			{ V->SetFaint(true); if (FX) { FX->Burst(V->GetActorLocation() + FVector(0, 0, 40), FLinearColor(.55f, .52f, .58f), 30, 260.f, 60.f, 1.1f, 60.f, .6f, 0, 2.f); FX->Burst(V->GetActorLocation() + FVector(0, 0, 80), FLinearColor(1, 1, 1), 16, 500.f, 26.f, .6f, -300.f, .4f, 1); } Bt.Punch = 1.f; UI->ShakeT = .5f; } }); QWait(1.2f); break;
 		case FPBXEvent::Switch:
 			QDo([this, E, EchoOf, ShowHP, Who, Sim]
 			{
@@ -1058,6 +1121,9 @@ void APBXDirector::EndBattle(const FString& Result)
 {
 	PBXLOG("[PBX] battle end: %s", *Result);
 	SaveTeamHP();
+	if (FX) FX->SetAmbient(false);
+	if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f);
+	if (Result == TEXT("win")) { Splash(TEXT("VICTORY!"), Bt.bTrainer ? TEXT("+300 coins") : TEXT("Your Echo grows stronger"), 2.2f); PBXUI::Confetti(*UI, 160); }
 	UI->bMoves = false;
 	const bool bWin = Result == TEXT("win"), bLose = Result == TEXT("lose"), bCaught = Result == TEXT("caught");
 	const FPBXFighter Foe = Bt.B.Active(1);
@@ -1153,7 +1219,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		break;
 	}
 	case EMenu::Gender:
-		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Pick how your Ranger looks"), { Opt(TEXT("Ranger · he / him"), TEXT("hoodie, sneakers, big grin")), Opt(TEXT("Ranger · she / her"), TEXT("bucket hat, red skirt, backpack")), Opt(TEXT("Back"), TEXT("")) }, false,
+		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Pick how your Ranger looks"), { Opt(TEXT("Ranger · he / him"), TEXT("red cap, red tee, backpack")), Opt(TEXT("Ranger · she / her"), TEXT("bucket hat, red skirt, backpack")), Opt(TEXT("Back"), TEXT("")) }, false,
 			[this](int32 i) { if (i == 2) ShowMenu(EMenu::Title); else StartNewGame(i == 0); });
 		break;
 	case EMenu::Pause:
@@ -1199,7 +1265,7 @@ void APBXDirector::StartNewGame(bool bMale)
 	for (APBXEcho* W : Wilds) if (W) W->Destroy(); Wilds.Reset();
 	Queue.Reset(); QueueGen++; StepT = 0.f;
 	UI->Fade = 1.f;
-	Player->ApplyLook(bMale ? TEXT("boy") : TEXT("f"), TEXT("Hair_Long"), .9f, bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
+	Player->ApplyLook(bMale ? TEXT("m") : TEXT("f"), bMale ? TEXT("Hair_Buzzed") : TEXT("Hair_Long"), .9f, bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
 	PlacePlayer(NewGameSpot);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);
@@ -1217,7 +1283,7 @@ void APBXDirector::ContinueGame()
 	if (!Game->Load()) { Toast(TEXT("No saved game.")); ShowMenu(EMenu::Title); return; }
 	CloseChoice(); Menu = EMenu::None; Queue.Reset(); QueueGen++; StepT = 0.f;
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
-	Player->ApplyLook(Game->State->bMale ? TEXT("boy") : TEXT("f"), TEXT("Hair_Long"), .9f, Game->State->bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
+	Player->ApplyLook(Game->State->bMale ? TEXT("m") : TEXT("f"), Game->State->bMale ? TEXT("Hair_Buzzed") : TEXT("Hair_Long"), .9f, Game->State->bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);
 	FPBXSpot S = NewGameSpot; if (Game->State->bHasPos) { S.Pos = Game->State->Pos - FVector(0, 0, 95.f); S.Yaw = Game->State->Yaw; }

@@ -504,32 +504,10 @@ def ground_far():
     bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_GroundFar.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
                              axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
 
-def mountains():
-    """ring of chunky faceted mountains (flat-shaded, vertex colours grass -> rock -> snow) around the north half,
-    plus the tunnel mountain the railway runs into. One mesh, origin at world 0."""
+def mountain_peaks():
+    """(cx, cy, radius, height) of every mountain; shared by the mesh and by the dressing (trees / rocks on the slopes)"""
     import random as _r
-    rnd = _r.Random(21)
-    bm = bmesh.new(); col = bm.loops.layers.color.new('Col')
-    GR, GR2, RK, RK2, SN = (.34, .58, .24), (.26, .48, .2), (.66, .58, .48), (.56, .5, .44), (.97, .98, 1.0)
-    def peak(cx, cy, rad, hgt, seg=14, rings=7, snow=True, seed=0):
-        rr = _r.Random(seed); base_z = min(far_height(cx, cy), 12) - 6
-        rows = []
-        for k in range(rings + 1):
-            t = k / rings
-            row = []
-            for s_ in range(seg):
-                a = 2 * math.pi * s_ / seg + rr.uniform(-.12, .12)
-                rk = rad * (1 - t) ** 1.25 * (1 + rr.uniform(-.18, .18) * (1 - t))
-                z = base_z + hgt * (t ** .85) + rr.uniform(-.06, .06) * hgt * (1 - t) * t
-                row.append(bm.verts.new((cx + math.cos(a) * rk, cy + math.sin(a) * rk, z)))
-            rows.append(row)
-        top = bm.verts.new((cx + rr.uniform(-2, 2), cy + rr.uniform(-2, 2), base_z + hgt * 1.02))
-        for k in range(rings):
-            for s_ in range(seg):
-                f = bm.faces.new((rows[k][s_], rows[k][(s_ + 1) % seg], rows[k + 1][(s_ + 1) % seg], rows[k + 1][s_]))
-        for s_ in range(seg): bm.faces.new((rows[rings][s_], rows[rings][(s_ + 1) % seg], top))
-        return base_z, hgt
-    peaks = []
+    rnd = _r.Random(21); peaks = []
     # north / east / west arc (the sea is to the south, +y)
     for i in range(26):
         a = math.radians(-200 + 220 * i / 25 + rnd.uniform(-3, 3))   # from west-south-west over north to east-south-east
@@ -538,6 +516,9 @@ def mountains():
         if cy > 60: continue
         rad = rnd.uniform(55, 95); hgt = rnd.uniform(55, 120) * (1.0 if i % 3 else 1.35)
         peaks.append((cx, cy, rad, hgt))
+        for k in range(2):   # shoulder peaks: break up the cone silhouettes
+            sa = rnd.uniform(0, math.tau); sd = rad * rnd.uniform(.45, .7)
+            peaks.append((cx + math.cos(sa) * sd, cy + math.sin(sa) * sd, rad * rnd.uniform(.4, .6), hgt * rnd.uniform(.45, .7)))
     for i in range(30):   # green foothills in front (hide the plateau edge)
         a = math.radians(-198 + 216 * i / 29 + rnd.uniform(-4, 4)); d = rnd.uniform(125, 170)
         cx, cy = math.cos(a) * d, math.sin(a) * d * .9 - 15
@@ -546,20 +527,53 @@ def mountains():
     # keep the railway cutting open: nothing may sit on the track between the town and the tunnel portal
     peaks = [p_ for p_ in peaks if not (abs(p_[0] - TRACK_X) < p_[2] + 9 and p_[1] + p_[2] > TRACK_Y0 - 2)]
     peaks.append((TRACK_X, TRACK_Y0 - 30 - 46, 46, 66))   # the tunnel mountain, its foot just behind the cliff the portal is cut into
-    for k, (cx, cy, rad, hgt) in enumerate(peaks):
-        peak(cx, cy, rad, hgt, seg=12 if hgt < 45 else 16, rings=6 if hgt < 45 else 8, seed=100 + k)
+    return peaks
+
+def mountains():
+    """ring of faceted stylized mountains (flat-shaded, palette colours grass -> rock -> snow) around the north half,
+    plus the tunnel mountain the railway runs into. Ridges: each cone's radius is modulated by a few angular lobes and
+    noise, rows wobble in height; shoulder peaks overlap the big ones. One mesh, origin at world 0."""
+    import random as _r
+    rnd = _r.Random(21)
+    bm = bmesh.new()
+    GR, GR2, RK, RK2, SN = (.34, .58, .24), (.26, .48, .2), (.66, .58, .48), (.56, .5, .44), (.97, .98, 1.0)
+    def peak(cx, cy, rad, hgt, seg=14, rings=7, seed=0):
+        rr = _r.Random(seed); base_z = min(far_height(cx, cy), 12) - 6
+        lobes = rr.choice((3, 4, 5)); ph = rr.uniform(0, 6.28); ph2 = rr.uniform(0, 6.28)
+        rows = []
+        for k in range(rings + 1):
+            t = k / rings
+            row = []
+            for s_ in range(seg):
+                a = 2 * math.pi * s_ / seg + rr.uniform(-.08, .08)
+                ridge = 1 + .22 * math.sin(lobes * a + ph) * (1 - t * .6) + .1 * math.sin((lobes * 2 + 1) * a + ph2)
+                rk = rad * (1 - t) ** 1.2 * ridge * (1 + rr.uniform(-.1, .1) * (1 - t))
+                z = base_z + hgt * (t ** .9) + rr.uniform(-.05, .05) * hgt * (1 - t) * t
+                row.append(bm.verts.new((cx + math.cos(a) * rk, cy + math.sin(a) * rk, z)))
+            rows.append(row)
+        top = bm.verts.new((cx + rr.uniform(-2, 2), cy + rr.uniform(-2, 2), base_z + hgt * 1.02))
+        for k in range(rings):
+            for s_ in range(seg):
+                bm.faces.new((rows[k][s_], rows[k][(s_ + 1) % seg], rows[k + 1][(s_ + 1) % seg], rows[k + 1][s_]))
+        for s_ in range(seg): bm.faces.new((rows[rings][s_], rows[rings][(s_ + 1) % seg], top))
+    for k, (cx, cy, rad, hgt) in enumerate(mountain_peaks()):
+        big = hgt > 45
+        peak(cx, cy, rad, hgt, seg=24 if big else 14, rings=12 if big else 7, seed=100 + k)
     bm.normal_update()
     # colours via a palette texture (T_Palette_Mountain, one texel per colour): every face's UVs sit in its colour's cell
     # (vertex colours did not survive the FBX -> Interchange import)
     pal = []
-    for c in (GR, GR2, RK, RK2, SN):
+    CL, SN2 = (.42, .38, .36), (.85, .88, .95)
+    for c in (GR, GR2, RK, RK2, SN, CL, SN2):
         for j in (.9, 1.0, 1.08): pal.append(tuple(min(1, v * j) for v in c))
     uvl = bm.loops.layers.uv.new('UV')
     for f in bm.faces:
         zc = sum(v.co.z for v in f.verts) / len(f.verts); slope = 1 - abs(f.normal.z)
-        if zc < 34 - slope * 14: k = 0 if (int(zc / 6) % 2 == 0) else 1
-        else: k = 2 if (int(zc / 8) % 2 == 0) else 3
-        if zc > 82 - slope * 20: k = 4
+        n_ = math.sin(f.calc_center_median().x * .05) * 6 + math.sin(f.calc_center_median().y * .07) * 5   # wavy band edges
+        if zc < 34 + n_ - slope * 14: k = 0 if (int((zc + n_) / 6) % 2 == 0) else 1
+        else: k = 2 if (int((zc + n_) / 8) % 2 == 0) else 3
+        if slope > .72 and zc > 20: k = 5                                     # steep faces: dark cliff rock
+        if zc > 80 + n_ - slope * 20: k = 4 if slope < .6 else 6             # snow caps, greyer on steep sides
         idx = k * 3 + rnd.randrange(3)
         for l in f.loops: l[uvl].uv = ((idx + .5) / len(pal), .5)
     import numpy as np
@@ -771,6 +785,20 @@ def plan_town():
         a = R.random() * math.tau; d = 108 + R.random() * 70; x, y = math.cos(a) * d, math.sin(a) * d - 10
         if y > 30 or not free(x, y, 4, far=True): continue
         add(R.choice(TREES_FOREST), x, y, R.random() * 360, 1.0 + R.random() * .5); n += 1
+    # mountain dressing: pines up the green lower slopes, boulders and cliffs higher up (they snap onto the mountain mesh)
+    for k_, (cx, cy, rad, hgt) in enumerate(mountain_peaks()):
+        if hgt < 45 and R.random() < .5: continue
+        for j in range(5 if hgt > 45 else 3):
+            a = R.random() * math.tau; x0 = R.random()
+            if math.hypot(cx + math.cos(a) * rad * .8, cy + math.sin(a) * rad * .8 + 10) < 112: continue
+            if x0 < .6:   # pines on the lower, green half of the slope
+                d = rad * R.uniform(.6, .92); x, y = cx + math.cos(a) * d, cy + math.sin(a) * d
+                if railway(x, y, 6): continue
+                add(R.choice([NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']), x, y, R.random() * 360, 1.6 + R.random())
+            else:         # boulders / cliffs only near the foot (never perched on a peak)
+                d = rad * R.uniform(.8, .97); x, y = cx + math.cos(a) * d, cy + math.sin(a) * d
+                if railway(x, y, 6): continue
+                add(R.choice(ROCKS_L + CLIFFS), x, y, R.random() * 360, 1.2 + R.random() * .8)
     for x, y in [(-27, -14), (-26, 4), (27, -14), (-11, -42), (11, -43), (-22, 16), (23, 17), (-31, 30), (32, 30), (8, 30)]:
         add(R.choice(TREES_TOWN), x, y, R.random() * 360, .62 + R.random() * .12)      # big feature trees in the village
     n = 0
