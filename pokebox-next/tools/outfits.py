@@ -52,6 +52,11 @@ OUTFITS = {   # body paint under the 3D clothes (clothes.py) — same palette, s
     'kid': dict(body='male', top=(.95, .82, .2), stripes=(.85, .2, .15), sleeves='short', bottom=(.25, .4, .7), legs='shorts', shoes=(.97, .97, .97), boots_z=.17, skin=1.1),
     'conductor': dict(body='female', top=(.14, .18, .34), sleeves='long', bottom=(.14, .18, .34), legs='skirt', skirt_z=.22, shoes=(.06, .06, .06), boots_z=.09, skin=1.05),
     'guard': dict(body='male', top=(.2, .3, .22), sleeves='long', bottom=(.18, .26, .2), legs='long', coat_z=.47, shoes=(.06, .06, .06), boots_z=.24, belt=(.08, .07, .06), skin=.85),
+    'youngster': dict(body='male', top=(.97, .97, .97), stripes=(.2, .45, .85), sleeves='short', bottom=(.85, .55, .2), legs='shorts', shoes=(.85, .15, .12), boots_z=.17, skin=1.05),
+    'bugcatcher': dict(body='male', top=(.36, .62, .3), sleeves='short', bottom=(.82, .74, .52), legs='shorts', shoes=(.35, .22, .12), boots_z=.2, skin=1.0),
+    'lass': dict(body='female', top=(.96, .62, .72), sleeves='short', bottom=(.18, .22, .45), legs='skirt', skirt_z=.32, shoes=(.15, .12, .12), boots_z=.085, skin=1.1),
+    'healer': dict(body='female', top=(.98, .98, .98), sleeves='long', bottom=(.95, .95, .95), legs='long', coat_z=.30, shoes=(.95, .95, .95), boots_z=.085, skin=.95),
+    'trader': dict(body='male', top=(.45, .3, .18), sleeves='long', bottom=(.3, .25, .2), legs='long', coat_z=.47, shoes=(.2, .12, .06), boots_z=.2, belt=(.12, .08, .05), skin=.9),
 }
 
 def paint(name, o, P, L, base):

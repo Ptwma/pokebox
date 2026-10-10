@@ -63,9 +63,9 @@ def import_textures():
         if n.endswith('_nor') or n.endswith('_normal'):
             a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_NORMALMAP); a.set_editor_property('srgb', False)
             if n.endswith('_nor'): a.set_editor_property('flip_green_channel', True)  # Poly Haven ships OpenGL normals
-        elif n.endswith('_arm') or n.startswith('t_townsplat'):
+        elif n.endswith('_arm') or n.startswith('t_townsplat') or n.startswith('t_r1splat'):
             a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_MASKS); a.set_editor_property('srgb', False)
-            if n.startswith('t_townsplat'):   # outside the town square the edge texels continue (no repeating paths on the far terrain)
+            if n.startswith('t_townsplat') or n.startswith('t_r1splat'):   # outside the town square the edge texels continue (no repeating paths on the far terrain)
                 a.set_editor_property('address_x', unreal.TextureAddress.TA_CLAMP); a.set_editor_property('address_y', unreal.TextureAddress.TA_CLAMP)
         elif n.startswith('t_palette'):   # one texel per colour: no filtering, no mips
             a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_VECTOR_DISPLACEMENTMAP); a.set_editor_property('srgb', True)
@@ -263,13 +263,17 @@ def master_foliage(wind=False):
     st = MEL.get_statistics(m); log('foliage instr', st.num_pixel_shader_instructions)
     return m
 
-def master_ground():
-    m = _fresh('M_PBX_Ground', G + '/Materials')
+def master_ground(name='M_PBX_Ground', size=22000.0, center=(0.0, 0.0)):
+    m = _fresh(name, G + '/Materials')
     uv = _e(m, unreal.MaterialExpressionTextureCoordinate, -2200, 0)
-    # layer mask from the town splat texture, sampled by world XY (town square = 220 m centred on the origin)
-    wp = _e(m, unreal.MaterialExpressionWorldPosition, -1600, -1100); cm = _e(m, unreal.MaterialExpressionComponentMask, -1400, -1100)
+    # layer mask from the level's splat texture, sampled by world XY (a `size` cm square around `center`, Unreal cm)
+    wp = _e(m, unreal.MaterialExpressionWorldPosition, -1800, -1100); cm = _e(m, unreal.MaterialExpressionComponentMask, -1600, -1100)
     cm.set_editor_property('r', True); cm.set_editor_property('g', True); MEL.connect_material_expressions(wp, '', cm, '')
-    dv = _e(m, unreal.MaterialExpressionDivide, -1200, -1100); dv.set_editor_property('const_b', 22000.0); MEL.connect_material_expressions(cm, '', dv, 'A')
+    if center != (0.0, 0.0):
+        c2 = _e(m, unreal.MaterialExpressionConstant2Vector, -1600, -1250); c2.set_editor_property('r', center[0]); c2.set_editor_property('g', center[1])
+        sb = _e(m, unreal.MaterialExpressionSubtract, -1400, -1150); MEL.connect_material_expressions(cm, '', sb, 'A'); MEL.connect_material_expressions(c2, '', sb, 'B')
+        cm = sb
+    dv = _e(m, unreal.MaterialExpressionDivide, -1200, -1100); dv.set_editor_property('const_b', size); MEL.connect_material_expressions(cm, '', dv, 'A')
     ad = _e(m, unreal.MaterialExpressionAdd, -1000, -1100); ad.set_editor_property('const_b', 0.5); MEL.connect_material_expressions(dv, '', ad, 'A')
     vc = _texp(m, 'Splat', -800, -1100, MASKS, WHITE); MEL.connect_material_expressions(ad, '', vc, 'UVs')
     layers = []
@@ -413,6 +417,11 @@ def make_materials():
     M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': 1.2}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_TownSplat',
                         'GrassBase': '/Game/Stylized_PBR_Nature/Terrain/T_Grass_1', 'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
                         'SandArm': 'coast_sand_01_arm', 'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
+    # Route 1 (tools/blender_route1.py): same layers, its own splat (460 m square centred on Blender (-160, 0) = UE (-16000, 0))
+    G1 = master_ground('M_PBX_GroundR1', 46000.0, (-16000.0, 0.0))
+    M['M_GroundR1'] = _mi('MI_GroundR1', G1, {'GrassUV': 1.2}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_R1Splat',
+                          'GrassBase': '/Game/Stylized_PBR_Nature/Terrain/T_Grass_1', 'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm',
+                          'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
     tw = unreal.load_asset('/Game/Shader_Water/MI_Water')          # Samples/TestWater stylized water
     M['M_Water'] = tw if tw else _mi('MI_Water', W)
     V = master_vertex(); master_cloth(); SK = master_sky()
@@ -528,9 +537,9 @@ def _snap_z(world, sm, o, scale):
     if mn.z > 0: z -= mn.z * scale
     return z
 
-def build_level():
+def build_level(map_name='L_Town', plan_file='town_plan.json'):
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-    path = G + '/Maps/L_Town'
+    path = G + '/Maps/' + map_name
     if EAL.does_asset_exist(path): les.load_level(path)
     else: les.new_level(path)
     world = _world()
@@ -538,7 +547,7 @@ def build_level():
     try: gm_cls = world.get_world_settings().get_editor_property('default_game_mode')
     except Exception as ex: log('read game mode', ex)
     for a in EAS.get_all_level_actors(): EAS.destroy_actor(a)
-    plan = json.load(open(os.path.join(SRC, 'town_plan.json'), encoding='utf-8'))
+    plan = json.load(open(os.path.join(SRC, plan_file), encoding='utf-8'))
     # ---- light & sky: warm late-morning sun, the baked stylized sky dome (no physical atmosphere / volumetric clouds)
     sun = _spawn_cls(unreal.DirectionalLight, (0, 0, 1000), (0, -38, 35), 'Sun')
     lc = sun.get_component_by_class(unreal.DirectionalLightComponent)
@@ -589,7 +598,7 @@ def build_level():
             return ((o.get('h') or o.get('w')) * 100.0) / max(e.z if o.get('h') else max(e.x, e.y), 1e-3)
         return o['s'] * KIT_SCALE.get(o['mesh'], 1.0)
     # ---- terrain first (the snapping traces must only see terrain)
-    put('SM_Ground', 0, 0, 0, label='Ground'); put('SM_GroundFar', 0, 0, 0, label='GroundFar'); put('SM_Mountains', 0, 0, 0, label='Mountains')
+    for k, tm in enumerate(plan.get('terrain', ['SM_Ground', 'SM_GroundFar', 'SM_Mountains'])): put(tm, 0, 0, 0, label=tm.replace('SM_', ''))
     dome = put('SM_SkyDome', 0, 0, 0, 0.0, 100000.0, label='SkyDome')
     if dome:
         c = dome.get_component_by_class(unreal.StaticMeshComponent); c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
@@ -602,7 +611,8 @@ def build_level():
         z = _snap_z(world, sm, o, obj_scale(o, sm))
         if z is not None: snaps[i] = z; n_snap += 1
     log('snapped to terrain', n_snap)
-    w = plan['water']; put('SM_Water', w['x'], w['y'], w['z'], label='Sea')
+    w = plan.get('water')
+    if w: put('SM_Water', w['x'], w['y'], w['z'], label='Sea')
     for i, o in enumerate(plan['objects']):
         a = put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'), z_cm=snaps.get(i))
         if a and o.get('tag'): a.tags = [unreal.Name(o['tag'])]
@@ -631,6 +641,15 @@ def build_level():
     except Exception as ex: log('recapture', ex)
     les.save_current_level()
     log('level built', len(plan['objects']), 'objects', 'missing', sorted(missing))
+
+ROUTE1_MESHES = ['SM_R1_Ground', 'SM_R1_Mountains', 'SM_R1_Hut', 'SM_R1_GateEast', 'SM_R1_GateWest', 'SM_ItemBall']
+
+def route1_steps():
+    """Route 1 level (after tools/blender_route1.py ran in Blender). Rebuilds the materials (they are shared), then lays out L_Route1."""
+    import_textures(); import_meshes(only=ROUTE1_MESHES); M = make_materials(); assign_materials(M)
+    # make_materials recreates the masters: re-parent the kit instances, rebuild FX + Echo masters (and import the new Echo cut-outs)
+    fix_kit_materials(); master_fx(); import_echoes(); import_outfits(); import_clothes(); fix_usage_flags()
+    build_level('L_Route1', 'route1_plan.json')
 
 def all_steps():
     import_textures(); import_meshes(); M = make_materials(); assign_materials(M); build_level()

@@ -54,6 +54,19 @@ ROLES = {
     'guard': dict(body='male', top=dict(col=(.20, .30, .22), sleeves='long'), legs=dict(col=(.18, .26, .2), kind='long'),
                   coat=dict(col=(.20, .30, .22), z=.47, flare=.08, closed=True), belt=(.08, .07, .06), shoes=dict(col=(.06, .06, .06), z=.24),
                   hat=dict(kind='peaked', col=(.18, .26, .2), band=(.8, .65, .2)), gloves=(.95, .95, .95), shoulder=(.8, .65, .2)),
+    # Route 1
+    'youngster': dict(body='male', top=dict(col=(.97, .97, .97), sleeves='short', stripes=(.2, .45, .85)), legs=dict(col=(.85, .55, .2), kind='shorts'),
+                      shoes=dict(col=(.85, .15, .12), z=.08, sole=(.97, .97, .97)), cap=dict(col=(.2, .45, .85), front=(.97, .97, .97)), socks=(.97, .97, .97)),
+    'bugcatcher': dict(body='male', top=dict(col=(.36, .62, .3), sleeves='short'), legs=dict(col=(.82, .74, .52), kind='shorts'),
+                       shoes=dict(col=(.35, .22, .12), z=.2), hat=dict(kind='straw', col=(.92, .82, .5), band=(.3, .55, .3)), socks=(.95, .95, .9),
+                       backpack=(.55, .4, .2)),
+    'lass': dict(body='female', top=dict(col=(.96, .62, .72), sleeves='short'), legs=dict(col=(.18, .22, .45), kind='skirt', z=.32, flare=.5),
+                 shoes=dict(col=(.15, .12, .12), z=.06), scarf=(.97, .97, .97)),
+    'healer': dict(body='female', top=dict(col=(.95, .55, .65), sleeves='long'), legs=dict(col=(.95, .95, .95), kind='long'),
+                   coat=dict(col=(.98, .98, .98), z=.30, flare=.2), shoes=dict(col=(.95, .95, .95), z=.06), hat=dict(kind='bucket', col=(.98, .98, .98), band=(.9, .3, .4))),
+    'trader': dict(body='male', top=dict(col=(.85, .8, .7), sleeves='long'), legs=dict(col=(.3, .25, .2), kind='long'),
+                   coat=dict(col=(.45, .3, .18), z=.47, flare=.1, sleeves='short'), belt=(.12, .08, .05), shoes=dict(col=(.2, .12, .06), z=.2),
+                   cap=dict(col=(.45, .3, .18), front=(.45, .3, .18))),
 }
 
 # ------------------------------------------------------------------ body analysis

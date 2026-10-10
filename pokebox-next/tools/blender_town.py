@@ -708,12 +708,16 @@ def gameplay_data():
         {'id': 'guard', 'outfit': 'guard', 'hair_color': [0.06, 0.05, 0.05], 'name': 'Gate Warden Bo', 'body': 'm', 'hair': 'Hair_SimpleParted', 'anim': 'Idle_FoldArms_Loop', **spot(-44.6, 9.4, None, (1, 0))}]
     G['spots'] = {'rho_greet': spot(-12.6, 3.6, None, (-1, -.4)), 'rho_gate': spot(-42.5, 3.4, None, (1, .3)),
                   'starter_table': _ue(lc['c'][0], lc['c'][1] - 3.0, HZ + .95), 'bed': _ue(hc['c'][0] - 3.3, hc['c'][1] - 2.2, HZ + .5),
-                  'battle_center_hint': _ue(-36, 6, 0)}
+                  'battle_center_hint': _ue(-36, 6, 0), 'from_route1': spot(GATE[0] + 4.0, GATE[1], None, (1, 0))}
     G['grass'] = [{'min': _ue(x0, y1, 0)[:2], 'max': _ue(x1, y0, 0)[:2]} for (x0, y0, x1, y1) in TALL_GRASS]   # (y flips sign)
     G['wild_spawns'] = [_ue(x, y, height(x, y)) for (x, y) in [(-40, -5), (-33, -2), (-37, 14), (-41, 15.5), (-34, 1)]]
     G['gate'] = {'pos': _ue(GATE[0], GATE[1], height(*GATE)), 'exit_x': round((GATE[0] - 3.0) * 100, 1), 'barrier_mesh': 'fence-gate'}
     G['bounds'] = {'center': _ue(0, -8, 0)[:2], 'radius': 9000.0, 'water_z': -110.0, 'safe': spot(0, 10)}
-    G['signs'] = [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nCLOSED - landslide'},
+    G['map'] = 'L_Town'; G['title'] = 'LUMEN HARBOR'
+    # walking out through the (re-opened) Route 1 gate loads the Route 1 level; min_step 7 = EPBXStep::Gate (licence signed)
+    G['exits'] = [{'id': 'route1', 'pos': _ue(GATE[0] - 3.2, GATE[1], height(GATE[0] - 3.2, GATE[1])), 'radius': 260.0, 'to_map': 'L_Route1', 'to_spot': 'from_lumen',
+                   'min_step': 7, 'label': 'Route 1'}]
+    G['signs'] = [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nwest to Mistvale'},
                   {'pos': _ue(4, 9, height(4, 9) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN HARBOR'},
                   {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'POKEBOX LABS'},
                   {'pos': _ue(26.5, 9.2, height(26.5, 9.2) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN STATION\ntrains to Mistvale'}]
@@ -877,8 +881,8 @@ def plan_town():
     for s_ in (-1, 1): kit('KTown/pillar-stone', gx, gy + s_ * 2.3, 0, h=3.2)
     kit('KTown/fence-gate', gx, gy, 90, w=4.0)                         # the barrier
     P['objects'][-1]['tag'] = 'PBX_GateBarrier'
-    for (dx, dy, sc) in [(-3.5, 0, .55), (-6, 2, .45)]:                 # the landslide behind the gate
-        add(R.choice(ROCKS_L), gx + dx, gy + dy, R.random() * 360, sc)
+    for (dx, dy, sc) in [(-3.5, 0, .55), (-6, 2, .45)]:                 # the landslide behind the gate (cleared once the licence is signed)
+        add(R.choice(ROCKS_L), gx + dx, gy + dy, R.random() * 360, sc); P['objects'][-1]['tag'] = 'PBX_GateBarrier'
     add('SM_Sign', gx + 2.5, gy + 3.6, 90)
     for k in range(6):                                                  # bushes either side of the gate so the road is the only way out
         for sgn in (1, -1): add(R.choice(BUSHES), gx + R.uniform(-.4, .4), gy + sgn * (3.6 + k * 2.0), R.random() * 360, .9)
@@ -936,5 +940,5 @@ def run():
     with open(os.path.join(gd, 'L_Town.json'), 'w', encoding='utf-8') as fh: json.dump(plan['gameplay'], fh, indent=1, ensure_ascii=False)
     print('town built:', len(plan['objects']), 'placements')
 
-if __name__ == '__main__' or True:
+if os.environ.get('PBX_TOWN_NORUN') != '1':   # blender_route1.py imports this file for its helpers without rebuilding the town
     run()

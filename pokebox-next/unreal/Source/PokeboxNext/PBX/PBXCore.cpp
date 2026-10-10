@@ -36,6 +36,18 @@ namespace PBXData
 			Add(TEXT("Spearow_MEW_021"), TEXT("Spearow"), TEXT("Colorless"), 100, 36, 90, 0, .85f);
 			// Rho's partner
 			Add(TEXT("Eevee_MEW_133"), TEXT("Eevee"), TEXT("Colorless"), 110, 46, 70, 0, .9f);
+			// Route 1 (MEW 151 set)
+			Add(TEXT("Pidgey_MEW_016"), TEXT("Pidgey"), TEXT("Colorless"), 100, 45, 56, 0, .8f);
+			Add(TEXT("Pidgeotto_MEW_017"), TEXT("Pidgeotto"), TEXT("Colorless"), 120, 60, 71, 1, 1.0f);
+			Add(TEXT("Rattata_MEW_019"), TEXT("Rattata"), TEXT("Colorless"), 90, 50, 72, 0, .7f);
+			Add(TEXT("Caterpie_MEW_010"), TEXT("Caterpie"), TEXT("Grass"), 90, 32, 45, 0, .7f);
+			Add(TEXT("Metapod_MEW_011"), TEXT("Metapod"), TEXT("Grass"), 115, 22, 30, 0, .8f);
+			Add(TEXT("Weedle_MEW_013"), TEXT("Weedle"), TEXT("Grass"), 90, 36, 50, 0, .7f);
+			Add(TEXT("Kakuna_MEW_014"), TEXT("Kakuna"), TEXT("Grass"), 115, 26, 35, 0, .8f);
+			Add(TEXT("Nidoran_Female_MEW_029"), TEXT("Nidoran F"), TEXT("Darkness"), 100, 47, 41, 0, .75f);
+			Add(TEXT("Nidoran_Male_MEW_032"), TEXT("Nidoran M"), TEXT("Darkness"), 100, 57, 50, 0, .75f);
+			Add(TEXT("Oddish_MEW_043"), TEXT("Oddish"), TEXT("Grass"), 100, 50, 30, 0, .7f);
+			Add(TEXT("Pikachu_MEW_025"), TEXT("Pikachu"), TEXT("Lightning"), 100, 55, 90, 2, .75f);
 		}
 		return C;
 	}

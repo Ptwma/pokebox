@@ -18,7 +18,12 @@ struct FInputActionValue;
 class FJsonObject;
 
 struct FPBXSpot { FVector Pos = FVector::ZeroVector; float Yaw = 0.f; };
-struct FPBXDoor { FString Id, Label; bool bLocked = false; FPBXSpot Outside, Inside; FVector OutDoor = FVector::ZeroVector, InDoor = FVector::ZeroVector; };
+struct FPBXDoor { FString Id, Label, LockedText; bool bLocked = false; FPBXSpot Outside, Inside; FVector OutDoor = FVector::ZeroVector, InDoor = FVector::ZeroVector; };
+/** walking into an exit loads another level (ToMap) and puts you at its spot ToSpot; ToMap "" = the end of the built world */
+struct FPBXExit { FString Id, Label, ToMap, ToSpot; FVector Pos = FVector::ZeroVector; float Radius = 250.f; int32 MinStep = 0; };
+/** a sight-line trainer: challenges you when you walk into their view (until beaten) */
+struct FPBXTrainer { FName Id; float Sight = 900.f; TArray<TPair<FName, int32>> Team; int32 Reward = 200; TArray<FString> Intro, Win, After; };
+struct FPBXItem { FString Id, Item; int32 Count = 1; FVector Pos = FVector::ZeroVector; TWeakObjectPtr<AActor> Actor; };
 struct FPBXLine { FName Who; FString Text; };
 
 UCLASS()
@@ -40,6 +45,13 @@ private:
 	// ---- data
 	TSharedPtr<FJsonObject> Data;
 	FPBXSpot NewGameSpot; TArray<FPBXDoor> Doors; TMap<FString, FPBXSpot> Spots; TArray<FBox2D> Grass; TArray<FVector> WildSpawns;
+	FString MapName = TEXT("L_Town"), MapTitle, ChapterLabel;
+	TArray<TArray<TPair<FName, int32>>> GrassPool; TArray<FIntPoint> GrassLv;     // per tall-grass patch: weighted Echo pool + level range
+	TArray<FPBXExit> Exits; TArray<FVector2D> Corridor; float CorridorW = 0.f; bool bHasGate = false; bool bTraveling = false;
+	TMap<FName, FPBXTrainer> Trainers; TArray<FPBXItem> Items; float ItemFxT = 0.f;
+	int32 PatchOf(const FVector& P) const;
+	FName PickWild(int32 Patch) const;
+	bool IsTown() const { return MapName == TEXT("L_Town"); }
 	FVector GatePos = FVector::ZeroVector; float GateExitX = 0.f; FVector2D BoundsCenter = FVector2D::ZeroVector; float BoundsRadius = 9000.f, WaterZ = -110.f; FPBXSpot SafeSpot;
 	FVector StarterTable = FVector::ZeroVector, BedPos = FVector::ZeroVector;
 	struct FSign { FVector Pos; FString Text; }; TArray<FSign> Signs;
@@ -66,6 +78,17 @@ private:
 	void SpawnNPCs();
 	void RefreshWorld();
 	void SpawnPartner(bool bPop);
+	void ApplyPlayerLook();
+	void ArriveAt(const FString& SpotId);
+	void Travel(const FString& ToMap, const FString& ToSpot);
+	void ReachEnd(const FPBXExit& E);
+	void TrainerSpotted(FName Id);
+	void PickItem(int32 i);
+	void HealTeam(FName Who);
+	void OpenShop();
+	void OpenTeam();
+	void OpenMonActions(int32 i);
+	int32 MonMaxHP(const FPBXMon& M) const;
 	void PlacePlayer(const FPBXSpot& S);
 	void UpdateWilds(float Dt);
 	bool Inside() const;
@@ -90,7 +113,7 @@ private:
 	bool Busy() const { return Queue.Num() > 0; }
 
 	// ---- interactions
-	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train };
+	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train, Item };
 	EKind NearKind = EKind::None; int32 NearIndex = -1; FName NearNPC;
 	void FindNearest();
 	void Interact();
@@ -135,7 +158,7 @@ private:
 	void SaveTeamHP();
 
 	// ---- menus
-	enum class EMenu : uint8 { None, Title, Gender, Pause, Controls, Complete, Confirm };
+	enum class EMenu : uint8 { None, Title, Gender, Pause, Controls, Complete, Confirm, Team };
 	EMenu Menu = EMenu::None;
 	void ShowMenu(EMenu M);
 	void OpenChoice(const FString& Title, const FString& Sub, const TArray<FPBXOption>& Opts, bool bCards, TFunction<void(int32)> Pick);

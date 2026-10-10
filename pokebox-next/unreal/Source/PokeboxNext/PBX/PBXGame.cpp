@@ -39,6 +39,6 @@ void UPBXGameSubsystem::HealAll()
 bool UPBXGameSubsystem::AddMon(FName Card, int32 Lv)
 {
 	FPBXMon M; M.Card = Card; M.Lv = Lv; State->Seen.AddUnique(Card);
-	if (State->Team.Num() < 3) { State->Team.Add(M); return true; }
+	if (State->Team.Num() < TeamMax) { State->Team.Add(M); return true; }
 	State->Box.Add(M); return false;
 }

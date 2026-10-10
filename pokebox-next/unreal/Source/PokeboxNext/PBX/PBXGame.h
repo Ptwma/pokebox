@@ -16,8 +16,9 @@ enum class EPBXStep : uint8
 	Capture,        // catch your first wild Echo in the tall grass
 	RhoBattle,      // rival battle at the Route 1 gate
 	Rest,           // rest your team at home
-	Gate,           // Route 1 is open
-	Done            // chapter complete (left through the gate)
+	Gate,           // licence signed: the landslide is cleared, Route 1 is open
+	Done,           // chapter 1 complete (left Lumen Harbor) -> chapter 2: cross Route 1
+	Route1Clear     // reached the Mistvale gate at the west end of Route 1
 };
 
 USTRUCT()
@@ -38,7 +39,7 @@ public:
 	UPROPERTY() int32 Version = 1;
 	UPROPERTY() bool bMale = true;
 	UPROPERTY() uint8 Step = 0;
-	UPROPERTY() TArray<FPBXMon> Team;        // battle team (max 3), [0] = partner that walks with you
+	UPROPERTY() TArray<FPBXMon> Team;        // battle team (max 6), [0] = partner that walks with you
 	UPROPERTY() TArray<FPBXMon> Box;         // everything else you caught
 	UPROPERTY() TArray<FName> Seen;
 	UPROPERTY() int32 Coins = 0;
@@ -49,6 +50,12 @@ public:
 	UPROPERTY() float Yaw = 0.f;
 	UPROPERTY() bool bHasPos = false;
 	UPROPERTY() FString SavedAt;
+	// v2 (Route 1). Old saves load with these defaults.
+	UPROPERTY() FString Map;                 // level the player is in ("" = L_Town)
+	UPROPERTY() int32 Balls = 5;
+	UPROPERTY() int32 Potions = 1;
+	UPROPERTY() TArray<FName> Beaten;        // trainers you have beaten (they don't challenge you again)
+	UPROPERTY() TArray<FName> Picked;        // items you have picked up
 };
 
 UCLASS()
@@ -72,4 +79,11 @@ public:
 	void HealAll();
 	/** adds a caught/received card: team if there is room, else the box. Returns true if it joined the team */
 	bool AddMon(FName Card, int32 Lv);
+
+	// ---- level travel (kept here: the subsystem survives OpenLevel, the director does not)
+	FString PendingSpot;            // spot id to arrive at in the next level
+	bool bPendingContinue = false;  // "Continue" picked on the title screen of another level: load the save there
+	int32 AutoResume = -1;          // -pbxauto: the step the next level's director continues from
+	bool bAutoFail = false; int32 AutoShots = 0;
+	static constexpr int32 TeamMax = 6;
 };
