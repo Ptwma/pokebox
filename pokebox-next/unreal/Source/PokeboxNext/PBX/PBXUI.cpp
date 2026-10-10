@@ -415,7 +415,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(250).HeightOverride(349)[SNew(SImage).Image(O.Image.Get())]];
 		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 40 : 32)).ColorAndOpacity(InkC)];
 		if (!O.Sub.IsEmpty())
-			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("bold"), 20)).ColorAndOpacity(O.Color * .8f).AutoWrapText(!M->bCards)];
+			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("bold"), 20)).ColorAndOpacity(O.Color * .8f).WrapTextAt(M->bCards ? 0.f : 510.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
 		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).Padding(M->bCards ? FMargin(14) : FMargin(22, 10)).OnMouseButtonDown_Lambda(OnDown)
 			.RenderTransform_Lambda([this, i] { return FSlateRenderTransform(M->Selected == i ? 1.04f : 1.f); }).RenderTransformPivot(FVector2D(.5f, .5f))[Inner];
 		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(300).HeightOverride(470)[Btn]];
@@ -471,6 +471,9 @@ void SPBXHud::Tick(const FGeometry& G, const double Time, const float Dt)
 	M->ViewSize = FVector2D(G.GetLocalSize()); M->Time += Dt;
 	PBXUI::TickSparks(*M, Dt);
 	M->MovesIn = M->bMoves ? FMath::Min(1.f, M->MovesIn + Dt * 4.f) : 0.f;
+	// a list built in the same frame its panel turns visible can lay out stacked (no geometry yet): rebuild it once more a few frames later
+	if (M->Mode != LastMode) { LastMode = M->Mode; RebuildIn = 3; Invalidate(EInvalidateWidgetReason::Layout); }
+	if (RebuildIn > 0 && --RebuildIn == 0) BuiltOptions = -1;
 	// rebuild the option / move buttons when the model changed; the old brushes die after the old widgets
 	if (M->OptionsRev != BuiltOptions && ChoiceHost.IsValid())
 	{

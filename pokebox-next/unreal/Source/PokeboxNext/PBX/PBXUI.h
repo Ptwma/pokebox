@@ -72,6 +72,7 @@ private:
 	TSharedPtr<FPBXUIModel> M;
 	TSharedPtr<SBox> ChoiceHost, MovesHost;
 	int32 BuiltOptions = -1, BuiltMoves = -1;
+	EPBXUIMode LastMode = EPBXUIMode::Explore; int32 RebuildIn = 0;
 	TSharedRef<SWidget> MakeOptions();
 	TSharedRef<SWidget> MakeMoves();
 	TSharedRef<SWidget> MakePlate(int32 Side);

@@ -1789,15 +1789,15 @@ void APBXDirector::AutoTick(float Dt)
 			AutoNext();
 		} break;
 	case 106: if (Idle() && AutoStepT > 1.f) { Shot(TEXT("27_rest_stop")); if (APBXNPC* T = NPCs.FindRef(TEXT("trader"))) { TeleportPlayer(T->GetActorLocation() + T->GetActorForwardVector() * 170.f, T->HomeYaw + 180.f); TalkTo(T); } AutoNext(); } break;
-	case 107: if (Menu == EMenu::Confirm && AutoStepT > 1.f) { Shot(TEXT("28_shop")); AutoNext(); } break;
+	case 107: { static bool bOpen = false; if (Menu == EMenu::Confirm && !bOpen) { bOpen = true; AutoStepT = 0.f; } else if (bOpen && AutoStepT > .8f) { Shot(TEXT("28_shop")); AutoNext(); } } break;   // wait for the list to lay out
 	case 108:
 		{
-			static bool bBought = false;
-			if (!bBought && AutoStepT > .6f) { AutoT = Game->State->Potions; UI->Selected = 0; InConfirm(); bBought = true; AutoStepT = 0.f; }
+			static bool bBought = false; static int32 PotBefore = 0;
+			if (!bBought && AutoStepT > .6f) { PotBefore = Game->State->Potions; UI->Selected = 0; InConfirm(); bBought = true; AutoStepT = 0.f; }
 			else if (bBought && AutoStepT > .8f && AutoStepT < 5.f) { Shot(TEXT("28b_shop_bought")); AutoStepT = 5.f; }
 			else if (bBought && AutoStepT > 5.6f)
 			{
-				PBXLOG("[PBXAUTO] shop: potions %d -> %d, coins %d", (int32)AutoT, Game->State->Potions, Game->State->Coins);
+				PBXLOG("[PBXAUTO] shop: potions %d -> %d, coins %d", PotBefore, Game->State->Potions, Game->State->Coins);
 				if (Menu == EMenu::Confirm) { UI->Selected = 2; InConfirm(); }
 				AutoNext();
 			}
