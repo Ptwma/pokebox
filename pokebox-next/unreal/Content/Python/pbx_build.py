@@ -295,7 +295,16 @@ def master_ground(name='M_PBX_Ground', size=22000.0, center=(0.0, 0.0)):
         l2 = lerp(l1, '', *((sand_tinted, '') if k == 'base' else (layers[2][idx], ch)), 'G', -1000, idx * 400)
         l3 = lerp(l2, '', layers[3][idx], ch, 'B', -800, idx * 400)
         out[k] = l3
-    MEL.connect_material_property(out['base'], '', unreal.MaterialProperty.MP_BASE_COLOR)
+    # large-scale brightness variation (world XY / 40 m and / 11 m) so the tiling never reads as a grid
+    mt = []
+    for k, (div, x) in enumerate(((4000.0, -900), (1100.0, -700))):
+        dv2 = _e(m, unreal.MaterialExpressionDivide, x - 200, -1500 - k * 150); dv2.set_editor_property('const_b', div); MEL.connect_material_expressions(cm, '', dv2, 'A')
+        t = _texp(m, 'Macro', x, -1500 - k * 150, MASKS, WHITE); MEL.connect_material_expressions(dv2, '', t, 'UVs'); mt.append(t)
+    mm = _mul(m, mt[0], mt[1], -500, -1500, 'R', 'G')
+    ml = _e(m, unreal.MaterialExpressionLinearInterpolate, -350, -1500); ml.set_editor_property('const_a', .78); ml.set_editor_property('const_b', 1.18)
+    MEL.connect_material_expressions(mm, '', ml, 'Alpha')
+    base = _mul(m, out['base'], ml, -300, -300)
+    MEL.connect_material_property(base, '', unreal.MaterialProperty.MP_BASE_COLOR)
     MEL.connect_material_property(out['nor'], '', unreal.MaterialProperty.MP_NORMAL)
     MEL.connect_material_property(out['rough'], '', unreal.MaterialProperty.MP_ROUGHNESS)
     MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
@@ -386,6 +395,14 @@ def _mi(name, parent, scalars=None, vectors=None, textures=None):
     MEL.update_material_instance(mi); EAL.save_loaded_asset(mi); return mi
 
 def _ph(base): return {'BaseTex': base + '_diff', 'NormalTex': base + '_nor', 'ArmTex': base + '_arm'}
+DS = '/Game/DreamscapeSeries/DreamscapeTower/Textures/'
+def _ds(base): return {'BaseTex': DS + base + '_C', 'NormalTex': DS + base + '_N', 'ArmTex': DS + base + '_ORM'}
+# ground layers (both levels): stylized grass / dirt road / sandy dirt / flagstones
+GROUND_TEX = {'GrassBase': DS + 'Terrain/T_GrassTerrain_01_01_C', 'GrassNor': DS + 'Terrain/T_GrassTerrain_01_N', 'GrassArm': DS + 'Terrain/T_GrassTerrain_01_ORM',
+              'DirtBase': DS + 'Terrain/T_DirtRoad_01_C', 'DirtNor': DS + 'Terrain/T_DirtRoad_01_N', 'DirtArm': DS + 'Terrain/T_DirtRoad_01_ORM',
+              'SandBase': DS + 'Terrain/T_Dirt_01_C', 'SandNor': DS + 'Terrain/T_Dirt_01_N', 'SandArm': DS + 'Terrain/T_Dirt_01_ORM',
+              'StoneBase': DS + 'Structures/T_Floor_01_C', 'StoneNor': DS + 'Structures/T_Floor_01_N', 'StoneArm': DS + 'Structures/T_Floor_01_ORM',
+              'Macro': '/Game/DreamscapeSeries/SharedResources/Textures/Utility/T_MacroVariation'}
 
 def make_materials():
     S, C, F, Gm, W = master_surface(), master_color(), master_foliage(), master_ground(), master_water()
@@ -402,26 +419,23 @@ def make_materials():
     M['M_WindowLight'] = _mi('MI_WindowLight', C, {'Roughness': .3, 'EmissiveMul': 6.0}, {'Color': (.9, .95, 1, 1), 'Emissive': (.85, .93, 1.0, 1)})
     M['M_Roof_Red'] = _mi('MI_Roof_Red', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.72, .2, .14, 1)}, roof)
     M['M_Roof_Blue'] = _mi('MI_Roof_Blue', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.2, .34, .62, 1)}, roof)
-    M['M_Stone'] = _mi('MI_Stone', S, {'UVScale': .6}, {}, _ph('rustic_stone_wall'))
-    M['M_Brick'] = _mi('MI_Brick', S, {'UVScale': .8}, {}, _ph('red_brick'))
-    M['M_WoodBox'] = _mi('MI_WoodBox', S, {'UVScale': 1.0}, {'Tint': (.85, .7, .55, 1)}, _ph('brown_planks_05'))
-    M['M_WoodDark'] = _mi('MI_WoodDark', S, {'UVScale': 1.0}, {'Tint': (.55, .42, .32, 1)}, _ph('brown_planks_05'))
-    M['M_WoodLight'] = _mi('MI_WoodLight', S, {'UVScale': 1.0}, {'Tint': (1.05, .95, .8, 1)}, _ph('oak_wood_planks'))
-    M['M_Floor'] = _mi('MI_Floor', S, {'UVScale': .5, 'RoughMul': .45}, {}, _ph('old_wood_floor'))
+    # stylized (hand-painted) surfaces from the Dreamscape pack instead of the Poly Haven photo scans
+    M['M_Stone'] = _mi('MI_Stone', S, {'UVScale': .5}, {'Tint': (1.05, 1.02, .98, 1)}, _ds('Structures/T_Wall_01'))
+    M['M_Brick'] = _mi('MI_Brick', S, {'UVScale': .5}, {}, {'BaseTex': DS + 'Structures/T_BricksAtlas_01_C', 'NormalTex': DS + 'Structures/T_BricksAtlas_01_N'})
+    M['M_WoodBox'] = _mi('MI_WoodBox', S, {'UVScale': 1.0}, {'Tint': (1.0, .85, .7, 1)}, _ds('Tower/T_WoodBeam_01'))
+    M['M_WoodDark'] = _mi('MI_WoodDark', S, {'UVScale': 1.0}, {'Tint': (.72, .58, .48, 1)}, _ds('Tower/T_WoodBeam_01'))
+    M['M_WoodLight'] = _mi('MI_WoodLight', S, {'UVScale': 1.0}, {'Tint': (1.25, 1.12, .95, 1)}, _ds('Tower/T_WoodBeam_01'))
+    M['M_Floor'] = _mi('MI_Floor', S, {'UVScale': .5, 'RoughMul': .7}, {}, _ds('Tower/T_Floorboards_Tiling'))
     for k, col, r, met in [('M_Trim', (.92, .92, .9, 1), .5, 0), ('M_Glass', (.04, .07, .1, 1), .04, 0), ('M_Door', (.18, .3, .55, 1), .45, 0),
                            ('M_Metal', (.5, .52, .55, 1), .55, .3), ('M_Iron', (.06, .06, .07, 1), .45, 1), ('M_MailBlue', (.1, .28, .65, 1), .4, 0),
                            ('M_Red', (.8, .08, .06, 1), .4, 0), ('M_BinGreen', (.12, .3, .16, 1), .5, 0)]:
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
     # ground: stylized grass + dirt from the Stylized Nature pack (painted), Poly Haven sand + flagstones
-    M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': 1.2}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_TownSplat',
-                        'GrassBase': '/Game/Stylized_PBR_Nature/Terrain/T_Grass_1', 'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
-                        'SandArm': 'coast_sand_01_arm', 'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
+    M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.45, 1.3, 1.0, 1)}, dict(GROUND_TEX, Splat='T_TownSplat'))
     # Route 1 (tools/blender_route1.py): same layers, its own splat (460 m square centred on Blender (-160, 0) = UE (-16000, 0))
     G1 = master_ground('M_PBX_GroundR1', 46000.0, (-16000.0, 0.0))
-    M['M_GroundR1'] = _mi('MI_GroundR1', G1, {'GrassUV': 1.2}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_R1Splat',
-                          'GrassBase': '/Game/Stylized_PBR_Nature/Terrain/T_Grass_1', 'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm',
-                          'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
+    M['M_GroundR1'] = _mi('MI_GroundR1', G1, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.45, 1.3, 1.0, 1)}, dict(GROUND_TEX, Splat='T_R1Splat'))
     tw = unreal.load_asset('/Game/Shader_Water/MI_Water')          # Samples/TestWater stylized water
     M['M_Water'] = tw if tw else _mi('MI_Water', W)
     V = master_vertex(); master_cloth(); SK = master_sky()

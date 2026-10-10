@@ -18,6 +18,13 @@ namespace PBXAssets
 	UObject* FindByName(const FString& Folder, const FString& Name, UClass* Class);
 }
 
+/** cartoon proportions applied on top of the animation (component-space scale per body part) */
+struct FPBXStyle
+{
+	float Head = 1.f, Hand = 1.f, Foot = 1.f;   // uniform
+	float Limb = 1.f, Leg = 1.f, Chest = 1.f, Neck = 1.f;   // thickness across the bone
+};
+
 struct FPBXAnimLayer
 {
 	UAnimSequence* Seq = nullptr;
@@ -33,8 +40,10 @@ struct FPBXAnimProxy : public FAnimInstanceProxy
 	FPBXAnimProxy(UAnimInstance* In) : FAnimInstanceProxy(In) {}
 	static const int32 NumLayers = 6; // idle, walk, jog, sprint, fall, action
 	FPBXAnimLayer L[NumLayers];
+	FPBXStyle Style;
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate(FPoseContext& Output) override;
+	void Stylize(FPoseContext& Output) const;
 };
 
 UCLASS(Transient, NotBlueprintable)
@@ -57,6 +66,8 @@ public:
 
 	// game-thread state, copied to the proxy every frame
 	FPBXAnimLayer State[FPBXAnimProxy::NumLayers];
+	/** body proportions (set by APBXCharacterBase::ApplyLook) */
+	FPBXStyle Style;
 
 protected:
 	virtual void NativeInitializeAnimation() override;

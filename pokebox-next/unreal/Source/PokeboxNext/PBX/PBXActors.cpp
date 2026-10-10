@@ -105,6 +105,14 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 		for (int32 i = 0; i < Hair->GetNumMaterials(); i++)
 			if (UMaterialInstanceDynamic* MID = Hair->CreateAndSetMaterialInstanceDynamic(i)) MID->SetVectorParameterValue(TEXT("BaseColorFactor"), HairColor);
 	SetActorScale3D(FVector(Scale));
+	// cartoon proportions (council: no more bodybuilders): bigger head, hands and shoes, slim limbs, narrow chest.
+	// Children (actor scale < .8) get an even bigger head.
+	if (UPBXAnimInstance* A = Anim())
+	{
+		FPBXStyle S;
+		if (bQ) { S.Head = Scale < .8f ? 1.5f : 1.32f; S.Hand = 1.18f; S.Foot = 1.15f; S.Limb = .76f; S.Leg = .84f; S.Chest = .86f; S.Neck = .82f; }
+		A->Style = S;
+	}
 }
 
 void APBXCharacterBase::PlayAction(const FString& Short, bool bLoop, float Blend) { if (UPBXAnimInstance* A = Anim()) A->PlayAction(PBXAssets::Anim(Short), bLoop, Blend); }

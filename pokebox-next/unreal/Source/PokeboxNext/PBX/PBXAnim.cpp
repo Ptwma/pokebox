@@ -128,7 +128,10 @@ void FPBXAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
 {
 	FAnimInstanceProxy::PreUpdate(InAnimInstance, DeltaSeconds);
 	if (const UPBXAnimInstance* I = Cast<UPBXAnimInstance>(InAnimInstance))
+	{
 		for (int32 i = 0; i < NumLayers; i++) L[i] = I->State[i];
+		Style = I->Style;
+	}
 }
 
 bool FPBXAnimProxy::Evaluate(FPoseContext& Output)
@@ -157,5 +160,60 @@ bool FPBXAnimProxy::Evaluate(FPoseContext& Output)
 		}
 	}
 	if (!bAny) Output.ResetToRefPose();
+	Stylize(Output);
 	return true;
+}
+
+// Cartoon proportions on the Quaternius "superhero" bodies without touching the meshes or the animations:
+// per-bone scales on the final local pose. Rules give the wanted COMPONENT-space scale; parents' scales are divided
+// out (Unreal composes scale per axis), so e.g. hands stay round although the forearms are slimmed.
+// Thickness = the two axes across the bone (the bone's length axis is the direction to its child in the ref pose).
+// Hair, eyes, brows and the 3D clothes follow through the leader pose, so caps and hats grow with the head.
+void FPBXAnimProxy::Stylize(FPoseContext& Output) const
+{
+	if (Style.Head == 1.f && Style.Limb == 1.f) return;
+	struct FRule { const TCHAR* Bone; const TCHAR* Child; float Uni; float Thick; };
+	const FRule Rules[] = {
+		{ TEXT("spine_03"), TEXT("neck_01"), 1.f, Style.Chest },
+		{ TEXT("clavicle_l"), nullptr, 1.f, 1.f }, { TEXT("clavicle_r"), nullptr, 1.f, 1.f },
+		{ TEXT("neck_01"), TEXT("Head"), 1.f, Style.Neck },
+		{ TEXT("Head"), nullptr, Style.Head, 1.f },
+		{ TEXT("upperarm_l"), TEXT("lowerarm_l"), 1.f, Style.Limb }, { TEXT("upperarm_r"), TEXT("lowerarm_r"), 1.f, Style.Limb },
+		{ TEXT("lowerarm_l"), TEXT("hand_l"), 1.f, Style.Limb }, { TEXT("lowerarm_r"), TEXT("hand_r"), 1.f, Style.Limb },
+		{ TEXT("hand_l"), nullptr, Style.Hand, 1.f }, { TEXT("hand_r"), nullptr, Style.Hand, 1.f },
+		{ TEXT("thigh_l"), TEXT("calf_l"), 1.f, Style.Leg }, { TEXT("thigh_r"), TEXT("calf_r"), 1.f, Style.Leg },
+		{ TEXT("calf_l"), TEXT("foot_l"), 1.f, Style.Leg }, { TEXT("calf_r"), TEXT("foot_r"), 1.f, Style.Leg },
+		{ TEXT("foot_l"), nullptr, Style.Foot, 1.f }, { TEXT("foot_r"), nullptr, Style.Foot, 1.f } };
+	const FBoneContainer& BC = Output.Pose.GetBoneContainer();
+	auto Compact = [&](const TCHAR* N) -> int32
+	{
+		if (!N) return INDEX_NONE;
+		const int32 Mesh = BC.GetPoseBoneIndexForBoneName(FName(N)); if (Mesh == INDEX_NONE) return INDEX_NONE;
+		return BC.MakeCompactPoseIndex(FMeshPoseBoneIndex(Mesh)).GetInt();
+	};
+	const int32 Num = Output.Pose.GetNumBones();
+	TArray<FVector> Want; Want.Init(FVector::ZeroVector, Num);     // zero = no rule: inherit
+	for (const FRule& R : Rules)
+	{
+		const int32 B = Compact(R.Bone); if (B == INDEX_NONE) continue;
+		FVector W(R.Uni);
+		const int32 C = Compact(R.Child);
+		if (C != INDEX_NONE && R.Thick != 1.f)
+		{
+			const FVector T = BC.GetRefPoseTransform(FCompactPoseBoneIndex(C)).GetTranslation().GetAbs();
+			const int32 Ax = T.X >= T.Y && T.X >= T.Z ? 0 : T.Y >= T.Z ? 1 : 2;
+			W = FVector(R.Thick); W[Ax] = R.Uni;
+		}
+		Want[B] = W;
+	}
+	TArray<FVector> Acc; Acc.Init(FVector::OneVector, Num);       // accumulated component-space scale (per axis)
+	for (int32 i = 0; i < Num; i++)
+	{
+		const FCompactPoseBoneIndex I(i);
+		const int32 P = BC.GetParentBoneIndex(I).GetInt();
+		const FVector Parent = P >= 0 ? Acc[P] : FVector::OneVector;
+		FTransform& T = Output.Pose[I];
+		if (!Want[i].IsZero()) T.SetScale3D(Want[i] / Parent);
+		Acc[i] = Parent * T.GetScale3D();
+	}
 }
