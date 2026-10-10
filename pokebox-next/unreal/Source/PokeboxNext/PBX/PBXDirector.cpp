@@ -238,6 +238,7 @@ void APBXDirector::PlacePlayer(const FPBXSpot& S)
 	Player->SetActorLocationAndRotation(FVector(S.Pos.X, S.Pos.Y, Z + 95.f), FRotator(0, S.Yaw, 0), false, nullptr, ETeleportType::TeleportPhysics);
 	Player->GetCharacterMovement()->StopMovementImmediately();
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetControlRotation(FRotator(-12, S.Yaw, 0));
+	Player->SnapCamera();
 	LastSafe = Player->GetActorLocation();
 }
 

@@ -142,6 +142,14 @@ APBXPlayer::APBXPlayer()
 	AutoPossessAI = EAutoPossessAI::Disabled;
 }
 
+void APBXPlayer::SnapCamera() { if (Boom) Boom->bEnableCameraLag = false; SnapFrames = 3; }
+
+void APBXPlayer::Tick(float Dt)
+{
+	Super::Tick(Dt);
+	if (SnapFrames > 0 && --SnapFrames == 0 && Boom) Boom->bEnableCameraLag = true;
+}
+
 void APBXPlayer::SetRunning(bool bRun) { bRunning = bRun; GetCharacterMovement()->MaxWalkSpeed = bRun ? 640.f : 380.f; }
 void APBXPlayer::Zoom(float D) { Boom->TargetArmLength = FMath::Clamp(Boom->TargetArmLength - D * 40.f, 220.f, 760.f); }
 

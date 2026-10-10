@@ -54,7 +54,11 @@ public:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UCameraComponent> Camera;
 	void SetRunning(bool bRun);
 	void Zoom(float D);
+	/** after a teleport: no camera lag for a couple of frames, so the camera doesn't trail from the old place (through walls / underground) */
+	void SnapCamera();
+	virtual void Tick(float Dt) override;
 	bool bRunning = false;
+	int32 SnapFrames = 0;
 };
 
 UCLASS()
