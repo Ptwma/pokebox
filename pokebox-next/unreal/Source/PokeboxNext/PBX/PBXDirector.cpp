@@ -92,6 +92,12 @@ bool APBXDirector::LoadData()
 	SafeSpot = ReadSpot(Bd->GetObjectField(TEXT("safe")));
 	for (const TSharedPtr<FJsonValue>& V : Data->GetArrayField(TEXT("signs")))
 		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")) });
+	const TSharedPtr<FJsonObject>* Tr = nullptr;
+	if (Data->TryGetObjectField(TEXT("train"), Tr))
+	{
+		bHasTrain = true; TrainBoard = ReadSpot((*Tr)->GetObjectField(TEXT("board"))); TrainCam = ReadSpot((*Tr)->GetObjectField(TEXT("cam")));
+		TrainDir = JVec(*Tr, TEXT("dir")).GetSafeNormal(); TrainExitY = (*Tr)->GetNumberField(TEXT("exit_y"));
+	}
 	return true;
 }
 
@@ -140,7 +146,11 @@ void APBXDirector::SpawnWorld()
 	Player = Cast<APBXPlayer>(UGameplayStatics::GetPlayerPawn(this, 0));
 	Cam = W->SpawnActor<ACameraActor>(FVector(4200, -3400, 2000), FRotator(-24, 140, 0));
 	if (Cam) { Cam->GetCameraComponent()->SetFieldOfView(70.f); Cam->GetCameraComponent()->bConstrainAspectRatio = false; }
-	for (TActorIterator<AActor> It(W); It; ++It) if (It->ActorHasTag(TEXT("PBX_GateBarrier"))) GateBarrier.Add(*It);
+	for (TActorIterator<AActor> It(W); It; ++It)
+	{
+		if (It->ActorHasTag(TEXT("PBX_GateBarrier"))) GateBarrier.Add(*It);
+		if (It->ActorHasTag(TEXT("PBX_Train"))) { Train.Add(*It); It->GetRootComponent()->SetMobility(EComponentMobility::Movable); }
+	}
 	SpawnNPCs();
 	// readable signs (comic lettering on both faces of the board)
 	for (int32 i = 0; i < Signs.Num(); i++)
@@ -196,7 +206,7 @@ void APBXDirector::SpawnNPCs()
 		FString Outfit; O->TryGetStringField(TEXT("outfit"), Outfit);
 		const TArray<TSharedPtr<FJsonValue>>* HC = nullptr; FLinearColor HairC(0, 0, 0, 0);
 		if (O->TryGetArrayField(TEXT("hair_color"), HC) && HC->Num() >= 3) HairC = FLinearColor((*HC)[0]->AsNumber(), (*HC)[1]->AsNumber(), (*HC)[2]->AsNumber(), 1.f);
-		N->ApplyLook(O->GetStringField(TEXT("body")) == TEXT("m"), O->GetStringField(TEXT("hair")), Scale, Outfit, HairC);
+		N->ApplyLook(O->GetStringField(TEXT("body")), O->GetStringField(TEXT("hair")), Scale, Outfit, HairC);
 		N->IdleAnim = O->GetStringField(TEXT("anim")); N->Home = N->GetActorLocation(); N->HomeYaw = Yaw;
 		N->ReturnToIdle();
 		NPCs.Add(N->Id, N);
@@ -281,6 +291,7 @@ void APBXDirector::Tick(float Dt)
 {
 	Super::Tick(Dt);
 	if (!UI.IsValid()) return;
+	TickTrain(Dt);
 	// script queue
 	if (Queue.Num())
 	{
@@ -396,6 +407,7 @@ void APBXDirector::FindNearest()
 	if (!BedPos.IsZero()) Try(BedPos, 210.f, EKind::Bed, 0, NAME_None);
 	if (Step() == EPBXStep::Starter && !StarterTable.IsZero()) Try(StarterTable, 260.f, EKind::Table, 0, NAME_None);
 	for (int32 i = 0; i < Signs.Num(); i++) Try(Signs[i].Pos, 230.f, EKind::Sign, i, NAME_None);
+	if (bHasTrain && !bTrainGo) Try(TrainBoard.Pos, 320.f, EKind::Train, 0, NAME_None);
 }
 
 void APBXDirector::UpdatePrompt()
@@ -408,6 +420,7 @@ void APBXDirector::UpdatePrompt()
 	case EKind::Bed: T = TEXT("[E]  Rest (heal your team & save)"); break;
 	case EKind::Table: T = TEXT("[E]  Look at Dr. Vale's cards"); break;
 	case EKind::Sign: T = TEXT("[E]  Read the sign"); break;
+	case EKind::Train: T = Step() >= EPBXStep::Gate ? TEXT("[E]  Board the train to Mistvale") : TEXT("[E]  Look at the train"); break;
 	default: break;
 	}
 	UI->Prompt = T;
@@ -422,6 +435,10 @@ void APBXDirector::Interact()
 	case EKind::Bed: Rest(); break;
 	case EKind::Table: if (TObjectPtr<APBXNPC>* V = NPCs.Find(TEXT("vale"))) TalkTo(*V); break;
 	case EKind::Sign: QSay({ { TEXT("note"), Signs[NearIndex].Text.Replace(TEXT("\n"), TEXT(" — ")) } }); break;
+	case EKind::Train:
+		if (Step() >= EPBXStep::Gate) BoardTrain();
+		else QSay({ { TEXT("conductor"), TEXT("The 10:15 to Mistvale, love. Rangers ride free — once Dr. Vale signs your licence.") } });
+		break;
 	default: break;
 	}
 }
@@ -469,9 +486,9 @@ void APBXDirector::Rest()
 	if (Step() == EPBXStep::Rest)
 	{
 		QSay({ { TEXT("mom"), TEXT("Oh! A letter came for you while you slept. It's from Dr. Vale.") },
-			   { TEXT("note"), TEXT("\"Ranger — Rho told me everything. Your licence is signed! Route 1 is open: head west through the gate to Mistvale.\"") },
+			   { TEXT("note"), TEXT("\"Ranger — Rho told me everything. Your licence is signed! The landslide still blocks Route 1, so take the train from Lumen Station to Mistvale.\"") },
 			   { TEXT("mom"), TEXT("Your first real journey... Take care out there. And call your mother!") } });
-		QDo([this] { SetStep(EPBXStep::Gate); Splash(TEXT("ROUTE 1 IS OPEN"), TEXT("Head west through the gate")); SaveNow(false); });
+		QDo([this] { SetStep(EPBXStep::Gate); Splash(TEXT("LICENCE SIGNED"), TEXT("Catch the train at Lumen Station")); SaveNow(false); });
 	}
 }
 
@@ -538,8 +555,13 @@ TArray<FPBXLine> APBXDirector::LinesFor(FName Who) const
 	if (Who == TEXT("kid")) return { { Who, P ? FString::Printf(TEXT("Whoa! Is that YOUR %s?! When I grow up I'm gonna have a hundred Echoes!"), *PName) : TEXT("When I grow up I'm gonna be a Ranger and have a hundred Echoes!") } };
 	if (Who == TEXT("guard"))
 	{
-		if (S >= EPBXStep::Gate) return { { Who, TEXT("Licence checks out. Safe travels on Route 1, Ranger!") } };
-		return { { Who, TEXT("Route 1 is closed to new Rangers until Dr. Vale signs your licence. Rules are rules.") } };
+		if (S >= EPBXStep::Gate) return { { Who, TEXT("Licence signed? Then don't wait for us to dig this out — the train to Mistvale leaves from Lumen Station, east end of town.") } };
+		return { { Who, TEXT("Route 1's shut. Landslide came down on Tuesday and took half the road with it.") }, { Who, TEXT("Until it's cleared, the only way to Mistvale is the train. Licensed Rangers only, mind.") } };
+	}
+	if (Who == TEXT("conductor"))
+	{
+		if (S >= EPBXStep::Gate) return { { Who, TEXT("A signed licence! Dr. Vale's handwriting, no mistaking it.") }, { Who, TEXT("All aboard whenever you're ready — the middle carriage, platform side.") } };
+		return { { Who, TEXT("Lumen Station, end of the line! Or the start of it, depends which way you're facing.") }, { Who, TEXT("Mistvale's two hours through the mountain. Rangers ride free with a signed licence.") } };
 	}
 	return { { Who, TEXT("...") } };
 }
@@ -578,7 +600,7 @@ void APBXDirector::RefreshWorld()
 		KV.Value->SetMarker(M);
 	}
 	// the gate
-	for (AActor* A : GateBarrier) if (A) { A->SetActorHiddenInGame(S >= EPBXStep::Gate); A->SetActorEnableCollision(S < EPBXStep::Gate); }
+	for (AActor* A : GateBarrier) if (A) { A->SetActorHiddenInGame(false); A->SetActorEnableCollision(true); }   // Route 1: landslide
 	// cards on the table
 	for (int32 i = 0; i < TableCards.Num(); i++) if (TableCards[i])
 	{
@@ -601,7 +623,7 @@ FVector APBXDirector::ObjectiveTarget(FString& Label) const
 	case EPBXStep::Capture: Label = TEXT("Catch a wild Echo in the tall grass by the west road"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : (Grass.Num() ? FVector(Grass[0].GetCenter(), 0) : FVector::ZeroVector);
 	case EPBXStep::RhoBattle: Label = TEXT("Rho wants a battle — meet him at the Route 1 gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : NpcLoc(TEXT("rho"));
 	case EPBXStep::Rest: Label = TEXT("Rest your team at home (your bed)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : BedPos) : DoorOf(TEXT("house"), true);
-	case EPBXStep::Gate: Label = TEXT("Route 1 is open — head west through the gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : GatePos;
+	case EPBXStep::Gate: Label = TEXT("Catch the train to Mistvale at Lumen Station"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : (bHasTrain ? TrainBoard.Pos : GatePos);
 	default: Label = TEXT("Chapter complete! Explore Lumen Harbor"); return FVector::ZeroVector;
 	}
 }
@@ -640,20 +662,21 @@ void APBXDirector::StoryTick(float Dt)
 	SafeT += Dt; WarnT -= Dt;
 	if (!Inside())
 	{
-		const float R = FVector2D::Distance(FVector2D(P.X, P.Y), BoundsCenter);
-		const bool bGateClosed = S < EPBXStep::Gate && P.X < GatePos.X - 150.f && FMath::Abs(P.Y - GatePos.Y) < 2500.f;
-		if (P.Z < WaterZ || R > BoundsRadius || bGateClosed)
+		auto Gate = [&](const FVector& Q) { return Q.X < GatePos.X - 150.f && FMath::Abs(Q.Y - GatePos.Y) < 2500.f; };
+		auto Bad = [&](const FVector& Q) { return Q.Z < WaterZ || FVector2D::Distance(FVector2D(Q.X, Q.Y), BoundsCenter) > BoundsRadius || Gate(Q); };
+		const bool bGateClosed = Gate(P);
+		if (Bad(P))
 		{
+			// old saves (chapter end used to be past the gate) can leave LastSafe outside too: fall back to the town square
+			if (Bad(LastSafe)) LastSafe = SafeSpot.Pos + FVector(0, 0, 100);
 			TeleportPlayer(LastSafe, Player->GetActorRotation().Yaw);
 			if (WarnT <= 0.f)
 			{
 				WarnT = 3.f;
-				Toast(bGateClosed ? TEXT("The gate warden waves you back: Route 1 needs a signed licence.") : P.Z < WaterZ ? TEXT("Too deep! Your Echo can't swim yet.") : TEXT("The forest is too thick here — stay near the town."));
+				Toast(bGateClosed ? TEXT("Route 1 is buried under a landslide. The train is the way to Mistvale.") : P.Z < WaterZ ? TEXT("Too deep! Your Echo can't swim yet.") : TEXT("The forest is too thick here — stay near the town."));
 			}
 		}
 		else if (SafeT > .5f && Player->GetCharacterMovement()->IsMovingOnGround()) { LastSafe = P; SafeT = 0.f; }
-		// leaving through the open gate = chapter complete
-		if (S == EPBXStep::Gate && P.X < GateExitX && FMath::Abs(P.Y - GatePos.Y) < 600.f) CompleteChapter();
 	}
 	else if (SafeT > .5f && Player->GetCharacterMovement()->IsMovingOnGround()) { LastSafe = P; SafeT = 0.f; }
 	// walking into a wild Echo starts a battle
@@ -691,6 +714,51 @@ void APBXDirector::UpdateWilds(float Dt)
 			const FVector2D Pt(FMath::FRandRange(E->WanderBox.Min.X, E->WanderBox.Max.X), FMath::FRandRange(E->WanderBox.Min.Y, E->WanderBox.Max.Y));
 			E->PlaceAt(FVector(Pt, 0)); E->SetFaint(false); E->SetActorHiddenInGame(false); E->Mode = APBXEcho::EMode::Wander; E->PopIn();
 		}
+	}
+}
+
+void APBXDirector::BoardTrain()
+{
+	if (bTrainGo || !Train.Num()) { CompleteChapter(); return; }
+	QSay({ { TEXT("conductor"), TEXT("All aboard for Mistvale! Mind the gap, Ranger.") } });
+	QFade(1.f, .5f);
+	QDo([this]
+	{
+		Player->SetActorHiddenInGame(true); if (Partner) Partner->SetActorHiddenInGame(true);
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			Cam->SetActorLocationAndRotation(TrainCam.Pos, FRotator(-8.f, TrainCam.Yaw, 0)); Cam->GetCameraComponent()->SetFieldOfView(62.f); PC->SetViewTarget(Cam);
+		}
+		UI->Prompt.Empty(); bTrainGo = true; TrainV = 0.f;
+	});
+	QFade(0.f, .6f);
+	QWait(1.2f);
+	QDo([this] { Splash(TEXT("NEXT STOP: MISTVALE"), TEXT("Chapter 1 complete")); });
+	QWait(5.5f);
+	QFade(1.f, .8f);
+	QDo([this]
+	{
+		Player->SetActorHiddenInGame(false); if (Partner) Partner->SetActorHiddenInGame(false);
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);
+		CompleteChapter();
+	});
+	QFade(0.f, .5f);
+}
+
+void APBXDirector::TickTrain(float Dt)
+{
+	if (!bTrainGo) return;
+	TrainV = FMath::Min(TrainV + 260.f * Dt, 2200.f);          // pulls away gently, then speeds up into the tunnel
+	for (AActor* A : Train) if (A)
+	{
+		A->AddActorWorldOffset(TrainDir * TrainV * Dt);
+		if (A->GetActorLocation().Y > TrainExitY) A->SetActorHiddenInGame(true);
+	}
+	// the camera pans to follow the locomotive
+	if (Cam && Train.Num() && Train[0] && !Train[0]->IsHidden())
+	{
+		const FRotator R = (Train[0]->GetActorLocation() + FVector(0, 0, 250) - Cam->GetActorLocation()).Rotation();
+		Cam->SetActorRotation(FMath::RInterpTo(Cam->GetActorRotation(), R, Dt, 2.5f));
 	}
 }
 
@@ -1085,7 +1153,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		break;
 	}
 	case EMenu::Gender:
-		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Pick how your Ranger looks"), { Opt(TEXT("Ranger · he / him"), TEXT("short hair, red jacket")), Opt(TEXT("Ranger · she / her"), TEXT("long hair, red jacket")), Opt(TEXT("Back"), TEXT("")) }, false,
+		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Pick how your Ranger looks"), { Opt(TEXT("Ranger · he / him"), TEXT("hoodie, sneakers, big grin")), Opt(TEXT("Ranger · she / her"), TEXT("bucket hat, red skirt, backpack")), Opt(TEXT("Back"), TEXT("")) }, false,
 			[this](int32 i) { if (i == 2) ShowMenu(EMenu::Title); else StartNewGame(i == 0); });
 		break;
 	case EMenu::Pause:
@@ -1131,7 +1199,7 @@ void APBXDirector::StartNewGame(bool bMale)
 	for (APBXEcho* W : Wilds) if (W) W->Destroy(); Wilds.Reset();
 	Queue.Reset(); QueueGen++; StepT = 0.f;
 	UI->Fade = 1.f;
-	Player->ApplyLook(bMale, bMale ? TEXT("Hair_SimpleParted") : TEXT("Hair_Long"), 1.f, bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
+	Player->ApplyLook(bMale ? TEXT("boy") : TEXT("f"), TEXT("Hair_Long"), .9f, bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
 	PlacePlayer(NewGameSpot);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);
@@ -1149,7 +1217,7 @@ void APBXDirector::ContinueGame()
 	if (!Game->Load()) { Toast(TEXT("No saved game.")); ShowMenu(EMenu::Title); return; }
 	CloseChoice(); Menu = EMenu::None; Queue.Reset(); QueueGen++; StepT = 0.f;
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
-	Player->ApplyLook(Game->State->bMale, Game->State->bMale ? TEXT("Hair_SimpleParted") : TEXT("Hair_Long"), 1.f, Game->State->bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
+	Player->ApplyLook(Game->State->bMale ? TEXT("boy") : TEXT("f"), TEXT("Hair_Long"), .9f, Game->State->bMale ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);
 	FPBXSpot S = NewGameSpot; if (Game->State->bHasPos) { S.Pos = Game->State->Pos - FVector(0, 0, 95.f); S.Yaw = Game->State->Yaw; }
@@ -1235,10 +1303,13 @@ void APBXDirector::AutoTick(float Dt)
 			Shot(TEXT("19_rested"));
 			if (Step() == EPBXStep::RhoBattle) { AutoStep = 20; AutoStepT = 0.f; break; }
 			if (Step() != EPBXStep::Gate) { Fail(TEXT("expected Gate step after rest")); break; }
-			TeleportPlayer(GatePos + FVector(700, 0, 0), 180.f); AutoNext();
+			PlacePlayer(TrainBoard); AutoNext();
 		} break;
-	case 26: if (AutoStepT > 2.f) { Shot(TEXT("20_gate_open")); TeleportPlayer(FVector(GateExitX - 250.f, GatePos.Y, GatePos.Z), 180.f); AutoNext(); } break;
-	case 27: if (Menu == EMenu::Complete && AutoStepT > 1.f) { Shot(TEXT("21_chapter_complete")); AutoNext(); } break;
+	case 26: if (AutoStepT > 2.f && Idle()) { Shot(TEXT("20_station")); FindNearest(); if (NearKind == EKind::Train) Interact(); else { Fail(TEXT("train not in reach")); BoardTrain(); } AutoNext(); } break;
+	case 27: { static bool bTrainShot = false; if (bTrainGo && !bTrainShot && TrainV > 900.f) { bTrainShot = true; Shot(TEXT("21_train_departs")); } }
+		if (Menu == EMenu::Complete && AutoStepT > 1.f) { Shot(TEXT("21b_chapter_complete")); AutoNext(); }
+		else if (UI->Mode == EPBXUIMode::Dialogue && AutoStepT > .8f) InConfirm();
+		break;
 	case 28:
 	{
 		// save -> new game -> load must give the same progress back

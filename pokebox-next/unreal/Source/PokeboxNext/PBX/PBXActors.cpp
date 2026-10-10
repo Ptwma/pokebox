@@ -41,7 +41,8 @@ APBXCharacterBase::APBXCharacterBase()
 	Eyes = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Eyes")); Eyes->SetupAttachment(GetMesh());
 	Brows = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Brows")); Brows->SetupAttachment(GetMesh());
 	Hair = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Hair")); Hair->SetupAttachment(GetMesh());
-	for (USkeletalMeshComponent* C : { Eyes.Get(), Brows.Get(), Hair.Get() }) C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Clothes = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Clothes")); Clothes->SetupAttachment(GetMesh());
+	for (USkeletalMeshComponent* C : { Eyes.Get(), Brows.Get(), Hair.Get(), Clothes.Get() }) C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	bUseControllerRotationYaw = false;
 	UCharacterMovementComponent* M = GetCharacterMovement();
 	M->bOrientRotationToMovement = true; M->RotationRate = FRotator(0, 600, 0);
@@ -53,26 +54,39 @@ APBXCharacterBase::APBXCharacterBase()
 
 UPBXAnimInstance* APBXCharacterBase::Anim() const { return Cast<UPBXAnimInstance>(GetMesh()->GetAnimInstance()); }
 
-void APBXCharacterBase::ApplyLook(bool bMale, const FString& HairName, float Scale, const FString& Outfit, FLinearColor HairColor)
+void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairName, float Scale, const FString& Outfit, FLinearColor HairColor)
 {
+	const bool bBoy = BodyKind == TEXT("boy");
+	const bool bMale = BodyKind != TEXT("f");
 	bMaleLook = bMale;
+	USkeletalMesh* B = nullptr;
 	const FString Dir = bMale ? TEXT("/Game/PBX/Characters/Superhero_Male_FullBody/SkeletalMeshes/") : TEXT("/Game/PBX/Characters/Superhero_Female_FullBody/SkeletalMeshes/");
-	const FString Body = bMale ? TEXT("SuperHero_Male") : TEXT("Superhero_Female");
 	auto Load = [&](const FString& N) { return LoadObject<USkeletalMesh>(nullptr, *(Dir + N + TEXT(".") + N)); };
-	if (USkeletalMesh* B = Load(Body))
+	if (bBoy) B = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Fab/Free_Stylized_Boy_Character/boy1.boy1"));
+	if (!B) B = Load(bMale ? TEXT("SuperHero_Male") : TEXT("Superhero_Female"));
+	const bool bQ = !bBoy || !B || !B->GetPathName().Contains(TEXT("Stylized_Boy"));
+	if (B)
 	{
 		GetMesh()->SetSkeletalMesh(B);
 		GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
 		GetMesh()->SetAnimInstanceClass(UPBXAnimInstance::StaticClass());
 	}
-	else UE_LOG(LogTemp, Error, TEXT("[PBX] body mesh missing: %s%s"), *Dir, *Body);
-	Eyes->SetSkeletalMesh(Load(TEXT("Eyes"))); Brows->SetSkeletalMesh(Load(TEXT("Eyebrows")));
+	else UE_LOG(LogTemp, Error, TEXT("[PBX] body mesh missing (%s)"), *BodyKind);
+	// the stylized boy is a child model (1.17 m): scale the mesh, keep the capsule; feet stay on the capsule bottom
+	GetMesh()->SetRelativeScale3D(FVector(bQ ? 1.f : 1.42f));
+	Eyes->SetSkeletalMesh(bQ ? Load(TEXT("Eyes")) : nullptr); Brows->SetSkeletalMesh(bQ ? Load(TEXT("Eyebrows")) : nullptr);
 	USkeletalMesh* H = nullptr;
-	if (!HairName.IsEmpty()) H = Cast<USkeletalMesh>(PBXAssets::FindByName(TEXT("/Game/PBX/Characters/Hair"), HairName, USkeletalMesh::StaticClass()));
+	if (bQ && !HairName.IsEmpty()) H = Cast<USkeletalMesh>(PBXAssets::FindByName(TEXT("/Game/PBX/Characters/Hair"), HairName, USkeletalMesh::StaticClass()));
 	Hair->SetSkeletalMesh(H); Hair->SetVisibility(H != nullptr);
-	for (USkeletalMeshComponent* C : { Eyes.Get(), Brows.Get(), Hair.Get() }) C->SetLeaderPoseComponent(GetMesh());
-	// clothes: the bodies are bare base meshes, outfits are painted textures (tools/outfits.py)
-	if (!Outfit.IsEmpty())
+	USkeletalMesh* C = nullptr;
+	if (bQ && !Outfit.IsEmpty()) C = Cast<USkeletalMesh>(PBXAssets::FindByName(TEXT("/Game/PBX/Characters/Clothes"), TEXT("SK_Cloth_") + Outfit, USkeletalMesh::StaticClass()));
+	Clothes->SetSkeletalMesh(C); Clothes->SetVisibility(C != nullptr);
+	if (C)
+		if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Cloth.M_PBX_Cloth")))
+			for (int32 i = 0; i < Clothes->GetNumMaterials(); i++) Clothes->SetMaterial(i, CM);
+	for (USkeletalMeshComponent* X : { Eyes.Get(), Brows.Get(), Hair.Get(), Clothes.Get() }) X->SetLeaderPoseComponent(GetMesh());
+	// body paint under the clothes (tools/outfits.py): same palette, so seams between garments never show bare skin
+	if (bQ && !Outfit.IsEmpty())
 	{
 		const FString N = TEXT("T_Outfit_") + Outfit;
 		if (UTexture2D* T = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/PBX/Characters/Outfits/%s.%s"), *N, *N)))

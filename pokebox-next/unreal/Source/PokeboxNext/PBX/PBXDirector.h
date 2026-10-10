@@ -42,6 +42,9 @@ private:
 	FVector GatePos = FVector::ZeroVector; float GateExitX = 0.f; FVector2D BoundsCenter = FVector2D::ZeroVector; float BoundsRadius = 9000.f, WaterZ = -110.f; FPBXSpot SafeSpot;
 	FVector StarterTable = FVector::ZeroVector, BedPos = FVector::ZeroVector;
 	struct FSign { FVector Pos; FString Text; }; TArray<FSign> Signs;
+	// railway: the train at Lumen Station is the way out of town (chapter end)
+	FPBXSpot TrainBoard, TrainCam; FVector TrainDir = FVector(0, 1, 0); float TrainExitY = 0.f; bool bHasTrain = false;
+	bool bTrainGo = false; float TrainV = 0.f;
 	bool LoadData();
 	FPBXSpot ReadSpot(const TSharedPtr<FJsonObject>& O) const;
 
@@ -51,6 +54,9 @@ private:
 	UPROPERTY() TMap<FName, TObjectPtr<APBXNPC>> NPCs;
 	UPROPERTY() TArray<TObjectPtr<APBXEcho>> Wilds;
 	UPROPERTY() TArray<TObjectPtr<AActor>> GateBarrier;
+	UPROPERTY() TArray<TObjectPtr<AActor>> Train;
+	void BoardTrain();
+	void TickTrain(float Dt);
 	UPROPERTY() TArray<TObjectPtr<AStaticMeshActor>> TableCards;
 	UPROPERTY() TArray<TObjectPtr<UTexture2D>> CardTex;
 	UPROPERTY() TObjectPtr<ACameraActor> Cam;
@@ -83,7 +89,7 @@ private:
 	bool Busy() const { return Queue.Num() > 0; }
 
 	// ---- interactions
-	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign };
+	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train };
 	EKind NearKind = EKind::None; int32 NearIndex = -1; FName NearNPC;
 	void FindNearest();
 	void Interact();

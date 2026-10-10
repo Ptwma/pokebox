@@ -285,15 +285,22 @@ def trash_bin():
 
 # ------------------------------------------------------------------ ground
 TOWN = dict(size=220.0, res=176)
+TRACK_X = 40.0                       # railway along x = 40 (east edge of town), tunnel portal at the north end
+TRACK_Y0, TRACK_Y1 = -113.0, 27.0    # tunnel mouth .. buffer stop
+PLATFORM = (34.6, 38.4, -20.0, 24.0) # x0, x1, y0, y1 (top at +0.55 m)
 def height(x, y):
     """flat village plateau, soft hills inland, slope down to the beach on the south (+y)"""
     h = 0.0
     h += .35 * math.sin(x * .07) * math.cos(y * .05) + .25 * math.sin(x * .13 + 1.3) * math.sin(y * .11 + .4)
     d = math.hypot(x, y + 10)
     h *= min(1, max(0, (d - 30) / 25))              # village core stays flat
-    ring = max(0, d - 70); h += ring * ring * .004  # hills around (forest edge)
+    ring = max(0, d - 70); h += ring * ring * .004 * (1 - min(1, max(0, (y - 25) / 20)))  # hills around (forest edge), not on the sea side
     if y > 42: h -= (y - 42) * .32                  # beach slope
     if y > 52: h -= (y - 52) * .25                  # under the sea
+    # railway: a flat bed (a cutting through the hills) from the station north to the tunnel in the mountains
+    if y < 30:
+        k = min(1, max(0, (abs(x - TRACK_X) - 4.0) / 7.0)); k = k * k * (3 - 2 * k)
+        h = h * k
     return h
 
 def path_mask(x, y, plan):
@@ -351,6 +358,240 @@ def water_plane():
     bm = bmesh.new(); bmesh.ops.create_grid(bm, x_segments=40, y_segments=20, size=1)
     bmesh.ops.scale(bm, vec=Vector((1600, 700, 1)), verts=bm.verts)
     ob = mesh_obj('SM_Water', bm); set_mat(ob, 'M_Water'); return export(ob, 'SM_Water')
+
+
+# ------------------------------------------------------------------ railway (station, platform, track, tunnel, train)
+def station_building():
+    return house('SM_Station', 8.0, 5.5, 3.4, 'M_Roof_Green', 'M_Siding_Cream', porch=True, chimney=False)
+
+def platform():
+    x0, x1, y0, y1 = PLATFORM; W, L = x1 - x0, y1 - y0; cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    P = [box('pf_body', W, L, .55, (0, 0, 0), 'M_Stone', bevel=.03),
+         box('pf_edge', .35, L, .06, (W / 2 - .17, 0, .55), 'M_EdgeYellow', bevel=.0)]       # yellow safety line on the track side
+    for i in range(4):                                                                    # steps up from the road end
+        P.append(box(f'pf_step{i}', 2.4, .35, .14 * (i + 1), (-W / 2 - .2 - (3 - i) * .35 + .17, -L / 2 + 26, 0), 'M_Stone', bevel=.02))
+    # canopy over the middle third: iron posts + a pitched sheet roof
+    for k in range(5):
+        y = -8 + k * 4.2
+        P.append(cyl(f'pf_post{k}', .09, 3.4, (-W / 2 + .5, y - cy + cy, .55), 'M_Iron'))
+    P.append(box('pf_roof', W + 1.0, 18.5, .14, (.1, .4, 3.95), 'M_Roof_Green', rot=(0, math.radians(-7), 0), bevel=.02))
+    P.append(box('pf_fascia', .12, 18.5, .3, (W / 2 + .55, .4, 3.75), 'M_Trim', bevel=.0))
+    # benches, clock, sign posts
+    for y in (-4.0, 4.0):
+        P += [box(f'pf_bs{y}', .45, 1.8, .07, (-W / 2 + 1.0, y, 1.0), 'M_WoodLight'), box(f'pf_bb{y}', .07, 1.8, .4, (-W / 2 + .8, y, 1.1), 'M_WoodLight')]
+        for s_ in (-1, 1): P.append(box(f'pf_bl{y}{s_}', .45, .08, .45, (-W / 2 + 1.0, y + s_ * .8, .55), 'M_Iron'))
+    P.append(cyl('pf_clockpole', .06, 2.6, (0, 9.5, .55), 'M_Iron'))
+    P.append(cyl('pf_clock', .32, .14, (0, 9.5 + .07, 3.4), 'M_Trim', rot=(math.pi / 2, 0, 0), seg=20))
+    P.append(cyl('pf_clockrim', .36, .1, (0, 9.5 + .05, 3.4), 'M_Iron', rot=(math.pi / 2, 0, 0), seg=20))
+    ob = join(P, 'SM_Platform'); return ob
+
+def track():
+    """two rails on sleepers on a gravel bed, from the tunnel mouth to the buffer stop (local x = 0 is the track centre)"""
+    L = TRACK_Y1 - TRACK_Y0; cy = (TRACK_Y0 + TRACK_Y1) / 2
+    P = [box('tr_bed', 3.6, L, .22, (0, 0, -.05), 'M_Gravel', bevel=.0)]
+    n = int(L / .65)
+    for i in range(n): P.append(box(f'tr_sl{i}', 2.5, .24, .12, (0, -L / 2 + .3 + i * .65, .14), 'M_WoodDark', bevel=.0))
+    for s_ in (-1, 1): P.append(box(f'tr_rail{s_}', .09, L, .14, (s_ * .72, 0, .26), 'M_Metal', bevel=.0))
+    # buffer stop at the south end
+    y = L / 2 - .4
+    P += [box('tr_bufbeam', 2.4, .35, .4, (0, y, .55), 'M_Red', bevel=.03), box('tr_bufpost0', .25, .6, .9, (-.9, y + .2, .1), 'M_Iron'),
+          box('tr_bufpost1', .25, .6, .9, (.9, y + .2, .1), 'M_Iron')]
+    for s_ in (-1, 1): P.append(cyl(f'tr_bufpad{s_}', .16, .2, (s_ * .72, y - .17, .75), 'M_Iron', rot=(math.pi / 2, 0, 0), seg=12))
+    return join(P, 'SM_Track')
+
+def tunnel_portal():
+    """stone arch built into the mountain face; the opening is 5.6 m wide x 6.4 m high, dark inside"""
+    P = []; w, h, d = 5.6, 4.6, 1.6
+    for s_ in (-1, 1): P.append(box(f'tp_pier{s_}', 2.2, d, h, (s_ * (w / 2 + 1.1), 0, 0), 'M_Stone', bevel=.05))
+    n = 11
+    for i in range(n):            # voussoirs of a round arch
+        a0 = math.pi * i / n; a1 = math.pi * (i + 1) / n; am = (a0 + a1) / 2
+        r = w / 2 + .55
+        ob = box(f'tp_v{i}', 1.1, d, math.pi * r / n + .05, (0, 0, 0), 'M_Stone', bevel=.04)
+        ob.rotation_euler = (0, -(am - math.pi / 2), 0)
+        ob.location = (math.cos(am) * r, 0, h + math.sin(am) * r - (math.pi * r / n) / 2 * 0)
+        P.append(ob)
+    P.append(box('tp_wall', w + 7.0, d * .8, 3.0, (0, .3, h + w / 2 + .6), 'M_Stone', bevel=.05))      # wall above the arch
+    P.append(box('tp_cornice', w + 7.4, d + .3, .35, (0, 0, h + w / 2 + 3.5), 'M_Stone', bevel=.05))
+    # the cliff the tunnel is cut into: rock masses either side of and above the tube, up to the mountain behind
+    for s_ in (-1, 1): P.append(box(f'tp_cliff{s_}', 14.0, 32.0, 20.0, (s_ * (w / 2 + 2.2 + 7.0), -16.6, -1.0), 'M_CliffRock', bevel=.3))
+    P.append(box('tp_cliff_top', w + 4.4, 32.0, 20.0 - (h + w / 2 + 3.9), (0, -16.6, h + w / 2 + 3.9), 'M_CliffRock', bevel=.3))
+    P.append(box('tp_cliff_mid', w + 4.4, 30.0, 4.2, (0, -17.6, h + w / 2 - .3), 'M_CliffRock', bevel=0))
+    # darkness: a black tube going into the hill
+    P.append(box('tp_dark_back', w + .2, .2, h + w / 2 + .2, (0, -30, 0), 'M_TunnelDark', bevel=0))
+    for s_ in (-1, 1): P.append(box(f'tp_dark_side{s_}', .2, 30, h + w / 2, (s_ * (w / 2 + .05), -15, 0), 'M_TunnelDark', bevel=0))
+    P.append(box('tp_dark_top', w + .2, 30, .2, (0, -15, h + w / 2 - .1), 'M_TunnelDark', bevel=0))
+    P.append(box('tp_dark_floor', w + .2, 29.2, .08, (0, -15.8, .02), 'M_TunnelDark', bevel=0))
+    # the rails run on into the dark
+    for s_ in (-1, 1): P.append(box(f'tp_rail{s_}', .09, 20.0, .14, (s_ * .72, -11, .26), 'M_Metal', bevel=0))
+    return join(P, 'SM_Tunnel')
+
+def loco():
+    """chunky toy-like steam locomotive, front towards local -Y (north). Origin: rail top, centre."""
+    P = []; z0 = .32
+    P.append(box('lo_frame', 2.3, 9.0, .45, (0, 0, z0 + .45), 'M_Iron', bevel=.03))
+    P.append(cyl('lo_boiler', 1.05, 5.4, (0, -4.6, z0 + 2.05), 'M_TrainRed', rot=(-math.pi / 2, 0, 0), seg=20))
+    for k in range(4): P.append(cyl(f'lo_band{k}', 1.09, .12, (0, -4.6 + .9 + k * 1.25, z0 + 2.05), 'M_Brass', rot=(-math.pi / 2, 0, 0), seg=20))
+    P.append(cyl('lo_smokebox', 1.08, .7, (0, -4.6, z0 + 2.05), 'M_Iron', rot=(math.pi / 2, 0, 0), seg=20))
+    P.append(cyl('lo_lamp', .28, .3, (0, -4.65, z0 + 2.95), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
+    P.append(cyl('lo_chimney', .38, 1.3, (0, -3.6, z0 + 2.9), 'M_Iron', seg=14))
+    P.append(cyl('lo_chimtop', .55, .32, (0, -3.6, z0 + 4.1), 'M_Iron', seg=14))
+    P.append(cyl('lo_dome', .45, .55, (0, -1.6, z0 + 3.0), 'M_Brass', seg=14))
+    P.append(box('lo_cab', 2.5, 2.8, 2.6, (0, 2.3, z0 + .9), 'M_TrainRed', bevel=.05))
+    P.append(box('lo_cabroof', 2.8, 3.2, .18, (0, 2.3, z0 + 3.5), 'M_Iron', bevel=.04))
+    for s_ in (-1, 1): P.append(box(f'lo_cabwin{s_}', .06, 1.0, .8, (s_ * 1.26, 2.0, z0 + 2.3), 'M_Glass', bevel=0))
+    P.append(box('lo_cow', 2.2, .9, .5, (0, -4.9, z0 + .1), 'M_Red', rot=(math.radians(-25), 0, 0), bevel=.03))   # cow-catcher
+    P.append(box('lo_buffer', 2.5, .2, .3, (0, -4.55, z0 + .7), 'M_Red', bevel=.02))
+    for s_ in (-1, 1):
+        for k, yy in enumerate((-2.8, -1.0, .8)):
+            P.append(cyl(f'lo_wheel{s_}{k}', .62, .16, (s_ * 1.0, yy, z0 + .3), 'M_Iron', rot=(0, math.pi / 2, 0), seg=18))
+            P.append(cyl(f'lo_hub{s_}{k}', .2, .2, (s_ * 1.06, yy, z0 + .3), 'M_Red', rot=(0, math.pi / 2, 0), seg=10))
+        P.append(box(f'lo_rod{s_}', .06, 3.8, .12, (s_ * 1.12, -1.0, z0 + .22), 'M_Metal', bevel=0))
+        P.append(box(f'lo_step{s_}', .4, .5, .08, (s_ * 1.2, 3.2, z0 + .1), 'M_Iron', bevel=0))
+    ob = join(P, 'SM_TrainLoco'); return ob
+
+def carriage():
+    """passenger carriage, 12 m, green with cream window band; origin rail top, centre"""
+    P = []; z0 = .32; L = 12.0
+    P.append(box('ca_frame', 2.4, L, .4, (0, 0, z0 + .45), 'M_Iron', bevel=.03))
+    P.append(box('ca_body', 2.7, L - .4, 1.3, (0, 0, z0 + .85), 'M_TrainGreen', bevel=.05))
+    P.append(box('ca_band', 2.74, L - .45, 1.0, (0, 0, z0 + 2.1), 'M_TrainCream', bevel=.04))
+    P.append(box('ca_top', 2.7, L - .4, .3, (0, 0, z0 + 3.1), 'M_TrainGreen', bevel=.04))
+    P.append(box('ca_roof', 2.9, L - .1, .22, (0, 0, z0 + 3.4), 'M_Iron', bevel=.08))
+    for s_ in (-1, 1):
+        for k in range(6):
+            y = -L / 2 + 1.3 + k * 1.9
+            if k == 3: P.append(box(f'ca_door{s_}', .06, 1.0, 2.0, (s_ * 1.38, y, z0 + .95), 'M_Door', bevel=0)); continue
+            P.append(box(f'ca_win{s_}{k}', .06, 1.3, .75, (s_ * 1.38, y, z0 + 2.2), 'M_Glass', bevel=0))
+        for yy in (-L / 2 + 1.6, L / 2 - 1.6):
+            for dy in (-.6, .6): P.append(cyl(f'ca_wh{s_}{yy}{dy}', .42, .14, (s_ * .95, yy + dy, z0 + .1), 'M_Iron', rot=(0, math.pi / 2, 0), seg=14))
+    for e in (-1, 1): P.append(box(f'ca_buf{e}', 2.0, .25, .3, (0, e * (L / 2 + .05), z0 + .7), 'M_Iron', bevel=.02))
+    return join(P, 'SM_TrainCar')
+
+# ------------------------------------------------------------------ distant landscape (skirt around the town square, mountains, sky)
+def far_height(x, y):
+    """continues height() outside the 220 m town square: the hills keep rising to a plateau, the sea floor keeps sinking"""
+    return height(max(-110, min(110, x)), max(-110, min(110, y))) if (abs(x) <= 110 and abs(y) <= 110) else height(x, y)
+
+def ground_far():
+    """coarse ring of terrain from the town square out to 700 m, vertex-coloured grass (tinted darker with distance)"""
+    bm = bmesh.new(); col = bm.loops.layers.color.new('Col'); uvl = bm.loops.layers.uv.new('UV')
+    R = 700.0; N = 70; inner = 110.0
+    xs = [-R + 2 * R * i / N for i in range(N + 1)]
+    # split so the inner square edge lines up exactly with the town ground's border
+    xs = sorted(set([round(v, 3) for v in xs if abs(v) > inner + 1] + [-inner, inner] + [-inner - 6, inner + 6]
+                    + [TRACK_X + d for d in (-11, -7.5, -4, 0, 4, 7.5, 11)]))   # extra lines so the railway cutting stays a clean flat bed
+    grid = {}
+    for j, y in enumerate(xs):
+        for i, x in enumerate(xs):
+            z = height(x, y) if (abs(x) > inner - .01 or abs(y) > inner - .01) else 0
+            z = min(z, 16.0) if y < 45 else min(z, -8.0)     # hills level out into a plateau; the sea floor stays under water
+            grid[(i, j)] = bm.verts.new((x, y, z))
+    n = len(xs)
+    for j in range(n - 1):
+        for i in range(n - 1):
+            cx, cy = (xs[i] + xs[i + 1]) / 2, (xs[j] + xs[j + 1]) / 2
+            if abs(cx) < inner and abs(cy) < inner: continue
+            f = bm.faces.new((grid[(i, j)], grid[(i + 1, j)], grid[(i + 1, j + 1)], grid[(i, j + 1)]))
+            for l in f.loops:
+                x, y, z = l.vert.co
+                sea = min(1, max(0, (y - 40) / 5))
+                l[col] = (0.0, sea, 0.0, 1.0)
+                l[uvl].uv = (x / 4, y / 4)
+    ob = mesh_obj('SM_GroundFar', bm); set_mat(ob, 'M_Ground')
+    for p in ob.data.polygons: p.use_smooth = True
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_GroundFar.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
+
+def mountains():
+    """ring of chunky faceted mountains (flat-shaded, vertex colours grass -> rock -> snow) around the north half,
+    plus the tunnel mountain the railway runs into. One mesh, origin at world 0."""
+    import random as _r
+    rnd = _r.Random(21)
+    bm = bmesh.new(); col = bm.loops.layers.color.new('Col')
+    GR, GR2, RK, RK2, SN = (.34, .58, .24), (.26, .48, .2), (.66, .58, .48), (.56, .5, .44), (.97, .98, 1.0)
+    def peak(cx, cy, rad, hgt, seg=14, rings=7, snow=True, seed=0):
+        rr = _r.Random(seed); base_z = min(far_height(cx, cy), 12) - 6
+        rows = []
+        for k in range(rings + 1):
+            t = k / rings
+            row = []
+            for s_ in range(seg):
+                a = 2 * math.pi * s_ / seg + rr.uniform(-.12, .12)
+                rk = rad * (1 - t) ** 1.25 * (1 + rr.uniform(-.18, .18) * (1 - t))
+                z = base_z + hgt * (t ** .85) + rr.uniform(-.06, .06) * hgt * (1 - t) * t
+                row.append(bm.verts.new((cx + math.cos(a) * rk, cy + math.sin(a) * rk, z)))
+            rows.append(row)
+        top = bm.verts.new((cx + rr.uniform(-2, 2), cy + rr.uniform(-2, 2), base_z + hgt * 1.02))
+        for k in range(rings):
+            for s_ in range(seg):
+                f = bm.faces.new((rows[k][s_], rows[k][(s_ + 1) % seg], rows[k + 1][(s_ + 1) % seg], rows[k + 1][s_]))
+        for s_ in range(seg): bm.faces.new((rows[rings][s_], rows[rings][(s_ + 1) % seg], top))
+        return base_z, hgt
+    peaks = []
+    # north / east / west arc (the sea is to the south, +y)
+    for i in range(26):
+        a = math.radians(-200 + 220 * i / 25 + rnd.uniform(-3, 3))   # from west-south-west over north to east-south-east
+        d = rnd.uniform(185, 290)
+        cx, cy = math.cos(a) * d, math.sin(a) * d * .9 - 20
+        if cy > 60: continue
+        rad = rnd.uniform(55, 95); hgt = rnd.uniform(55, 120) * (1.0 if i % 3 else 1.35)
+        peaks.append((cx, cy, rad, hgt))
+    for i in range(30):   # green foothills in front (hide the plateau edge)
+        a = math.radians(-198 + 216 * i / 29 + rnd.uniform(-4, 4)); d = rnd.uniform(125, 170)
+        cx, cy = math.cos(a) * d, math.sin(a) * d * .9 - 15
+        if cy > 45: continue
+        peaks.append((cx, cy, rnd.uniform(34, 55), rnd.uniform(20, 34)))
+    # keep the railway cutting open: nothing may sit on the track between the town and the tunnel portal
+    peaks = [p_ for p_ in peaks if not (abs(p_[0] - TRACK_X) < p_[2] + 9 and p_[1] + p_[2] > TRACK_Y0 - 2)]
+    peaks.append((TRACK_X, TRACK_Y0 - 30 - 46, 46, 66))   # the tunnel mountain, its foot just behind the cliff the portal is cut into
+    for k, (cx, cy, rad, hgt) in enumerate(peaks):
+        peak(cx, cy, rad, hgt, seg=12 if hgt < 45 else 16, rings=6 if hgt < 45 else 8, seed=100 + k)
+    bm.normal_update()
+    # colours via a palette texture (T_Palette_Mountain, one texel per colour): every face's UVs sit in its colour's cell
+    # (vertex colours did not survive the FBX -> Interchange import)
+    pal = []
+    for c in (GR, GR2, RK, RK2, SN):
+        for j in (.9, 1.0, 1.08): pal.append(tuple(min(1, v * j) for v in c))
+    uvl = bm.loops.layers.uv.new('UV')
+    for f in bm.faces:
+        zc = sum(v.co.z for v in f.verts) / len(f.verts); slope = 1 - abs(f.normal.z)
+        if zc < 34 - slope * 14: k = 0 if (int(zc / 6) % 2 == 0) else 1
+        else: k = 2 if (int(zc / 8) % 2 == 0) else 3
+        if zc > 82 - slope * 20: k = 4
+        idx = k * 3 + rnd.randrange(3)
+        for l in f.loops: l[uvl].uv = ((idx + .5) / len(pal), .5)
+    import numpy as np
+    img = np.ones((4, len(pal), 4), np.float32)
+    for i, c in enumerate(pal): img[:, i, :3] = c
+    _save_png('T_Palette_Mountain', img)
+    ob = mesh_obj('SM_Mountains', bm); set_mat(ob, 'M_Mountain')
+    for p in ob.data.polygons: p.use_smooth = False
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Mountains.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
+
+def sky_dome():
+    """unit sphere seen from inside, equirectangular UVs (v = 1 at the zenith) for the baked stylized sky"""
+    me = bpy.data.meshes.new('SM_SkyDome'); NU, NV = 64, 32; V = []; F = []; UV = []
+    for j in range(NV + 1):
+        lat = -math.pi / 2 + math.pi * j / NV
+        for i in range(NU + 1):
+            lon = 2 * math.pi * i / NU
+            V.append((math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat))); UV.append((1 - i / NU, j / NV))
+    for j in range(NV):
+        for i in range(NU):
+            a = j * (NU + 1) + i; b = a + 1; c = a + NU + 2; d = a + NU + 1
+            F.append((a, d, c, b))     # wound inwards
+    me.from_pydata(V, [], F); uv = me.uv_layers.new(name='UV')
+    for poly in me.polygons:
+        for li in poly.loop_indices: uv.data[li].uv = UV[me.loops[li].vertex_index]
+    ob = bpy.data.objects.new('SM_SkyDome', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_Sky')
+    for p in me.polygons: p.use_smooth = True
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_SkyDome.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL', axis_forward='-Z', axis_up='Y',
+                             mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
 
 # ------------------------------------------------------------------ painted textures (graphic-novel look)
 def _save_png(name, arr):
@@ -449,6 +690,7 @@ def gameplay_data():
         {'id': 'gardener', 'outfit': 'gardener', 'hair_color': [0.55, 0.22, 0.08], 'name': 'Gardener Ines', 'body': 'f', 'hair': 'Hair_Buns', 'anim': 'Farm_Watering', **spot(19.5, .2, None, (1, 0))},
         {'id': 'merchant', 'outfit': 'merchant', 'hair_color': [0.05, 0.04, 0.04], 'name': 'Fruit Seller Dora', 'body': 'f', 'hair': 'Hair_BuzzedFemale', 'anim': 'Idle_Talking_Loop', **spot(-5.4, -19.6, None, (1, 0))},
         {'id': 'kid', 'outfit': 'kid', 'hair_color': [0.85, 0.62, 0.2], 'name': 'Little Leo', 'body': 'm', 'hair': 'Hair_Buzzed', 'anim': 'Idle_Loop', 'scale': .72, **spot(3.2, -17.6, None, (-1, -.3))},
+        {'id': 'conductor', 'outfit': 'conductor', 'hair_color': [0.4, 0.38, 0.36], 'name': 'Conductor Mabel', 'body': 'f', 'hair': 'Hair_Buns', 'anim': 'Idle_Loop', **spot(36.6, 9.5, height(36.5, 9.5) + .55, (-1, 0))},
         {'id': 'guard', 'outfit': 'guard', 'hair_color': [0.06, 0.05, 0.05], 'name': 'Gate Warden Bo', 'body': 'm', 'hair': 'Hair_SimpleParted', 'anim': 'Idle_FoldArms_Loop', **spot(-44.6, 9.4, None, (1, 0))}]
     G['spots'] = {'rho_greet': spot(-12.6, 3.6, None, (-1, -.4)), 'rho_gate': spot(-42.5, 3.4, None, (1, .3)),
                   'starter_table': _ue(lc['c'][0], lc['c'][1] - 3.0, HZ + .95), 'bed': _ue(hc['c'][0] - 3.3, hc['c'][1] - 2.2, HZ + .5),
@@ -457,121 +699,161 @@ def gameplay_data():
     G['wild_spawns'] = [_ue(x, y, height(x, y)) for (x, y) in [(-40, -5), (-33, -2), (-37, 14), (-41, 15.5), (-34, 1)]]
     G['gate'] = {'pos': _ue(GATE[0], GATE[1], height(*GATE)), 'exit_x': round((GATE[0] - 3.0) * 100, 1), 'barrier_mesh': 'fence-gate'}
     G['bounds'] = {'center': _ue(0, -8, 0)[:2], 'radius': 9000.0, 'water_z': -110.0, 'safe': spot(0, 10)}
-    G['signs'] = [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nto Mistvale'},
+    G['signs'] = [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nCLOSED - landslide'},
                   {'pos': _ue(4, 9, height(4, 9) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN HARBOR'},
-                  {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'POKEBOX LABS'}]
+                  {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'POKEBOX LABS'},
+                  {'pos': _ue(26.5, 9.2, height(26.5, 9.2) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN STATION\ntrains to Mistvale'}]
+    # railway: where you board, which way the train leaves (north = Unreal +Y) and where it disappears (the tunnel)
+    pz = height(36.5, 1.0) + .55
+    G['train'] = {'board': spot(37.6, 1.0, pz, (1, 0)), 'dir': [0.0, 1.0, 0.0], 'exit_y': round(-(TRACK_Y0 - 6) * 100, 1),
+                  'cam': {'pos': _ue(31.0, -26.0, 7.0), 'yaw': _yaw(TRACK_X - 31.0, 2.0 + 26.0)}}
     return G
 
+# Fab packs in the Unreal project (mesh paths are used as-is by pbx_build)
+NAT = '/Game/Stylized_PBR_Nature/Foliage/Assets/'; RCK = '/Game/Stylized_PBR_Nature/Rocks/Assets/'
+SHX = '/Game/StyleHex_Studio/Free_Packs/FREE_Stylized_Forest_Sample/Meshes/'; GFP = '/Game/StylizedGrassFlowersPack/StaticMesh/'
+DSC = '/Game/DreamscapeSeries/DreamscapeTower/Meshes/'; GRV = '/Game/StylizedGravestones/Meshes/Gravetombs_UE5_Gravestone_0'
+TREES_TOWN = [SHX + 'Trees/SM_Tree_Broadleaf_1', SHX + 'Trees/SM_Tree_Broadleaf_2', SHX + 'Trees/SM_Tree_Birch_1', SHX + 'Trees/SM_Tree_Birch_2']
+TREES_FOREST = [NAT + f'SM_Common_Tree_{i:02d}' for i in (1, 2, 3, 6, 8, 9, 10, 11)] + [NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']
+BUSHES = [NAT + 'SM_Bush', SHX + 'Foliage/SM_Fol_Bush_1', SHX + 'Foliage/SM_Fol_Bush_2']
+GRASS = [SHX + f'Foliage/SM_Fol_Grass_Clump_{i}' for i in (1, 2, 3, 4, 5)] + [GFP + 'SM_Grass_a', GFP + 'SM_Grass_b']
+FLOWERS = [GFP + n for n in ('SM_Flower_Bell_Blue_a', 'SM_Flower_Bell_Blue_b', 'SM_Flower_Cluster_Pink_a', 'SM_Flower_Cluster_Pink_b', 'SM_Flower_Daisy_White_a',
+                             'SM_Flower_Daisy_White_c', 'SM_Flower_Daisy_White_e', 'SM_Flower_Spike_Orange_a', 'SM_Flower_Spike_Orange_b')]
+ROCKS_S = [RCK + f'SM_R_Rock_0{i}' for i in range(1, 6)]
+ROCKS_L = [RCK + f'SM_S_Rock_{i:02d}' for i in (2, 4, 5, 6, 8, 9, 10)]
+CLIFFS = [DSC + f'Stones/Cliffs/SM_Cliff_0{i}' for i in range(1, 8)]
+FENCES = [DSC + f'Structures/SM_Fence_0{i}' for i in (1, 2, 3, 4)]
+
 def plan_town():
-    P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2), (-24, 6, -52, 6, 3.0)],
+    P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2), (-24, 6, -52, 6, 3.0),
+                   (24, 6, 34.4, 6, 3.0), (30, 6, 30, .8, 2.2)],
          'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None):
-        P['objects'].append(dict(mesh=mesh, x=round(x, 3), y=round(y, 3), z=round(height(x, y) if z is None else z, 3), rot=round(rot, 2), s=round(s, 3)))
+        # snap = sits on the outdoor ground: Unreal re-measures the real ground under its footprint (no floating / sinking)
+        P['objects'].append(dict(mesh=mesh, x=round(x, 3), y=round(y, 3), z=round(height(x, y) if z is None else z, 3), rot=round(rot, 2), s=round(s, 3), snap=z is None))
     add('SM_House_Player', -15, -5, 180); add('SM_House_Rival', 15, -5, 180); add('SM_Lab', 0, -34, 180)  # fronts face the village street (+y)
     add('SM_Mailbox', -12.3, 2.2, 90); add('SM_Mailbox', 17.7, 2.2, 90)
-    add('SM_Sign', 4, 9, 0); add('SM_Sign', -4, -20, 0)
+    add('SM_Sign', 4, 9, 0); add('SM_Sign', -4, -20, 0); add('SM_Sign', 26.5, 9.2, 0)
     for x in (-6, 6):
         for y in (-12, 14, 30): add('SM_LampPost', x * .55, y)
+    for x in (12, 21, 29): add('SM_LampPost', x, 8.2)
     add('SM_Bench', 8, -18, 180); add('SM_Bin', 10, -18)
-    # garden fences around the two houses and along the path edges
+    # ---- railway: station building, platform, track from the tunnel in the north to the buffer stop, the train at the platform
+    add('SM_Station', 29.5, -2.2, 180)
+    x0, x1, y0, y1 = PLATFORM; add('SM_Platform', (x0 + x1) / 2, (y0 + y1) / 2, 0)
+    add('SM_Track', TRACK_X, (TRACK_Y0 + TRACK_Y1) / 2, 0, z=0.0)
+    add('SM_Tunnel', TRACK_X, TRACK_Y0, 0, z=0.0)
+    for (m, y) in (('SM_TrainLoco', -9.0), ('SM_TrainCar', 1.0), ('SM_TrainCar', 13.2)):
+        add(m, TRACK_X, y, 0, z=.40); P['objects'][-1]['tag'] = 'PBX_Train'
+    # ---- garden fences (Dreamscape fence panels, 3.3 m) around the two houses
     for cx in (-15, 15):
-        for k in range(-3, 4):
-            if k == 0: continue
-            add('SM_Fence', cx + k * 2.1, 3.0, 0)
-        for k in range(5): add('SM_Fence', cx - 7.4 * (1 if cx < 0 else -1), 1.9 - k * 2.1 - 1, 90)
-    for k in range(10): add('SM_Fence', 7 + k * 2.1, 22, 0); add('SM_Fence', -7 - k * 2.1, 22, 0)
-    # foliage (Quaternius Stylized Nature MegaKit names), kept off paths, houses and the beach
-    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (-47, 6, 7)]
+        for k in (-2, -1, 1, 2):
+            add(R.choice(FENCES), cx + k * 3.3 + (-.9 if k < 0 else .9), 3.0, 0, .98)
+        for k in range(3): add(R.choice(FENCES), cx - 7.4 * (1 if cx < 0 else -1), 1.4 - k * 3.3 - 1.6, 90, .98)
+    for k in range(6): add(R.choice(FENCES), 8.6 + k * 3.3, 22, 0); add(R.choice(FENCES), -8.6 - k * 3.3, 22, 0)
+    # ---- nature (Fab packs), kept off paths, houses, the railway and the beach
+    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8)]
     def in_grass(x, y, pad=0.0): return any(x0 - pad < x < x1 + pad and y0 - pad < y < y1 + pad for (x0, y0, x1, y1) in TALL_GRASS)
-    def free(x, y, r=1.5):
+    def railway(x, y, pad=0.0): return (abs(x - TRACK_X) < 7 + pad and y < TRACK_Y1 + 3) or (PLATFORM[0] - 3 - pad < x < 46 and PLATFORM[2] - 3 < y < PLATFORM[3] + 3)
+    def free(x, y, r=1.5, far=False):
         if path_mask(x, y, P) > .05: return False
-        if in_grass(x, y, r + .5): return False
-        if y > 38 or abs(x) > 104 or abs(y) > 104: return False
+        if in_grass(x, y, r + .5) or railway(x, y, r): return False
+        if y > 38: return False
+        if not far and (abs(x) > 104 or abs(y) > 104): return False
         return all(math.hypot(x - bx, y - by) > br + r for bx, by, br in blocked)
-    trees = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_4', 'CommonTree_5']
     n = 0
-    while n < 170:                       # forest ring
-        a = R.random() * math.tau; d = 44 + R.random() * 55; x, y = math.cos(a) * d, math.sin(a) * d - 10
-        if y > 34 or not free(x, y, 2): continue
-        add(R.choice(trees + ['Pine_1', 'Pine_2', 'Pine_3']), x, y, R.random() * 360, .9 + R.random() * .5); n += 1
-    for x, y in [(-27, -14), (-26, 4), (27, -14), (26, 6), (-11, -40), (11, -42), (-22, 16), (23, 17), (-31, 30), (32, 28)]:
-        add(R.choice(trees), x, y, R.random() * 360, 1.0 + R.random() * .3)
+    while n < 190:                       # forest ring around the village
+        a = R.random() * math.tau; d = 46 + R.random() * 55; x, y = math.cos(a) * d, math.sin(a) * d - 10
+        if y > 34 or not free(x, y, 2.5): continue
+        add(R.choice(TREES_FOREST), x, y, R.random() * 360, .8 + R.random() * .35); n += 1
     n = 0
-    while n < 260:                       # bushes, plants, flowers, grass clumps everywhere near the village
-        x, y = (R.random() - .5) * 96, (R.random() - .5) * 90 - 6
-        if not free(x, y, .6): continue
+    while n < 170:                       # far forest on the hills in front of the mountains (outside the town square)
+        a = R.random() * math.tau; d = 108 + R.random() * 70; x, y = math.cos(a) * d, math.sin(a) * d - 10
+        if y > 30 or not free(x, y, 4, far=True): continue
+        add(R.choice(TREES_FOREST), x, y, R.random() * 360, 1.0 + R.random() * .5); n += 1
+    for x, y in [(-27, -14), (-26, 4), (27, -14), (-11, -42), (11, -43), (-22, 16), (23, 17), (-31, 30), (32, 30), (8, 30)]:
+        add(R.choice(TREES_TOWN), x, y, R.random() * 360, .62 + R.random() * .12)      # big feature trees in the village
+    n = 0
+    while n < 150:                       # bushes
+        x, y = (R.random() - .5) * 100, (R.random() - .5) * 92 - 6
+        if not free(x, y, 1.2): continue
+        add(R.choice(BUSHES), x, y, R.random() * 360, .65 + R.random() * .45); n += 1
+    n = 0
+    while n < 420:                       # grass clumps + flowers carpet
+        x, y = (R.random() - .5) * 110, (R.random() - .5) * 96 - 8
+        if not free(x, y, .35): continue
         k = R.random()
-        m = ('Bush_Common_Flowers' if k < .18 else 'Bush_Common' if k < .32 else 'Plant_1' if k < .42 else 'Fern_1' if k < .5 else
-             'Flower_3_Group' if k < .62 else 'Flower_4_Group' if k < .72 else 'Grass_Common_Tall' if k < .86 else 'Grass_Wispy_Tall')
-        add(m, x, y, R.random() * 360, .8 + R.random() * .5); n += 1
+        if k < .62: add(R.choice(GRASS), x, y, R.random() * 360, .9 + R.random() * .6)
+        elif k < .9: add(R.choice(FLOWERS), x, y, R.random() * 360, .8 + R.random() * .5)
+        else: add(NAT + 'SM_Fern', x, y, R.random() * 360, .7 + R.random() * .4)
+        n += 1
     for cx in (-15, 15):                 # flower beds in the front gardens
-        for k in range(14): add(R.choice(['Flower_3_Group', 'Flower_4_Group', 'Bush_Common_Flowers']), cx + (R.random() - .5) * 12, 0.5 + R.random() * 1.6, R.random() * 360, .7)
-    for k in range(40):                  # pebbles and rocks along the paths
-        x = (R.random() - .5) * 6; y = -20 + R.random() * 60
-        if abs(x) > 2.2: add(R.choice(['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Square_3', 'Rock_Medium_1']), x, y, R.random() * 360, .6 + R.random() * .5)
+        for k in range(18): add(R.choice(FLOWERS), cx + (R.random() - .5) * 12, 0.6 + R.random() * 1.6, R.random() * 360, .9)
+    for k in range(26):                  # small rocks along the paths and at the forest edge
+        a = R.random() * math.tau; d = 34 + R.random() * 30; x, y = math.cos(a) * d, math.sin(a) * d - 10
+        if not free(x, y, 1.0): continue
+        add(R.choice(ROCKS_S), x, y, R.random() * 360, .22 + R.random() * .2)
+    for k in range(14):                  # cliffs and big rocks on the hill rim (north, west, east)
+        a = math.radians(-180 + 180 * k / 13 + R.uniform(-4, 4)); d = 88 + R.random() * 14; x, y = math.cos(a) * d, math.sin(a) * d - 10
+        if not free(x, y, 3): continue
+        add(R.choice(CLIFFS + ROCKS_L), x, y, R.random() * 360, .7 + R.random() * .5)
     # ---- kit props (Quaternius Fantasy Props = QProps/, Kenney kits = KTown/ KPirate/ KSurvival/). h / w = target
     # height / footprint in metres; Unreal scales each mesh from its bounds, so the kits' differing units don't matter.
     def kit(mesh, x, y, rot=0.0, h=None, w=None, z=None):
         add(mesh, x, y, rot, 1.0, z); o = P['objects'][-1]
         if h: o['h'] = h
         if w: o['w'] = w
-    # plaza in front of the lab: fountain + a small market
-    kit('KTown/fountain_round', 0, -20.5, 0, w=3.4)
+    # plaza in front of the lab: the town's Relay Stone (Lattice storage relay) on a paved circle + a small market
+    kit(DSC + 'Structures/SM_Floor_03', 0, -20.5, 0, w=4.6)
+    kit(DSC + 'Stones/SM_RuneStone_02', 0, -20.5, 25, h=3.8)
     kit('QProps/Stall_Empty', -6.8, -19.5, 90, h=2.6); kit('QProps/Stall_Cart_Empty', 6.8, -23.5, -90, h=2.1)
     for (m, x, y, r, h) in [('QProps/FarmCrate_Apple', -5.4, -21.4, 10, .45), ('QProps/FarmCrate_Carrot', -5.6, -17.8, -8, .45),
                             ('QProps/Barrel_Apples', -7.9, -22.0, 0, .95), ('QProps/Crate_Wooden', 5.3, -25.4, 15, .7),
-                            ('QProps/Crate_Wooden', 5.5, -25.3, 40, .7), ('QProps/Barrel', 8.3, -25.6, 0, 1.0), ('KTown/cart', 9.6, -21.5, 70, 1.4)]:
+                            ('QProps/Barrel', 8.3, -25.6, 0, 1.0), ('KTown/cart', 9.6, -21.5, 70, 1.4)]:
         kit(m, x, y, r, h=h)
-    kit('QProps/Crate_Wooden', 5.4, -25.35, 25, h=.7, z=height(5.4, -25.35) + .7)          # stacked crate
-    # lab flanked by hedges
-    for s in (-1, 1):
-        for k in range(5): kit(R.choice(['Bush_Common', 'Bush_Common_Flowers']), s * 10.8, -29.5 - k * 1.8, R.random() * 360, h=1.2 + R.random() * .3)
+    kit('QProps/Crate_Wooden', 5.3, -25.4, 40, h=.7, z=height(5.3, -25.4) + .7)          # stacked crate
+    # lab flanked by bushes
+    for s_ in (-1, 1):
+        for k in range(4): add(R.choice(BUSHES[1:]), s_ * 10.8, -29.5 - k * 2.2, R.random() * 360, .85)
     # homes: barrels, buckets, flower pots, wood pile
     for (m, x, y, r, h) in [('QProps/Barrel', -20.2, -2.6, 0, 1.0), ('QProps/Bucket_Wooden_1', -19.4, -1.9, 0, .4), ('QProps/Pot_1', -16.9, -.9, 0, .5),
                             ('QProps/Pot_1', -13.1, -.9, 0, .5), ('QProps/Barrel', 20.3, -2.4, 0, 1.0), ('QProps/Barrel', 20.4, -3.6, 30, 1.0),
                             ('QProps/Crate_Wooden', 19.6, -1.5, 12, .7), ('QProps/Pot_1', 13.1, -.9, 0, .5), ('QProps/Pot_1', 16.9, -.9, 0, .5),
                             ('KSurvival/resource_wood', -21.0, -7.0, 90, .6), ('QProps/Workbench', 21.0, -8.0, -90, 1.0)]:
         kit(m, x, y, r, h=h)
+    # station: luggage, benches on the forecourt
+    for (m, x, y, r, h) in [('QProps/Crate_Wooden', 33.2, -6.2, 10, .6), ('QProps/Barrel', 33.6, -7.4, 0, .9), ('SM_Bench', 26.0, 1.6, 180, None)]:
+        kit(m, x, y, r, h=h)
     # path ends: signposts towards the routes
-    kit('KSurvival/signpost', -23.0, 8.2, 90, h=2.0); kit('KSurvival/signpost', 23.0, 8.2, -90, h=2.0); kit('KSurvival/signpost', 2.6, 40.0, 0, h=2.0)
-    # beach: wooden pier, row boats, campfire with log seats, sandy rocks
+    kit('KSurvival/signpost', -23.0, 8.2, 90, h=2.0); kit('KSurvival/signpost', 2.6, 40.0, 0, h=2.0)
+    # memorial garden on the north-west hill: five old gravestones inside a ruined wall
+    for i, (dx, dy) in enumerate([(-2.6, -1.2), (0, -1.6), (2.6, -1.2), (-1.3, 1.6), (1.3, 1.6)]):
+        kit(GRV + str(i + 1), -32 + dx, -38 + dy, 180 + R.uniform(-6, 6), h=1.1 + R.random() * .5)
+    for (dx, dy, r) in [(-4.6, 0, 90), (4.6, 0, 90), (-2.2, -4.2, 0), (2.2, -4.2, 0), (-2.6, 4.0, 0)]:
+        kit(DSC + R.choice(['Structures/SM_Wall_Ruin_01', 'Structures/SM_Wall_Ruin_02', 'Structures/SM_Wall_Ruin_03_Final']), -32 + dx, -38 + dy, r, h=1.1)
+    # beach: wooden pier, row boats, campfire with log seats, rocks
     kit('KPirate/structure_platform_dock', 9.0, 47.8, 0, w=6.0, z=-.35); kit('KPirate/structure_platform_dock', 9.0, 53.6, 0, w=6.0, z=-.35)
     kit('KPirate/boat_row_small', 13.5, 52.0, 25, w=3.2, z=-1.15); kit('KPirate/boat_row_large', -9.0, 46.2, -60, w=4.2)
     kit('KSurvival/campfire_pit', -15.0, 42.5, 0, w=1.4)
     for a in (0, 120, 240):
         kit('KSurvival/tree_log_small', -15.0 + 1.8 * math.cos(math.radians(a)), 42.5 + 1.8 * math.sin(math.radians(a)), a + 90, w=1.6)
-    for (m, x, y, w) in [('KPirate/rocks_sand_a', -25, 47, 2.4), ('KPirate/rocks_sand_b', 22, 45, 2.0), ('KPirate/rocks_sand_c', 30, 49, 3.0), ('KPirate/rocks_sand_a', -34, 44, 2.6)]:
-        kit(m, x, y, R.random() * 360, w=w)
-    # extra nature from the full Stylized Nature kit: short grass carpet, clover, mushrooms, more tree variety
-    n = 0
-    while n < 320:
-        x, y = (R.random() - .5) * 110, (R.random() - .5) * 96 - 8
-        if not free(x, y, .3): continue
-        k = R.random()
-        if k < .55: kit('Grass_Common_Short', x, y, R.random() * 360, h=.32 + R.random() * .12)
-        elif k < .75: kit(R.choice(['Clover_1', 'Clover_2']), x, y, R.random() * 360, w=.6 + R.random() * .4)
-        elif k < .83: kit('Plant_7', x, y, R.random() * 360, h=.5 + R.random() * .3)
-        elif k < .9: kit(R.choice(['Mushroom_Common', 'Mushroom_Laetiporus']), x, y, R.random() * 360, h=.18)
-        else: kit(R.choice(['Petal_1', 'Petal_2', 'Petal_3']), x, y, R.random() * 360, w=.5)
-        n += 1
-    n = 0
-    while n < 40:
-        a = R.random() * math.tau; d = 50 + R.random() * 50; x, y = math.cos(a) * d, math.sin(a) * d - 10
-        if y > 34 or not free(x, y, 2): continue
-        add(R.choice(['Pine_4', 'Pine_5', 'TwistedTree_1', 'TwistedTree_3', 'CommonTree_5']), x, y, R.random() * 360, .9 + R.random() * .4); n += 1
-    # ---- west road: tall grass where the wild Echoes live, and the Route 1 gate (closed until the chapter is done)
+    for (m, x, y, sc) in [(ROCKS_L[0], -27, 47, .45), (ROCKS_S[2], 22, 45, .5), (ROCKS_L[3], 31, 50, .5), (ROCKS_S[0], -35, 44, .55), (ROCKS_L[5], 44, 47, .6), (ROCKS_L[1], -48, 46, .55)]:
+        add(m, x, y, R.random() * 360, sc)
+    # ---- west road: tall grass where the wild Echoes live, and the Route 1 gate (closed: landslide — the train is the way out)
     for (x0, y0, x1, y1) in TALL_GRASS:
-        n = int((x1 - x0) * (y1 - y0) * 1.1)
+        n = int((x1 - x0) * (y1 - y0) * .55)
         for k in range(n):
             x, y = x0 + R.random() * (x1 - x0), y0 + R.random() * (y1 - y0)
-            kit(R.choice(['Grass_Common_Tall', 'Grass_Wispy_Tall', 'Grass_Common_Tall']), x, y, R.random() * 360, h=.85 + R.random() * .45)
+            add(NAT + 'SM_Grass', x, y, R.random() * 360, .85 + R.random() * .4)
     gx, gy = GATE
-    for s in (-1, 1): kit('KTown/pillar-stone', gx, gy + s * 2.3, 0, h=3.2)
-    kit('KTown/fence-gate', gx, gy, 90, w=4.0)                         # the barrier: hidden by the game when the gate opens
+    for s_ in (-1, 1): kit('KTown/pillar-stone', gx, gy + s_ * 2.3, 0, h=3.2)
+    kit('KTown/fence-gate', gx, gy, 90, w=4.0)                         # the barrier
     P['objects'][-1]['tag'] = 'PBX_GateBarrier'
+    for (dx, dy, sc) in [(-3.5, 0, .55), (-6, 2, .45)]:                 # the landslide behind the gate
+        add(R.choice(ROCKS_L), gx + dx, gy + dy, R.random() * 360, sc)
     add('SM_Sign', gx + 2.5, gy + 3.6, 90)
-    for k in range(6):                                                  # hedges either side of the gate so the road is the only way out
-        for sgn in (1, -1): kit(R.choice(['Bush_Common', 'Bush_Common_Flowers']), gx + R.uniform(-.4, .4), gy + sgn * (3.4 + k * 1.9), R.random() * 360, h=1.5 + R.random() * .4)
+    for k in range(6):                                                  # bushes either side of the gate so the road is the only way out
+        for sgn in (1, -1): add(R.choice(BUSHES), gx + R.uniform(-.4, .4), gy + sgn * (3.6 + k * 2.0), R.random() * 360, .9)
     # ---- interiors (60 m below their buildings). Furniture: Kenney Furniture Kit, footprints in metres
     def furn(room, mesh, lx, ly, rot=0.0, h=None, w=None, dz=0.0):
         cx, cy = ROOMS[room]['c']; kit(mesh, cx + lx, cy + ly, rot, h=h, w=w, z=INTERIOR_Z + dz)
@@ -611,8 +893,9 @@ def run():
     export(house('SM_House_Player', 9.0, 7.0, 3.3, 'M_Roof_Red', 'M_Siding_White'), 'SM_House_Player'); reset()
     export(house('SM_House_Rival', 9.5, 7.2, 3.3, 'M_Roof_Red', 'M_Siding_Cream'), 'SM_House_Rival'); reset()
     export(house('SM_Lab', 18.0, 11.0, 6.4, 'M_Roof_Blue', 'M_Siding_White', porch=False, chimney=False, two_storey=True, lab=True), 'SM_Lab'); reset()
-    for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin):
+    for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin, station_building, platform, track, tunnel_portal, loco, carriage):
         ob = f(); export(ob, ob.name); reset()
+    ground_far(); reset(); mountains(); reset(); sky_dome(); reset()
     water_plane(); reset()
     echo_card(); reset()
     for r in ROOMS.values():

@@ -27,8 +27,11 @@ public:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Eyes;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Brows;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Hair;
+	/** 3D garments (tools/clothes.py), skinned to the same bone names, driven through the leader pose */
+	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Clothes;
 
-	void ApplyLook(bool bMale, const FString& HairName, float Scale = 1.f, const FString& Outfit = FString(), FLinearColor HairColor = FLinearColor(0, 0, 0, 0));
+	/** Body: "m" / "f" = Quaternius base bodies (+ hair, painted body, 3D clothes), "boy" = Fab "Free Stylized Boy" (dressed already) */
+	void ApplyLook(const FString& Body, const FString& HairName, float Scale = 1.f, const FString& Outfit = FString(), FLinearColor HairColor = FLinearColor(0, 0, 0, 0));
 	UPBXAnimInstance* Anim() const;
 	void PlayAction(const FString& Short, bool bLoop, float Blend = .2f);
 	void StopAction(float Blend = .25f);

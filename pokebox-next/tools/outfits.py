@@ -39,18 +39,19 @@ def raster(tag, d):
     return P, L, M
 
 # outfit = dict(top, sleeves: long|short|none, bottom, legs: long|shorts|skirt|knee, shoes, belt, skin tint, extras)
-OUTFITS = {
-    'player_m': dict(body='male', top=(.78, .12, .1), sleeves='long', bottom=(.12, .14, .25), legs='long', shoes=(.08, .07, .07), belt=(.25, .15, .08), zip=(.95, .93, .9), collar=(.95, .93, .9)),
-    'player_f': dict(body='female', top=(.78, .12, .1), sleeves='long', bottom=(.12, .14, .25), legs='long', shoes=(.08, .07, .07), belt=(.25, .15, .08), zip=(.95, .93, .9), collar=(.95, .93, .9)),
-    'mom': dict(body='female', top=(.62, .5, .78), sleeves='long', bottom=(.86, .78, .6), legs='skirt', skirt_z=.24, shoes=(.35, .2, .12), skin=1.12),
-    'vale': dict(body='female', top=(.95, .95, .93), sleeves='long', bottom=(.3, .32, .36), legs='long', coat_z=.36, shoes=(.3, .18, .1), zip=(.55, .55, .58), skin=1.08),
-    'aide': dict(body='male', top=(.55, .72, .9), sleeves='short', bottom=(.75, .66, .45), legs='long', shoes=(.25, .15, .08), belt=(.2, .12, .06), skin=1.15),
-    'rho': dict(body='male', top=(.15, .4, .8), sleeves='long', bottom=(.12, .12, .14), legs='shorts', shoes=(.95, .95, .95), zip=(.9, .75, .2), skin=.95),
-    'fisher': dict(body='male', top=(.95, .78, .1), sleeves='long', bottom=(.2, .35, .22), legs='long', shoes=(.12, .25, .14), boots_z=.26, skin=1.05),
-    'gardener': dict(body='female', top=(.3, .55, .3), sleeves='short', sleeve_col=(.95, .93, .88), bottom=(.3, .55, .3), legs='long', shoes=(.4, .25, .12), boots_z=.2, skin=1.0),
-    'merchant': dict(body='female', top=(.92, .5, .15), sleeves='short', bottom=(.92, .5, .15), legs='skirt', skirt_z=.34, shoes=(.45, .3, .15), skin=.9),
-    'kid': dict(body='male', top=(.95, .82, .2), stripes=(.85, .2, .15), sleeves='short', bottom=(.25, .4, .7), legs='shorts', shoes=(.95, .95, .95), skin=1.1),
-    'guard': dict(body='male', top=(.2, .3, .22), sleeves='long', bottom=(.2, .3, .22), legs='long', shoes=(.06, .06, .06), boots_z=.22, belt=(.08, .07, .06), zip=(.8, .65, .2), skin=.85),
+OUTFITS = {   # body paint under the 3D clothes (clothes.py) — same palette, so gaps between garments never show bare skin
+    'player_m': dict(body='male', top=(.80, .13, .10), sleeves='long', sleeve_col=(.12, .12, .14), bottom=(.14, .18, .34), legs='long', shoes=(.95, .95, .95), boots_z=.085, belt=(.18, .12, .08)),
+    'player_f': dict(body='female', top=(.97, .97, .97), sleeves='none', bottom=(.85, .2, .32), legs='skirt', skirt_z=.36, shoes=(.85, .2, .32), boots_z=.30),
+    'mom': dict(body='female', top=(.62, .5, .78), sleeves='long', bottom=(.86, .78, .6), legs='skirt', skirt_z=.18, shoes=(.35, .2, .12), boots_z=.085, skin=1.12),
+    'vale': dict(body='female', top=(.96, .96, .95), sleeves='long', bottom=(.25, .26, .3), legs='long', coat_z=.30, shoes=(.28, .16, .1), boots_z=.085, skin=1.08),
+    'aide': dict(body='male', top=(.93, .95, .97), sleeves='short', bottom=(.75, .66, .45), legs='long', coat_z=.47, shoes=(.25, .15, .08), boots_z=.085, skin=1.15),
+    'rho': dict(body='male', top=(.15, .40, .80), sleeves='long', bottom=(.12, .12, .14), legs='shorts', shoes=(.97, .97, .97), boots_z=.17, skin=.95),
+    'fisher': dict(body='male', top=(.97, .80, .12), sleeves='long', bottom=(.2, .35, .22), legs='long', coat_z=.42, shoes=(.12, .25, .14), boots_z=.27, skin=1.05),
+    'gardener': dict(body='female', top=(.95, .93, .88), sleeves='short', bottom=(.30, .52, .28), legs='long', shoes=(.4, .25, .12), boots_z=.2, skin=1.0),
+    'merchant': dict(body='female', top=(.92, .50, .15), sleeves='short', bottom=(.45, .2, .3), legs='skirt', skirt_z=.10, shoes=(.45, .3, .15), boots_z=.085, skin=.9),
+    'kid': dict(body='male', top=(.95, .82, .2), stripes=(.85, .2, .15), sleeves='short', bottom=(.25, .4, .7), legs='shorts', shoes=(.97, .97, .97), boots_z=.17, skin=1.1),
+    'conductor': dict(body='female', top=(.14, .18, .34), sleeves='long', bottom=(.14, .18, .34), legs='skirt', skirt_z=.22, shoes=(.06, .06, .06), boots_z=.09, skin=1.05),
+    'guard': dict(body='male', top=(.2, .3, .22), sleeves='long', bottom=(.18, .26, .2), legs='long', coat_z=.47, shoes=(.06, .06, .06), boots_z=.24, belt=(.08, .07, .06), skin=.85),
 }
 
 def paint(name, o, P, L, base):

@@ -28,12 +28,23 @@ def sp(obj, **kw):
         else: log('no property', type(obj).__name__, k)
 
 # ------------------------------------------------------------------ import
-def _import(files, dest):
+def _fbx_options():
+    """static meshes keep their vertex colours (ground masks, mountains)"""
+    o = unreal.FbxImportUI()
+    o.set_editor_property('import_mesh', True); o.set_editor_property('import_as_skeletal', False); o.set_editor_property('import_materials', False)
+    o.set_editor_property('import_textures', False)
+    d = o.get_editor_property('static_mesh_import_data')
+    d.set_editor_property('vertex_color_import_option', unreal.VertexColorImportOption.REPLACE)
+    d.set_editor_property('combine_meshes', True); d.set_editor_property('auto_generate_collision', False)
+    return o
+
+def _import(files, dest, fbx_static=False):
     tasks = []
     for f in files:
         t = unreal.AssetImportTask()
         t.set_editor_property('filename', f); t.set_editor_property('destination_path', dest)
         t.set_editor_property('automated', True); t.set_editor_property('replace_existing', True); t.set_editor_property('save', True)
+        if fbx_static and f.lower().endswith('.fbx'): t.set_editor_property('options', _fbx_options())
         tasks.append(t)
     AT.import_asset_tasks(tasks)
     out = []
@@ -54,13 +65,24 @@ def import_textures():
             if n.endswith('_nor'): a.set_editor_property('flip_green_channel', True)  # Poly Haven ships OpenGL normals
         elif n.endswith('_arm') or n.startswith('t_townsplat'):
             a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_MASKS); a.set_editor_property('srgb', False)
+            if n.startswith('t_townsplat'):   # outside the town square the edge texels continue (no repeating paths on the far terrain)
+                a.set_editor_property('address_x', unreal.TextureAddress.TA_CLAMP); a.set_editor_property('address_y', unreal.TextureAddress.TA_CLAMP)
+        elif n.startswith('t_palette'):   # one texel per colour: no filtering, no mips
+            a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_VECTOR_DISPLACEMENTMAP); a.set_editor_property('srgb', True)
+            a.set_editor_property('filter', unreal.TextureFilter.TF_NEAREST); a.set_editor_property('mip_gen_settings', unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+            EAL.save_loaded_asset(a); continue
+        elif n.startswith('t_sky'):   # mostly blue -> Unreal guesses "normal map"; force colour
+            a.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_DEFAULT); a.set_editor_property('srgb', True)
+            a.set_editor_property('max_texture_size', 4096); a.set_editor_property('mip_gen_settings', unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+            EAL.save_loaded_asset(a); continue
         a.set_editor_property('max_texture_size', 2048)
         EAL.save_loaded_asset(a)
     log('textures', len(paths))
 
-def import_meshes():
+def import_meshes(only=None):
     fbx = os.path.join(SRC, 'fbx'); nat = os.path.join(NATURE, 'FBX')
-    a = _import([os.path.join(fbx, f) for f in sorted(os.listdir(fbx)) if f.endswith('.fbx')], G + '/Meshes')
+    a = _import([os.path.join(fbx, f) for f in sorted(os.listdir(fbx)) if f.endswith('.fbx') and (only is None or f[:-4] in only)], G + '/Meshes', fbx_static=True)
+    if only is not None: log('meshes', len(a)); return
     b = _import([os.path.join(nat, f) for f in sorted(os.listdir(nat)) if f.endswith('.fbx')], G + '/Nature')
     log('meshes', len(a), 'nature', len(b))
 
@@ -115,6 +137,14 @@ def import_echoes():
 def import_outfits():
     d = os.path.join(SRC, 'outfits'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.startswith('T_Outfit_') and f.endswith('.png')]
     _import(files, G + '/Characters/Outfits'); log('outfits', len(files))
+    for p in EAL.list_assets(G + '/Characters/Outfits', recursive=False):   # bluish outfits get mistaken for normal maps
+        t = EAL.load_asset(p)
+        if isinstance(t, unreal.Texture2D):
+            t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_DEFAULT); t.set_editor_property('srgb', True); EAL.save_loaded_asset(t)
+
+def import_clothes():
+    d = os.path.join(SRC, 'clothes'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.startswith('SK_Cloth_') and f.endswith('.gltf')]
+    got = _import(files, G + '/Characters/Clothes'); log('clothes', len(files), len(got))
 
 def import_hair():
     d = os.path.join(KITS, 'q_chars', 'Universal Base Characters[Standard]', 'Hairstyles', 'Rigged to Head Bone', 'glTF (Godot -Unreal)')
@@ -124,6 +154,9 @@ def import_hair():
 def link_skeletons():
     """UAL animations play on the Quaternius characters through skeleton remapping (same bone names)"""
     sks = [EAL.load_asset(p) for p in EAL.list_assets(G + '/Characters', recursive=True) if str(EAL.find_asset_data(p).asset_class_path.asset_name) == 'Skeleton']
+    # Fab: the stylized boy (UE5-mannequin bone names) and the Free Animations Pack 2 mannequin
+    for extra in ('/Game/Fab/Free_Stylized_Boy_Character/boy1_Skeleton', '/Game/FreeAnimationsPack2/Demo/Mannequins/Meshes/SK_Mannequin'):
+        if EAL.does_asset_exist(extra): sks.append(EAL.load_asset(extra))
     for s in sks:
         others = [o for o in sks if o != s]
         try:
@@ -267,6 +300,36 @@ def master_water():
         MEL.connect_material_expressions(pan, '', t, 'UVs'); MEL.connect_material_property(t, 'RGB', unreal.MaterialProperty.MP_NORMAL)
     MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
 
+def master_vertex():
+    """vertex-colour surfaces (mountains, far terrain): colour comes from the mesh"""
+    m = _fresh('M_PBX_Vertex', G + '/Materials')
+    vc = _e(m, unreal.MaterialExpressionVertexColor, -800, -200)
+    MEL.connect_material_property(_mul(m, vc, _vec(m, 'Tint', (1, 1, 1, 1), -800, 0), -500, -100, 'RGB'), '', unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(_scalar(m, 'Roughness', .92, -500, 150), '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
+
+def master_cloth():
+    """3D clothes (tools/clothes.py): vertex colour, two-sided (open sleeves / skirts are single shells)"""
+    m = _fresh('M_PBX_Cloth', G + '/Materials'); m.set_editor_property('two_sided', True)
+    try: m.set_editor_property('used_with_skeletal_mesh', True)
+    except Exception as ex: log('cloth flag', ex)
+    vc = _e(m, unreal.MaterialExpressionVertexColor, -800, -200)
+    MEL.connect_material_property(vc, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(_scalar(m, 'Roughness', .85, -500, 150), '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
+
+def master_sky():
+    """the baked stylized sky (Samples/Sky_World.blend #3) on an inside-out dome: unlit, flagged as sky so the
+    real-time sky light captures it"""
+    m = _fresh('M_PBX_Sky', G + '/Materials')
+    m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT); m.set_editor_property('two_sided', True)
+    for k in ('is_sky',):
+        try: m.set_editor_property(k, True)
+        except Exception as ex: log('sky flag', k, ex)
+    t = _texp(m, 'SkyTex', -900, 0, default=WHITE)
+    MEL.connect_material_property(_mul(m, t, _scalar(m, 'Intensity', 1.0, -900, 250), -500, 50, 'RGB'), '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m); return m
+
 def _mi(name, parent, scalars=None, vectors=None, textures=None):
     path = G + '/Materials/Inst'; full = f'{path}/{name}'
     if EAL.does_asset_exist(full): EAL.delete_asset(full)
@@ -275,7 +338,7 @@ def _mi(name, parent, scalars=None, vectors=None, textures=None):
     for k, v in (scalars or {}).items(): MEL.set_material_instance_scalar_parameter_value(mi, k, v)
     for k, v in (vectors or {}).items(): MEL.set_material_instance_vector_parameter_value(mi, k, unreal.LinearColor(*v))
     for k, v in (textures or {}).items():
-        t = unreal.load_asset(f'{G}/Tex/{v}')
+        t = unreal.load_asset(v if v.startswith('/Game/') else f'{G}/Tex/{v}')
         if t: MEL.set_material_instance_texture_parameter_value(mi, k, t)
         else: log('missing texture', v)
     MEL.update_material_instance(mi); EAL.save_loaded_asset(mi); return mi
@@ -308,10 +371,21 @@ def make_materials():
                            ('M_Red', (.8, .08, .06, 1), .4, 0), ('M_BinGreen', (.12, .3, .16, 1), .5, 0)]:
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
-    M['M_Ground'] = _mi('MI_Ground', Gm, {}, {'GrassTint': (.62, 1.12, .42, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_TownSplat', 'GrassBase': 'leafy_grass_diff', 'GrassNor': 'leafy_grass_nor', 'GrassArm': 'leafy_grass_arm',
-                        'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
+    # ground: stylized grass + dirt from the Stylized Nature pack (painted), Poly Haven sand + flagstones
+    M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': 1.2}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.55, 1.35, 1.0, 1)}, {'Splat': 'T_TownSplat',
+                        'GrassBase': '/Game/Stylized_PBR_Nature/Terrain/T_Grass_1', 'DirtBase': 'park_dirt_diff', 'DirtNor': 'park_dirt_nor', 'DirtArm': 'park_dirt_arm', 'SandBase': 'coast_sand_01_diff', 'SandNor': 'coast_sand_01_nor',
                         'SandArm': 'coast_sand_01_arm', 'StoneBase': 'grey_stone_path_diff', 'StoneNor': 'grey_stone_path_nor', 'StoneArm': 'grey_stone_path_arm'})
-    M['M_Water'] = _mi('MI_Water', W)
+    tw = unreal.load_asset('/Game/Shader_Water/MI_Water')          # Samples/TestWater stylized water
+    M['M_Water'] = tw if tw else _mi('MI_Water', W)
+    V = master_vertex(); master_cloth(); SK = master_sky()
+    M['M_Mountain'] = _mi('MI_Mountain', S, {'UVScale': 1.0, 'RoughMul': .95}, {}, {'BaseTex': 'T_Palette_Mountain'})
+    M['M_Sky'] = _mi('MI_Sky', SK, {'Intensity': 1.0}, {}, {'SkyTex': 'T_Sky_Day'})
+    for k, col, r, met in [('M_TrainRed', (.72, .1, .08, 1), .45, 0), ('M_TrainGreen', (.12, .36, .24, 1), .5, 0), ('M_TrainCream', (.93, .86, .7, 1), .55, 0),
+                           ('M_Brass', (.85, .62, .25, 1), .35, .8), ('M_EdgeYellow', (.95, .78, .1, 1), .6, 0), ('M_Gravel', (.42, .4, .38, 1), .95, 0),
+                           ('M_TunnelDark', (0, 0, 0, 1), 1.0, 0)]:
+        M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
+    M['M_CliffRock'] = _mi('MI_CliffRock', S, {'UVScale': .25, 'RoughMul': .9}, {'Tint': (1.15, 1.05, .95, 1)}, {'BaseTex': '/Game/Stylized_PBR_Nature/Rocks/Textures/T_S_Rocks_1-6_D'})
+    M['M_Roof_Green'] = _mi('MI_Roof_Green', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.24, .48, .3, 1)}, {'BaseTex': 'T_Roof_diff'})
     # nature kit (Quaternius): slot names in the FBX → our instances
     M['Leaves_NormalTree'] = _mi('MI_Leaves_Tree', F, {}, {'Tint': (1.0, 1.08, .9, 1)}, {'Tex': 'Leaves_NormalTree_C'})
     M['Leaves_Pine'] = _mi('MI_Leaves_Pine', F, {}, {}, {'Tex': 'Leaf_Pine_C'})
@@ -356,12 +430,18 @@ def assign_materials(M):
     log('slots assigned', n)
 
 # ------------------------------------------------------------------ level
-KIT_SCALE = {'Fern_1': .22, 'Flower_3_Group': .55, 'Flower_4_Group': .55, 'Grass_Common_Tall': .5, 'Grass_Wispy_Tall': .5, 'Plant_1': .8, 'Bush_Common': .9, 'Bush_Common_Flowers': .85}
-NO_COLLIDE = ('Grass', 'Flower', 'Clover', 'Fern', 'Plant', 'Petal', 'Pebble', 'Mushroom')
-FOLIAGE_INK = NO_COLLIDE + ('CommonTree', 'Pine', 'TwistedTree', 'DeadTree', 'Bush', 'KTown/hedge')
+KIT_SCALE = {}
+# plant-like meshes: no collision, foliage stencil (soft ink). Matched against the mesh's base name.
+NO_COLLIDE = ('Grass', 'Flower', 'Clover', 'Fern', 'Plant', 'Petal', 'Pebble', 'Mushroom', 'SM_Fol_Grass', 'SM_Fol_Flower', 'SM_SmallFlower', 'SM_Bush', 'SM_Fol_Bush')
+FOLIAGE_INK = NO_COLLIDE + ('CommonTree', 'Pine', 'TwistedTree', 'DeadTree', 'Bush', 'SM_Tree', 'SM_Common_Tree', 'SM_Pine')
+TREES = ('SM_Tree', 'SM_Common_Tree', 'SM_Pine', 'CommonTree', 'Pine_')
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 
+def _base(name): return name.split('/')[-1]
+
 def _mesh(name):
+    if name.startswith('/Game/'):   # Fab pack asset, full path
+        return unreal.load_asset(name) if EAL.does_asset_exist(name) else None
     if '/' in name:   # kit mesh; Kenney keeps the hyphens of its file names, the plan uses underscores
         for cand in (name, name.split('/')[0] + '/' + name.split('/')[1].replace('_', '-')):
             p = f'{G}/Kits/{cand}'
@@ -377,35 +457,79 @@ def _spawn_cls(cls, loc=(0, 0, 0), rot=(0, 0, 0), label=None):
     if label: a.set_actor_label(label)
     return a
 
+def _world(): return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+
+def _ground_z(world, x, y):
+    """height of the terrain (town ground / far terrain / mountains — the only things spawned when this runs) at UE x, y"""
+    h = unreal.SystemLibrary.line_trace_single(world, unreal.Vector(x, y, 60000.0), unreal.Vector(x, y, -60000.0), unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
+                                               True, [], unreal.DrawDebugTrace.NONE, True)
+    if not h: return None
+    t = h.to_tuple()
+    for v in t[4:7]:
+        if isinstance(v, unreal.Vector): return v.z
+    return None
+
+def _snap_z(world, sm, o, scale):
+    """lowest terrain point under the footprint (centre + 4 points at 70 % of the extents, rotated) -> no floating edge;
+    meshes whose bottom sits above their pivot (flower heads etc.) are lowered so the bottom touches."""
+    b = sm.get_bounding_box(); mn, mx = b.min, b.max
+    x, y = o['x'] * 100, -o['y'] * 100
+    name = _base(o['mesh'])
+    if name.startswith(TREES): r = (40.0, 40.0)
+    else: r = (min(400.0, (mx.x - mn.x) * .35 * scale), min(400.0, (mx.y - mn.y) * .35 * scale))
+    yaw = math.radians(-o['rot']); c, s_ = math.cos(yaw), math.sin(yaw)
+    cx, cy = (mx.x + mn.x) / 2 * scale, (mx.y + mn.y) / 2 * scale
+    pts = [(0, 0), (r[0], r[1]), (-r[0], r[1]), (r[0], -r[1]), (-r[0], -r[1])]
+    zs = []
+    for (px, py) in pts:
+        lx, ly = cx + px, cy + py
+        z = _ground_z(world, x + lx * c - ly * s_, y + lx * s_ + ly * c)
+        if z is not None: zs.append(z)
+    if not zs: return None
+    z = min(zs) - 3.0
+    if mn.z > 0: z -= mn.z * scale
+    return z
+
 def build_level():
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     path = G + '/Maps/L_Town'
     if EAL.does_asset_exist(path): les.load_level(path)
     else: les.new_level(path)
+    world = _world()
+    gm_cls = None
+    try: gm_cls = world.get_world_settings().get_editor_property('default_game_mode')
+    except Exception as ex: log('read game mode', ex)
     for a in EAS.get_all_level_actors(): EAS.destroy_actor(a)
     plan = json.load(open(os.path.join(SRC, 'town_plan.json'), encoding='utf-8'))
-    # ---- light & atmosphere (warm late-morning sun like the reference)
+    # ---- light & sky: warm late-morning sun, the baked stylized sky dome (no physical atmosphere / volumetric clouds)
     sun = _spawn_cls(unreal.DirectionalLight, (0, 0, 1000), (0, -38, 35), 'Sun')
     lc = sun.get_component_by_class(unreal.DirectionalLightComponent)
-    sp(lc, intensity=8.0, light_color=unreal.Color(r=255, g=244, b=228, a=255), atmosphere_sun_light=True, mobility=unreal.ComponentMobility.MOVABLE, light_source_angle=1.2)
-    _spawn_cls(unreal.SkyAtmosphere, label='SkyAtmosphere')
+    sp(lc, intensity=8.0, light_color=unreal.Color(r=255, g=244, b=228, a=255), mobility=unreal.ComponentMobility.MOVABLE, light_source_angle=1.2)
     sky = _spawn_cls(unreal.SkyLight, (0, 0, 800), label='SkyLight'); sc = sky.get_component_by_class(unreal.SkyLightComponent)
-    sp(sc, mobility=unreal.ComponentMobility.MOVABLE, real_time_capture=True, intensity=1.5)
-    try: _spawn_cls(unreal.VolumetricCloud, label='Clouds')
-    except Exception as ex: log('clouds', ex)
+    # captures the sky dome only (everything nearer than 1.5 km is ignored) -> soft blue ambient + sky reflections
+    sp(sc, mobility=unreal.ComponentMobility.MOVABLE, real_time_capture=False, source_type=unreal.SkyLightSourceType.SLS_CAPTURED_SCENE,
+       sky_distance_threshold=150000.0, intensity=1.4, lower_hemisphere_is_black=False)
     fog = _spawn_cls(unreal.ExponentialHeightFog, (0, 0, -200), label='Fog'); fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
-    sp(fc, fog_density=.006, fog_height_falloff=.25, volumetric_fog=True, start_distance=1500.0)
+    # haze softens the mountains; the sky dome (100 km away) is beyond the fog cutoff so it keeps its colours
+    sp(fc, fog_density=.012, fog_height_falloff=.12, start_distance=4000.0, fog_cutoff_distance=4.0e6,
+       fog_inscattering_luminance=unreal.LinearColor(.62, .74, .92, 1.0), volumetric_fog=False)
     pp = _spawn_cls(unreal.PostProcessVolume, label='PostProcess'); pp.set_editor_property('unbound', True)
     s = pp.get_editor_property('settings')
-    for k, v in [('auto_exposure_bias', .3), ('bloom_intensity', .55), ('ambient_occlusion_intensity', .75),
-                 ('ambient_occlusion_radius', 120.0), ('motion_blur_amount', 0.0), ('vignette_intensity', .25), ('color_saturation', unreal.Vector4(1.12, 1.12, 1.12, 1)),
-                 ('color_contrast', unreal.Vector4(1.04, 1.04, 1.04, 1)), ('white_temp', 6200.0), ('sharpen', .4)]:
+    for k, v in [('auto_exposure_bias', .2), ('bloom_intensity', .45), ('ambient_occlusion_intensity', .6),
+                 ('ambient_occlusion_radius', 120.0), ('motion_blur_amount', 0.0), ('vignette_intensity', .22), ('color_saturation', unreal.Vector4(1.08, 1.08, 1.08, 1)),
+                 ('color_contrast', unreal.Vector4(1.05, 1.05, 1.05, 1)), ('white_temp', 6200.0), ('sharpen', .3)]:
         try: s.set_editor_property('override_' + k, True); s.set_editor_property(k, v)
         except Exception as ex: log('pp', k, ex)
     pp.set_editor_property('settings', s)
-    # ---- ground, water, buildings, props, foliage
     missing = set()
-    def put(mesh, x, y, z, rot=0.0, scale=1.0, label=None, h=None, w=None):
+    def classify(a, mesh):
+        c = a.get_component_by_class(unreal.StaticMeshComponent); n = _base(mesh)
+        if n.startswith(NO_COLLIDE): c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+        if n.startswith(FOLIAGE_INK):
+            # stencil 1 = foliage: the comic pass draws only soft silhouette ink here (no normal-crease scribble)
+            c.set_editor_property('render_custom_depth', True); c.set_editor_property('custom_depth_stencil_value', 1)
+        return c
+    def put(mesh, x, y, z, rot=0.0, scale=1.0, label=None, h=None, w=None, z_cm=None):
         sm = _mesh(mesh)
         if not sm:
             if mesh not in missing: log('missing mesh', mesh); missing.add(mesh)
@@ -414,23 +538,35 @@ def build_level():
             b = sm.get_bounding_box(); e = b.max - b.min
             size = e.z if h else max(e.x, e.y)
             scale = ((h or w) * 100.0) / max(size, 1e-3)
-        a = EAS.spawn_actor_from_object(sm, unreal.Vector(x * 100, -y * 100, z * 100), unreal.Rotator(0, 0, -rot))
+        a = EAS.spawn_actor_from_object(sm, unreal.Vector(x * 100, -y * 100, z * 100 if z_cm is None else z_cm), unreal.Rotator(0, 0, -rot))
         a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
         if label: a.set_actor_label(label)
-        c = a.get_component_by_class(unreal.StaticMeshComponent)
-        if mesh.startswith(NO_COLLIDE) or mesh.startswith(FOLIAGE_INK):
-            if mesh.startswith(NO_COLLIDE): c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
-            # stencil 1 = foliage: the comic pass draws only soft silhouette ink here (no normal-crease scribble)
-            c.set_editor_property('render_custom_depth', True); c.set_editor_property('custom_depth_stencil_value', 1)
-        a.set_folder_path('Town/' + ('Nature' if not (mesh.startswith('SM_') or '/' in mesh) else 'Built'))
+        classify(a, mesh)
+        a.set_folder_path('Town/' + ('Nature' if mesh.startswith('/Game/') or not (mesh.startswith('SM_') or '/' in mesh) else 'Built'))
         return a
-    def put_o(o):
-        a = put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'))
-        if a and o.get('tag'): a.tags = [unreal.Name(o['tag'])]
-        return a
-    put('SM_Ground', 0, 0, 0, label='Ground')
+    def obj_scale(o, sm):
+        if o.get('h') or o.get('w'):
+            b = sm.get_bounding_box(); e = b.max - b.min
+            return ((o.get('h') or o.get('w')) * 100.0) / max(e.z if o.get('h') else max(e.x, e.y), 1e-3)
+        return o['s'] * KIT_SCALE.get(o['mesh'], 1.0)
+    # ---- terrain first (the snapping traces must only see terrain)
+    put('SM_Ground', 0, 0, 0, label='Ground'); put('SM_GroundFar', 0, 0, 0, label='GroundFar'); put('SM_Mountains', 0, 0, 0, label='Mountains')
+    dome = put('SM_SkyDome', 0, 0, 0, 0.0, 100000.0, label='SkyDome')
+    if dome:
+        c = dome.get_component_by_class(unreal.StaticMeshComponent); c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+        sp(c, cast_shadow=False)
+    snaps = {}; n_snap = 0
+    for i, o in enumerate(plan['objects']):
+        if not o.get('snap'): continue
+        sm = _mesh(o['mesh'])
+        if not sm: continue
+        z = _snap_z(world, sm, o, obj_scale(o, sm))
+        if z is not None: snaps[i] = z; n_snap += 1
+    log('snapped to terrain', n_snap)
     w = plan['water']; put('SM_Water', w['x'], w['y'], w['z'], label='Sea')
-    for o in plan['objects']: put_o(o)
+    for i, o in enumerate(plan['objects']):
+        a = put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'), z_cm=snaps.get(i))
+        if a and o.get('tag'): a.tags = [unreal.Name(o['tag'])]
     # interiors: warm ceiling lights + a cool 'window daylight' fill
     for r in plan.get('rooms', []):
         cx, cy, cz = r['c']; W, D, H = r['W'], r['D'], r['H']
@@ -447,14 +583,15 @@ def build_level():
         rl.set_folder_path('Interiors')
     ps = plan['player_start']
     _spawn_cls(unreal.PlayerStart, (ps['x'] * 100, -ps['y'] * 100, ps['z'] * 100 + 100), (0, 0, -ps['rot']), 'PlayerStart')
-    # game mode: the template's third-person setup
+    # game mode: keep whatever the map had (the C++ APBXGameMode), else our class
     try:
-        world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-        gm = unreal.load_class(None, '/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode_C')
-        world.get_world_settings().set_editor_property('default_game_mode', gm)
+        if not gm_cls: gm_cls = unreal.load_class(None, '/Script/PokeboxNext.PBXGameMode')
+        world.get_world_settings().set_editor_property('default_game_mode', gm_cls)
     except Exception as ex: log('game mode', ex)
+    try: sc.recapture_sky()
+    except Exception as ex: log('recapture', ex)
     les.save_current_level()
-    log('level built', len(plan['objects']), 'objects')
+    log('level built', len(plan['objects']), 'objects', 'missing', sorted(missing))
 
 def all_steps():
     import_textures(); import_meshes(); M = make_materials(); assign_materials(M); build_level()
