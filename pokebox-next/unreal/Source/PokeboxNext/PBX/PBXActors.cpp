@@ -160,6 +160,8 @@ APBXNPC::APBXNPC()
 	Marker->SetRelativeLocation(FVector(0, 0, 135)); Marker->SetHorizontalAlignment(EHTA_Center); Marker->SetVerticalAlignment(EVRTA_TextCenter);
 	Marker->SetText(FText::FromString(TEXT("!"))); Marker->SetWorldSize(70.f); Marker->SetTextRenderColor(FColor(255, 214, 40));
 	Marker->SetHiddenInGame(true); Marker->SetCastShadow(false);
+	// keep animating while off-screen: an NPC first seen after a teleport must not pop in T-posed
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 }
 
 void APBXNPC::SetMarker(bool bOn) { Marker->SetHiddenInGame(!bOn); }

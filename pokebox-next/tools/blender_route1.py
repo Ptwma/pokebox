@@ -66,7 +66,7 @@ def height(x, y):
     h += .5 * math.sin(x * .045 + 1.1) * math.cos(y * .06) + .35 * math.sin(x * .11) * math.sin(y * .09 + .7)
     w = max(0.0, d - WALL0)
     h += 30.0 * (1 - math.exp(-w * w * .0014))                              # valley sides
-    h += (1.4 * math.sin(x * .07 + y * .05) + .9 * math.sin(y * .13 - x * .04)) * min(1.0, w / 12)  # lumpy slopes
+    h += (.8 * math.sin(x * .045 + y * .03) + .4 * math.sin(y * .08 - x * .025)) * min(1.0, w / 15)  # gently lumpy slopes
     # flatten the rest stop plaza and the two gates
     for (cx, cy, r) in ((PLAZA[0], PLAZA[1] + 3, 13.0), (EAST_GATE[0], 0, 8.0), (WEST_GATE[0], 0, 8.0)):
         k = max(0.0, min(1.0, (math.hypot(x - cx, y - cy) - r) / 6.0)); k = k * k * (3 - 2 * k)
@@ -171,7 +171,7 @@ def peaks():
         x = 40.0
         while x > -400:
             px, py = x, path_y(max(-336, min(16, x)))
-            d = rnd.uniform(78, 120); rad = rnd.uniform(48, 80); hgt = rnd.uniform(45, 105) * (1.3 if rnd.random() < .3 else 1.0)
+            rad = rnd.uniform(48, 80); d = rad * 1.15 + rnd.uniform(44, 70); hgt = rnd.uniform(45, 105) * (1.3 if rnd.random() < .3 else 1.0)
             P.append((px + rnd.uniform(-10, 10), py + side * d, rad, hgt))
             for k in range(2):
                 a = rnd.uniform(0, math.tau); sd = rad * rnd.uniform(.45, .7)
@@ -180,7 +180,8 @@ def peaks():
     # the two ends: a ridge behind each gate closes the valley (Lumen Harbor east, Mistvale's fog basin west)
     for (cx, cy, rad, hgt) in [(78, -40, 55, 60), (80, 45, 60, 70), (-395, -50, 60, 80), (-400, 40, 55, 65)]:
         P.append((cx, cy, rad, hgt))
-    return P
+    # no mountain foot may reach into the valley (the road, the rest stop, the meadow): keep 42 m of valley either side
+    return [p for p in P if path_dist(p[0], p[1]) - p[2] * 1.15 > 42.0]
 
 def mountains():
     """same faceted look and palette as the Lumen mountains (T_Palette_Mountain, already imported)"""
@@ -308,8 +309,8 @@ def plan_route():
         if free(px, py, 3): add(R.choice(T.CLIFFS + T.ROCKS_L), px, py, R.random() * 360, .8 + R.random() * .6)
     # ---- tall grass: the Echo patches (dense) + the hidden meadow ringed with flowers
     for (r, _, _) in GRASS:
-        x0, y0, x1, y1 = r; n = int((x1 - x0) * (y1 - y0) * .6)
-        for k in range(n): add(T.NAT + 'SM_Grass', R.uniform(x0, x1), R.uniform(y0, y1), R.random() * 360, .85 + R.random() * .45)
+        x0, y0, x1, y1 = r; n = int((x1 - x0) * (y1 - y0) * 1.1)   # dense: the patches must read as "tall grass" from the road
+        for k in range(n): add(T.NAT + 'SM_Grass', R.uniform(x0, x1), R.uniform(y0, y1), R.random() * 360, 1.1 + R.random() * .5)
     x0, y0, x1, y1 = G4
     for k in range(40):
         a = R.random() * math.tau; cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -323,14 +324,13 @@ def plan_route():
     for (gx, label, name) in [(EAST_GATE[0], 'ROUTE 1\nLumen Harbor', 'SM_R1_GateEast'), (WEST_GATE[0], 'MISTVALE\nfog advisory', 'SM_R1_GateWest')]:
         add(name, gx, 0, 90, 1.0, z=base_at(gx, 0))
     for (x, off, txt) in [(4.0, 4.2, 'ROUTE 1\nwest: Mistvale'), (-190.0, 4.6, 'RANGER REST\nheal & supplies'), (-318.0, -4.2, 'MISTVALE\nahead')]:
-        px, py, _ = beside(x, off); add('SM_Sign', px, py, 0)
+        px, py, _ = beside(x, off); dx, dy = path_dir(x); add('SM_Sign', px, py, math.degrees(math.atan2(-dx, dy)))   # board faces along the road
     # ---- Ranger Rest: hut, flagstone plaza, campfire with log seats, trader's stall, benches, lamp posts
     add('SM_R1_Hut', REST[0], REST[1], 0)
-    add(T.DSC + 'Structures/SM_Floor_03', PLAZA[0], PLAZA[1], 0, w=PLAZA[2] * 1.6)
     fx, fy = PLAZA[0] - 4.5, PLAZA[1] - 1.0
     add('KSurvival/campfire_pit', fx, fy, 0, w=1.4)
     for a in (20, 140, 260):
-        add('KSurvival/tree_log_small', fx + 1.9 * math.cos(math.radians(a)), fy + 1.9 * math.sin(math.radians(a)), a + 90, w=1.6)
+        add('KSurvival/tree_log_small', fx + 1.7 * math.cos(math.radians(a)), fy + 1.7 * math.sin(math.radians(a)), a + 90, w=1.15)
     add('QProps/Stall_Empty', PLAZA[0] + 6.2, PLAZA[1] + 1.5, -90, h=2.6)
     for (m, dx, dy, r, h) in [('QProps/FarmCrate_Apple', 7.6, -.2, 10, .45), ('QProps/Barrel', 7.9, 3.4, 0, .95), ('QProps/Crate_Wooden', 4.8, 4.0, 15, .7)]:
         add(m, PLAZA[0] + dx, PLAZA[1] + dy, r, h=h)
@@ -377,7 +377,7 @@ def gameplay_data():
     G['corridor'] = {'points': [_ue(x, y, 0)[:2] for (x, y) in PATH], 'width': 3300.0}
     G['signs'] = []
     for (x, off, txt) in [(4.0, 4.2, 'ROUTE 1\nwest: Mistvale'), (-190.0, 4.6, 'RANGER REST\nheal & supplies'), (-318.0, -4.2, 'MISTVALE\nahead')]:
-        px, py, _ = beside(x, off); G['signs'].append({'pos': _ue(px, py, height(px, py) + 1.15), 'yaw': _yaw(*path_dir(x)) + 180.0, 'text': txt})
+        px, py, _ = beside(x, off); G['signs'].append({'pos': _ue(px, py, height(px, py) + 1.15), 'yaw': _yaw(*path_dir(x)), 'text': txt})
     G['exits'] = [{'id': 'lumen', 'pos': _ue(EAST_GATE[0] + 4.0, 0, base_at(EAST_GATE[0], 0)), 'radius': 300.0, 'to_map': 'L_Town', 'to_spot': 'from_route1', 'min_step': 0, 'label': 'Lumen Harbor'},
                   {'id': 'mistvale', 'pos': _ue(WEST_GATE[0] - 3.0, 0, base_at(WEST_GATE[0], 0)), 'radius': 320.0, 'to_map': '', 'to_spot': '', 'min_step': 0, 'label': 'Mistvale'}]
     G['items'] = []

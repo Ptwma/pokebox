@@ -105,7 +105,7 @@ bool APBXDirector::LoadData()
 	{
 		const TSharedPtr<FJsonObject> O = V->AsObject(); FPBXExit E;
 		E.Id = O->GetStringField(TEXT("id")); O->TryGetStringField(TEXT("label"), E.Label); O->TryGetStringField(TEXT("to_map"), E.ToMap); O->TryGetStringField(TEXT("to_spot"), E.ToSpot);
-		E.Pos = JVec(O, TEXT("pos")); double R = 250.0; O->TryGetNumberField(TEXT("radius"), R); E.Radius = R; O->TryGetNumberField(TEXT("min_step"), E.MinStep);
+		E.Pos = JVec(O, TEXT("pos")); double Rad = 250.0; O->TryGetNumberField(TEXT("radius"), Rad); E.Radius = Rad; O->TryGetNumberField(TEXT("min_step"), E.MinStep);
 		Exits.Add(E);
 	}
 	const TSharedPtr<FJsonObject>* Co = nullptr;
@@ -522,11 +522,11 @@ void APBXDirector::InBack()
 {
 	if (Menu == EMenu::Team) { ShowMenu(EMenu::Pause); return; }
 	if (Menu == EMenu::Pause || Menu == EMenu::Controls) { CloseChoice(); Menu = EMenu::None; return; }
-	if (Menu == EMenu::None && UI->Mode == EPBXUIMode::Choice && UI->ChoiceTitle == TEXT("TRADER FENN")) { CloseChoice(); return; }
+	if (Menu == EMenu::Confirm) { CloseChoice(); Menu = EMenu::None; return; }
 }
 void APBXDirector::InPause()
 {
-	if (Menu == EMenu::Pause || Menu == EMenu::Controls || Menu == EMenu::Team) { CloseChoice(); Menu = EMenu::None; return; }
+	if (Menu == EMenu::Pause || Menu == EMenu::Controls || Menu == EMenu::Team || Menu == EMenu::Confirm) { CloseChoice(); Menu = EMenu::None; return; }
 	if (Menu == EMenu::None && !Busy() && !Bt.bActive && UI->Mode == EPBXUIMode::Explore) ShowMenu(EMenu::Pause);
 }
 void APBXDirector::InNav(int32 Dx, int32 Dy)
@@ -699,6 +699,7 @@ void APBXDirector::OpenShop()
 {
 	auto Opt = [](const FString& T, const FString& S, bool bOk, FLinearColor C) { FPBXOption O; O.Title = T; O.Sub = S; O.bEnabled = bOk; O.Color = C; return O; };
 	const int32 C = Game->State->Coins;
+	Menu = EMenu::Confirm;   // menu-style list (the plain choice layout is made for cards)
 	OpenChoice(TEXT("TRADER FENN"), FString::Printf(TEXT("You have %d coins  ·  Poké Balls %d  ·  Potions %d"), C, Game->State->Balls, Game->State->Potions),
 		{ Opt(TEXT("Potion — 100 coins"), TEXT("heals an Echo by 60% (in battle or from the Team menu)"), C >= 100, FLinearColor(.4f, .85f, .5f)),
 		  Opt(TEXT("Poké Ball — 150 coins"), TEXT("binds a weakened wild Echo to a blank card"), C >= 150, FLinearColor(.95f, .3f, .3f)),
@@ -707,7 +708,7 @@ void APBXDirector::OpenShop()
 		{
 			if (i == 0 && Game->State->Coins >= 100) { Game->State->Coins -= 100; Game->State->Potions++; Toast(TEXT("Bought a Potion.")); }
 			else if (i == 1 && Game->State->Coins >= 150) { Game->State->Coins -= 150; Game->State->Balls++; Toast(TEXT("Bought a Poké Ball.")); }
-			if (i == 2) { CloseChoice(); QSay({ { TEXT("trader"), TEXT("Safe travels. Mind the bug kid — he'll talk your ear off.") } }); return; }
+			if (i == 2) { CloseChoice(); Menu = EMenu::None; QSay({ { TEXT("trader"), TEXT("Safe travels. Mind the bug kid — he'll talk your ear off.") } }); return; }
 			OpenShop(); if (UI->Options.IsValidIndex(i) && UI->Options[i].bEnabled) UI->Selected = i;
 		});
 }
@@ -1586,7 +1587,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		break;
 	case EMenu::Pause:
 	{
-		TSet<FName> Owned; for (const FPBXMon& M : Game->State->Team) Owned.Add(M.Card); for (const FPBXMon& M : Game->State->Box) Owned.Add(M.Card);
+		TSet<FName> Owned; for (const FPBXMon& Mo : Game->State->Team) Owned.Add(Mo.Card); for (const FPBXMon& Mo : Game->State->Box) Owned.Add(Mo.Card);
 		OpenChoice(TEXT("PAUSED"), FString::Printf(TEXT("Play time %d min · Binder: %d seen, %d owned · %d coins · Balls %d · Potions %d"), FMath::FloorToInt(Game->State->PlayTime / 60.f),
 			Game->State->Seen.Num(), Owned.Num(), Game->State->Coins, Game->State->Balls, Game->State->Potions),
 			{ Opt(TEXT("Resume"), TEXT("")), Opt(TEXT("Team"), TEXT("your Echoes, lead, Potions"), Game->HasPartner()), Opt(TEXT("Save game"), TEXT("")), Opt(TEXT("Load last save"), TEXT(""), Game->HasSave()),
@@ -1788,12 +1789,18 @@ void APBXDirector::AutoTick(float Dt)
 			AutoNext();
 		} break;
 	case 106: if (Idle() && AutoStepT > 1.f) { Shot(TEXT("27_rest_stop")); if (APBXNPC* T = NPCs.FindRef(TEXT("trader"))) { TeleportPlayer(T->GetActorLocation() + T->GetActorForwardVector() * 170.f, T->HomeYaw + 180.f); TalkTo(T); } AutoNext(); } break;
-	case 107: if (UI->Mode == EPBXUIMode::Choice && AutoStepT > 1.f) { Shot(TEXT("28_shop")); AutoT = Game->State->Potions; UI->Selected = 0; InConfirm(); AutoNext(); } break;
-	case 108: if (AutoStepT > .6f)
+	case 107: if (Menu == EMenu::Confirm && AutoStepT > 1.f) { Shot(TEXT("28_shop")); AutoNext(); } break;
+	case 108:
 		{
-			PBXLOG("[PBXAUTO] shop: potions %d -> %d, coins %d", (int32)AutoT, Game->State->Potions, Game->State->Coins);
-			if (UI->Mode == EPBXUIMode::Choice) { UI->Selected = 2; InConfirm(); }
-			AutoNext();
+			static bool bBought = false;
+			if (!bBought && AutoStepT > .6f) { AutoT = Game->State->Potions; UI->Selected = 0; InConfirm(); bBought = true; AutoStepT = 0.f; }
+			else if (bBought && AutoStepT > .8f && AutoStepT < 5.f) { Shot(TEXT("28b_shop_bought")); AutoStepT = 5.f; }
+			else if (bBought && AutoStepT > 5.6f)
+			{
+				PBXLOG("[PBXAUTO] shop: potions %d -> %d, coins %d", (int32)AutoT, Game->State->Potions, Game->State->Coins);
+				if (Menu == EMenu::Confirm) { UI->Selected = 2; InConfirm(); }
+				AutoNext();
+			}
 		} break;
 	case 109: if (Idle() && AutoStepT > .5f && Items.Num()) { TeleportPlayer(Items[0].Pos + FVector(120, 0, 60), 180.f); AutoNext(); } else if (Idle() && !Items.Num()) { Fail(TEXT("no items")); } break;
 	case 110: if (AutoStepT > 1.f && Idle()) { FindNearest(); if (NearKind == EKind::Item) Interact(); else Fail(TEXT("item not in reach")); AutoNext(); } break;
