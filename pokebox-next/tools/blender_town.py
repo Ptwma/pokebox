@@ -742,14 +742,47 @@ ROCKS_L = [RCK + f'SM_S_Rock_{i:02d}' for i in (2, 4, 5, 6, 8, 9, 10)]
 CLIFFS = [DSC + f'Stones/Cliffs/SM_Cliff_0{i}' for i in range(1, 8)]
 FENCES = [DSC + f'Structures/SM_Fence_0{i}' for i in (1, 2, 3, 4)]
 
+# ------------------------------------------------------------------ Fantastic Village Pack (Fab): stylized houses + props
+FVP = '/Game/Fantastic_Village_Pack/'
+FVM = FVP + 'meshes/props/'
+def FVP_HOUSE(i): return FVP + f'blueprints/buildings/BP_BLD_house_{i}'
+# ground-floor door of each house blueprint, in Blender local metres (Unreal (dx, dy) cm -> (dx/100, -dy/100)), measured in the editor
+FVP_DOORS = {1: (0.0, 2.79), 2: (0.0, -2.79), 5: (0.0, -5.63), 9: (-2.52, 0.0), 10: (-2.48, 0.0), 14: (-.03, 2.79)}
+# older kit props -> Fantastic Village Pack equivalents (one consistent hand-painted style). Value: (mesh, default size)
+SWAP = {
+    'SM_LampPost': (FVM + 'light/SM_PROP_streetlamp_v01_01', {'h': 3.6}), 'SM_Bench': (FVM + 'furniture/SM_PROP_bench_01', {'w': 1.9}),
+    'SM_Bin': (FVM + 'container/SM_PROP_barrel_02', {'h': .95}), 'SM_Mailbox': (FVM + 'deco/SM_PROP_mailbox', {'h': 1.25}),
+    'QProps/Stall_Empty': (FVM + 'construction/SM_PROP_market_v01_01', {'h': 2.8}), 'QProps/Stall_Cart_Empty': (FVM + 'vehicles/SM_PROP_cart_01', {'h': 1.8}),
+    'QProps/FarmCrate_Apple': (FVM + 'food/SM_PROP_crate_02', {'h': .5}), 'QProps/FarmCrate_Carrot': (FVM + 'food/SM_PROP_crate_03', {'h': .5}),
+    'QProps/Barrel_Apples': (FVM + 'container/SM_PROP_barrel_05', {'h': 1.0}), 'QProps/Crate_Wooden': (FVM + 'container/SM_PROP_box_01', {'h': .7}),
+    'QProps/Barrel': (FVM + 'container/SM_PROP_barrel_01', {'h': 1.0}), 'QProps/Bucket_Wooden_1': (FVM + 'container/SM_PROP_bucket_01', {'h': .4}),
+    'QProps/Pot_1': (FVM + 'natural/SM_PROP_PLANT_pot_v1_01', {'h': .6}), 'QProps/Workbench': (FVM + 'furniture/SM_PROP_table_01', {'h': .9}),
+    'KTown/cart': (FVM + 'vehicles/SM_PROP_cart_02', {'h': 1.6}), 'KSurvival/resource_wood': (FVM + 'natural/SM_PROP_treetrunk_01', {'w': 1.4}),
+    'KSurvival/signpost': (FVM + 'deco/SM_PROP_signpost_01', {'h': 2.2}), 'KSurvival/campfire_pit': (FVM + 'light/SM_PROP_campfire', {'w': 1.5}),
+    'KSurvival/tree_log_small': (FVM + 'natural/SM_PROP_treetrunk_02', {'w': 1.5}), 'KPirate/boat_row_small': (FVM + 'vehicles/SM_PROP_rowboat', {'w': 3.2}),
+    'KPirate/boat_row_large': (FVM + 'vehicles/SM_PROP_rowboat', {'w': 3.8}), 'KPirate/structure_platform_dock': (FVM + 'construction/SM_PROP_walkway_wood', {'w': 6.0}),
+    'KTown/pillar-stone': (FVM + 'construction/SM_PROP_wall_wood_post_01', {'h': 3.4}), 'KTown/fence-gate': (FVM + 'construction/SM_PROP_fence_door_gate', {'w': 4.0}),
+}
+def swap(mesh):
+    return SWAP.get(mesh, (mesh, None))
+
 def plan_town():
     P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2), (-24, 6, -52, 6, 3.0),
                    (24, 6, 34.4, 6, 3.0), (30, 6, 30, .8, 2.2)],
          'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None):
         # snap = sits on the outdoor ground: Unreal re-measures the real ground under its footprint (no floating / sinking)
+        mesh, size = swap(mesh)
         P['objects'].append(dict(mesh=mesh, x=round(x, 3), y=round(y, 3), z=round(height(x, y) if z is None else z, 3), rot=round(rot, 2), s=round(s, 3), snap=z is None))
-    add('SM_House_Player', -15, -5, 180); add('SM_House_Rival', 15, -5, 180); add('SM_Lab', 0, -34, 180)  # fronts face the village street (+y)
+        if size: P['objects'][-1].update(size)
+    def house(i, door_x, door_y, face=(0.0, 1.0)):
+        """a Fantastic Village house blueprint placed so its ground-floor door is at (door_x, door_y), facing `face`"""
+        lx, ly = FVP_DOORS[i]; L = math.hypot(lx, ly); ox, oy = lx / L, ly / L
+        phi = math.atan2(face[1], face[0]) - math.atan2(oy, ox); c, s_ = math.cos(phi), math.sin(phi)
+        rx, ry = lx * c - ly * s_, lx * s_ + ly * c
+        P['objects'].append(dict(mesh=FVP_HOUSE(i), x=round(door_x - rx, 3), y=round(door_y - ry, 3), z=round(height(door_x, door_y), 3), rot=round(math.degrees(phi), 2), s=1.0, snap=False))
+    # homes and the lab: Fantastic Village houses, doors exactly where the game's door spots are (fronts face the street, +y)
+    house(10, -15, -1.45); house(2, 15, -1.45); house(5, 0, -28.45)
     add('SM_Mailbox', -12.3, 2.2, 90); add('SM_Mailbox', 17.7, 2.2, 90)
     add('SM_Sign', 4, 9, 0); add('SM_Sign', -4, -20, 0); add('SM_Sign', 26.5, 9.2, 0)
     for x in (-6, 6):
@@ -757,7 +790,8 @@ def plan_town():
     for x in (12, 21, 29): add('SM_LampPost', x, 8.2)
     add('SM_Bench', 8, -18, 180); add('SM_Bin', 10, -18)
     # ---- railway: station building, platform, track from the tunnel in the north to the buffer stop, the train at the platform
-    add('SM_Station', 29.5, -2.2, 180)
+    house(9, 29.5, .55)   # the station building (no door interaction)
+    house(14, -66, -26)   # windmill on the west hill
     x0, x1, y0, y1 = PLATFORM; add('SM_Platform', (x0 + x1) / 2, (y0 + y1) / 2, 0)
     add('SM_Track', TRACK_X, (TRACK_Y0 + TRACK_Y1) / 2, 0, z=0.0)
     add('SM_Tunnel', TRACK_X, TRACK_Y0, 0, z=0.0)
@@ -770,7 +804,7 @@ def plan_town():
         for k in range(3): add(R.choice(FENCES), cx - 7.4 * (1 if cx < 0 else -1), 1.4 - k * 3.3 - 1.6, 90, .98)
     for k in range(6): add(R.choice(FENCES), 8.6 + k * 3.3, 22, 0); add(R.choice(FENCES), -8.6 - k * 3.3, 22, 0)
     # ---- nature (Fab packs), kept off paths, houses, the railway and the beach
-    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8)]
+    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (6, -34, 11), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8), (-66, -26, 10), (9.5, -16.5, 2.5)]
     def in_grass(x, y, pad=0.0): return any(x0 - pad < x < x1 + pad and y0 - pad < y < y1 + pad for (x0, y0, x1, y1) in TALL_GRASS)
     def railway(x, y, pad=0.0): return (abs(x - TRACK_X) < 7 + pad and y < TRACK_Y1 + 3) or (PLATFORM[0] - 3 - pad < x < 46 and PLATFORM[2] - 3 < y < PLATFORM[3] + 3)
     def free(x, y, r=1.5, far=False):
@@ -833,10 +867,11 @@ def plan_town():
     # height / footprint in metres; Unreal scales each mesh from its bounds, so the kits' differing units don't matter.
     def kit(mesh, x, y, rot=0.0, h=None, w=None, z=None):
         add(mesh, x, y, rot, 1.0, z); o = P['objects'][-1]
+        if h or w: o.pop('h', None); o.pop('w', None)
         if h: o['h'] = h
         if w: o['w'] = w
     # plaza in front of the lab: the town's Relay Stone (Lattice storage relay) on a paved circle + a small market
-    kit(DSC + 'Structures/SM_Floor_03', 0, -20.5, 0, w=4.6)
+    kit(FVM + 'deco/SM_PROP_well', 9.5, -16.5, 20, h=3.0)
     kit(DSC + 'Stones/SM_RuneStone_02', 0, -20.5, 25, h=3.8)
     kit('QProps/Stall_Empty', -6.8, -19.5, 90, h=2.6); kit('QProps/Stall_Cart_Empty', 6.8, -23.5, -90, h=2.1)
     for (m, x, y, r, h) in [('QProps/FarmCrate_Apple', -5.4, -21.4, 10, .45), ('QProps/FarmCrate_Carrot', -5.6, -17.8, -8, .45),

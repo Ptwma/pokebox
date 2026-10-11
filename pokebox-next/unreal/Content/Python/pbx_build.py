@@ -160,6 +160,31 @@ def import_hair():
     files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.gltf')]
     got = _import(files, G + '/Characters/Hair'); log('hair', len(files), len(got))
 
+def no_nanite(names=('SM_Water',)):
+    """translucent materials (the TestWater sea) don't render on Nanite meshes"""
+    for n in names:
+        sm = unreal.load_asset(f'{G}/Meshes/{n}')
+        if not sm: continue
+        ns = sm.get_editor_property('nanite_settings'); ns.set_editor_property('enabled', False); sm.set_editor_property('nanite_settings', ns)
+        EAL.save_loaded_asset(sm); log('nanite off', n)
+
+GROUND_P = {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}
+GROUND_V = {'GrassTint': (1.15, 1.15, 1.0, 1), 'SandTint': (1.12, 1.06, .95, 1)}
+
+def rebuild_ground():
+    """ground masters + instances only (fast), reassigned to the ground meshes"""
+    Gm = master_ground(); G1 = master_ground('M_PBX_GroundR1', 46000.0, (-16000.0, 0.0))
+    mi = _mi('MI_Ground', Gm, GROUND_P, GROUND_V, dict(GROUND_TEX, Splat='T_TownSplat')); mi1 = _mi('MI_GroundR1', G1, GROUND_P, GROUND_V, dict(GROUND_TEX, Splat='T_R1Splat'))
+    for mesh, m in (('SM_Ground', mi), ('SM_GroundFar', mi), ('SM_R1_Ground', mi1)):
+        sm = unreal.load_asset(f'{G}/Meshes/' + mesh)
+        if sm: sm.set_material(0, m); EAL.save_loaded_asset(sm)
+    log('ground rebuilt')
+
+def material_errors(paths=('/Game/PBX/Materials/M_PBX_Ground', '/Game/PBX/Materials/M_PBX_GroundR1', '/Game/PBX/Materials/M_PBX_Surface')):
+    for p in paths:
+        m = unreal.load_asset(p)
+        if m: log('stats', p, MEL.get_statistics(m).num_pixel_shader_instructions)
+
 def fix_usage_flags():
     """materials used on Nanite meshes need the usage flag, else a cooked / -game run shows the default material"""
     for p in ('/Game/Shader_Water/MM_Water', '/Game/PBX/Materials/M_PBX_Echo'):
@@ -299,9 +324,10 @@ def master_ground(name='M_PBX_Ground', size=22000.0, center=(0.0, 0.0)):
     mt = []
     for k, (div, x) in enumerate(((4000.0, -900), (1100.0, -700))):
         dv2 = _e(m, unreal.MaterialExpressionDivide, x - 200, -1500 - k * 150); dv2.set_editor_property('const_b', div); MEL.connect_material_expressions(cm, '', dv2, 'A')
-        t = _texp(m, 'Macro', x, -1500 - k * 150, MASKS, WHITE); MEL.connect_material_expressions(dv2, '', t, 'UVs'); mt.append(t)
+        # colour sampler: T_MacroVariation is an sRGB texture (a MASKS sampler fails to compile -> grey grid)
+        t = _texp(m, 'Macro', x, -1500 - k * 150, None, WHITE); MEL.connect_material_expressions(dv2, '', t, 'UVs'); mt.append(t)
     mm = _mul(m, mt[0], mt[1], -500, -1500, 'R', 'G')
-    ml = _e(m, unreal.MaterialExpressionLinearInterpolate, -350, -1500); ml.set_editor_property('const_a', .78); ml.set_editor_property('const_b', 1.18)
+    ml = _e(m, unreal.MaterialExpressionLinearInterpolate, -350, -1500); ml.set_editor_property('const_a', .88); ml.set_editor_property('const_b', 1.16)
     MEL.connect_material_expressions(mm, '', ml, 'Alpha')
     base = _mul(m, out['base'], ml, -300, -300)
     MEL.connect_material_property(base, '', unreal.MaterialProperty.MP_BASE_COLOR)
@@ -400,7 +426,7 @@ def _ds(base): return {'BaseTex': DS + base + '_C', 'NormalTex': DS + base + '_N
 # ground layers (both levels): stylized grass / dirt road / sandy dirt / flagstones
 GROUND_TEX = {'GrassBase': DS + 'Terrain/T_GrassTerrain_01_01_C', 'GrassNor': DS + 'Terrain/T_GrassTerrain_01_N', 'GrassArm': DS + 'Terrain/T_GrassTerrain_01_ORM',
               'DirtBase': DS + 'Terrain/T_DirtRoad_01_C', 'DirtNor': DS + 'Terrain/T_DirtRoad_01_N', 'DirtArm': DS + 'Terrain/T_DirtRoad_01_ORM',
-              'SandBase': DS + 'Terrain/T_Dirt_01_C', 'SandNor': DS + 'Terrain/T_Dirt_01_N', 'SandArm': DS + 'Terrain/T_Dirt_01_ORM',
+              'SandBase': '/Game/StyleHex_Studio/Shared_Resources/Free_Packs/Shared_Terrain/Shared_Terrain_Textures/Terrain_Textures_FSBF/T_Fsbf_Terrain_Dirt_2_BC',
               'StoneBase': DS + 'Structures/T_Floor_01_C', 'StoneNor': DS + 'Structures/T_Floor_01_N', 'StoneArm': DS + 'Structures/T_Floor_01_ORM',
               'Macro': '/Game/DreamscapeSeries/SharedResources/Textures/Utility/T_MacroVariation'}
 
@@ -432,10 +458,10 @@ def make_materials():
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
     # ground: stylized grass + dirt from the Stylized Nature pack (painted), Poly Haven sand + flagstones
-    M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.45, 1.3, 1.0, 1)}, dict(GROUND_TEX, Splat='T_TownSplat'))
+    M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.15, 1.15, 1.0, 1), 'SandTint': (1.12, 1.06, .95, 1)}, dict(GROUND_TEX, Splat='T_TownSplat'))
     # Route 1 (tools/blender_route1.py): same layers, its own splat (460 m square centred on Blender (-160, 0) = UE (-16000, 0))
     G1 = master_ground('M_PBX_GroundR1', 46000.0, (-16000.0, 0.0))
-    M['M_GroundR1'] = _mi('MI_GroundR1', G1, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.0, 1.0, 1.0, 1), 'SandTint': (1.45, 1.3, 1.0, 1)}, dict(GROUND_TEX, Splat='T_R1Splat'))
+    M['M_GroundR1'] = _mi('MI_GroundR1', G1, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.15, 1.15, 1.0, 1), 'SandTint': (1.12, 1.06, .95, 1)}, dict(GROUND_TEX, Splat='T_R1Splat'))
     tw = unreal.load_asset('/Game/Shader_Water/MI_Water')          # Samples/TestWater stylized water
     M['M_Water'] = tw if tw else _mi('MI_Water', W)
     V = master_vertex(); master_cloth(); SK = master_sky()
@@ -592,6 +618,15 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
             c.set_editor_property('render_custom_depth', True); c.set_editor_property('custom_depth_stencil_value', 1)
         return c
     def put(mesh, x, y, z, rot=0.0, scale=1.0, label=None, h=None, w=None, z_cm=None):
+        if '/blueprints/' in mesh:   # Fantastic Village Pack buildings are blueprints (several meshes + lights)
+            cls = EAL.load_blueprint_class(mesh) if EAL.does_asset_exist(mesh) else None
+            if not cls:
+                if mesh not in missing: log('missing blueprint', mesh); missing.add(mesh)
+                return None
+            a = EAS.spawn_actor_from_class(cls, unreal.Vector(x * 100, -y * 100, z * 100 if z_cm is None else z_cm), unreal.Rotator(0, 0, -rot))
+            a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
+            if label: a.set_actor_label(label)
+            a.set_folder_path('Town/Buildings'); return a
         sm = _mesh(mesh)
         if not sm:
             if mesh not in missing: log('missing mesh', mesh); missing.add(mesh)
@@ -619,7 +654,7 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
         sp(c, cast_shadow=False)
     snaps = {}; n_snap = 0
     for i, o in enumerate(plan['objects']):
-        if not o.get('snap'): continue
+        if not o.get('snap') or '/blueprints/' in o['mesh']: continue
         sm = _mesh(o['mesh'])
         if not sm: continue
         z = _snap_z(world, sm, o, obj_scale(o, sm))

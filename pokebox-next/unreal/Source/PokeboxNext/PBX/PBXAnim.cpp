@@ -26,7 +26,9 @@ namespace PBXAssets
 		static TMap<FString, TObjectPtr<UAnimSequence>> Loaded;
 		if (Map.Num() == 0)
 		{
-			for (const FAssetData& A : Scan(TEXT("/Game/PBX/Characters/Anim")))
+			TArray<FAssetData> All = Scan(TEXT("/Game/PBX/Characters/Anim"));
+			All.Append(Scan(TEXT("/Game/PBX/Characters/Retarget/Anim")));   // the same clips retargeted to the Fab boy ("<name>_Boy", tools: pbx_retarget.py)
+			for (const FAssetData& A : All)
 			{
 				if (A.AssetClassPath.GetAssetName() != FName(TEXT("AnimSequence"))) continue;
 				FString N = A.AssetName.ToString();
@@ -53,12 +55,26 @@ namespace PBXAssets
 void UPBXAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
-	if (!Idle) Idle = PBXAssets::Anim(TEXT("Idle_Loop"));
-	if (!Walk) Walk = PBXAssets::Anim(TEXT("Walk_Loop"));
-	if (!Jog) Jog = PBXAssets::Anim(TEXT("Jog_Fwd_Loop"));
-	if (!Sprint) Sprint = PBXAssets::Anim(TEXT("Sprint_Loop"));
-	if (!Fall) Fall = PBXAssets::Anim(TEXT("Jump_Loop"));
+	LoadLocomotion();
 	for (int32 i = 0; i < FPBXAnimProxy::NumLayers; i++) State[i].Time = FMath::FRand() * 2.f;  // NPCs don't idle in sync
+}
+
+UAnimSequence* UPBXAnimInstance::Clip(const FString& Short) const
+{
+	if (!AnimSuffix.IsEmpty()) if (UAnimSequence* S = PBXAssets::Anim(Short + AnimSuffix)) return S;
+	return PBXAssets::Anim(Short);
+}
+
+void UPBXAnimInstance::LoadLocomotion()
+{
+	Idle = Clip(TEXT("Idle_Loop")); Walk = Clip(TEXT("Walk_Loop")); Jog = Clip(TEXT("Jog_Fwd_Loop"));
+	Sprint = Clip(TEXT("Sprint_Loop")); Fall = Clip(TEXT("Jump_Loop"));
+}
+
+void UPBXAnimInstance::SetSuffix(const FString& S)
+{
+	if (S == AnimSuffix && Idle) return;
+	AnimSuffix = S; Action = nullptr; ActionTarget = 0.f; LoadLocomotion();
 }
 
 void UPBXAnimInstance::PlayAction(UAnimSequence* Seq, bool bLoop, float BlendIn)

@@ -74,6 +74,7 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 	else UE_LOG(LogTemp, Error, TEXT("[PBX] body mesh missing (%s)"), *BodyKind);
 	// the stylized boy is a child model (1.17 m): scale the mesh, keep the capsule; feet stay on the capsule bottom
 	GetMesh()->SetRelativeScale3D(FVector(bQ ? 1.f : 1.42f));
+	if (!bQ) GetMesh()->EmptyOverrideMaterials();   // the boy keeps his own materials (no painted outfit)
 	Eyes->SetSkeletalMesh(bQ ? Load(TEXT("Eyes")) : nullptr); Brows->SetSkeletalMesh(bQ ? Load(TEXT("Eyebrows")) : nullptr);
 	USkeletalMesh* H = nullptr;
 	if (bQ && !HairName.IsEmpty()) H = Cast<USkeletalMesh>(PBXAssets::FindByName(TEXT("/Game/PBX/Characters/Hair"), HairName, USkeletalMesh::StaticClass()));
@@ -109,15 +110,16 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 	// Children (actor scale < .8) get an even bigger head.
 	if (UPBXAnimInstance* A = Anim())
 	{
+		A->SetSuffix(bQ ? FString() : FString(TEXT("_Boy")));
 		FPBXStyle S;
 		if (bQ) { S.Head = Scale < .8f ? 1.5f : 1.32f; S.Hand = 1.18f; S.Foot = 1.15f; S.Limb = .76f; S.Leg = .84f; S.Chest = .86f; S.Neck = .82f; }
 		A->Style = S;
 	}
 }
 
-void APBXCharacterBase::PlayAction(const FString& Short, bool bLoop, float Blend) { if (UPBXAnimInstance* A = Anim()) A->PlayAction(PBXAssets::Anim(Short), bLoop, Blend); }
+void APBXCharacterBase::PlayAction(const FString& Short, bool bLoop, float Blend) { if (UPBXAnimInstance* A = Anim()) A->PlayAction(A->Clip(Short), bLoop, Blend); }
 void APBXCharacterBase::StopAction(float Blend) { if (UPBXAnimInstance* A = Anim()) A->StopAction(Blend); }
-void APBXCharacterBase::SetIdleAnim(const FString& Short) { if (UPBXAnimInstance* A = Anim()) A->SetIdle(PBXAssets::Anim(Short)); }
+void APBXCharacterBase::SetIdleAnim(const FString& Short) { if (UPBXAnimInstance* A = Anim()) A->SetIdle(A->Clip(Short)); }
 
 void APBXCharacterBase::FaceTowards(const FVector& P, bool bInstant)
 {

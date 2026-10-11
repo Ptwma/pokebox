@@ -62,6 +62,10 @@ public:
 	void PlayAction(UAnimSequence* Seq, bool bLoop, float BlendIn = .2f);
 	void StopAction(float BlendOut = .25f);
 	void SetIdle(UAnimSequence* Seq) { if (Seq) Idle = Seq; }
+	/** clip by short name for this character's skeleton ("_Boy" = retargeted set for the Fab boy) */
+	UAnimSequence* Clip(const FString& Short) const;
+	void SetSuffix(const FString& Suffix);
+	FString AnimSuffix;
 	bool IsActionPlaying() const { return Action != nullptr && ActionTarget > 0.f; }
 
 	// game-thread state, copied to the proxy every frame
@@ -78,4 +82,5 @@ protected:
 private:
 	float ActionTarget = 0.f, ActionBlend = .2f, ActionTime = 0.f; bool bActionLoop = false;
 	float FallW = 0.f;
+	void LoadLocomotion();
 };

@@ -250,7 +250,9 @@ def _yaw(dx, dy): return round(math.degrees(math.atan2(-dy, dx)), 1)
 def plan_route():
     P = {'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None, **kw):
+        mesh, size = T.swap(mesh)        # older kit props -> Fantastic Village Pack (blender_town.SWAP)
         o = dict(mesh=mesh, x=round(x, 3), y=round(y, 3), z=round(height(x, y) if z is None else z, 3), rot=round(rot, 2), s=round(s, 3), snap=z is None)
+        if size and not ('h' in kw or 'w' in kw): o.update(size)
         o.update(kw); P['objects'].append(o); return o
     blocked = [(REST[0], REST[1], 7.5), (PLAZA[0], PLAZA[1], PLAZA[2] + 1.5), (EAST_GATE[0], 0, 6), (WEST_GATE[0], 0, 6)]
     for t in TRAINERS:
@@ -326,7 +328,11 @@ def plan_route():
     for (x, off, txt) in [(4.0, 4.2, 'ROUTE 1\nwest: Mistvale'), (-190.0, 4.6, 'RANGER REST\nheal & supplies'), (-318.0, -4.2, 'MISTVALE\nahead')]:
         px, py, _ = beside(x, off); dx, dy = path_dir(x); add('SM_Sign', px, py, math.degrees(math.atan2(-dx, dy)))   # board faces along the road
     # ---- Ranger Rest: hut, flagstone plaza, campfire with log seats, trader's stall, benches, lamp posts
-    add('SM_R1_Hut', REST[0], REST[1], 0)
+    # the hut: a Fantastic Village house, door facing the road (south)
+    lx, ly = T.FVP_DOORS[1]; L = math.hypot(lx, ly); phi = math.atan2(-1.0, 0.0) - math.atan2(ly / L, lx / L)
+    rx, ry = lx * math.cos(phi) - ly * math.sin(phi), lx * math.sin(phi) + ly * math.cos(phi)
+    dx_, dy_ = REST[0], REST[1] - 2.85
+    P['objects'].append(dict(mesh=T.FVP_HOUSE(1), x=round(dx_ - rx, 3), y=round(dy_ - ry, 3), z=round(height(dx_, dy_), 3), rot=round(math.degrees(phi), 2), s=1.0, snap=False))
     fx, fy = PLAZA[0] - 4.5, PLAZA[1] - 1.0
     add('KSurvival/campfire_pit', fx, fy, 0, w=1.4)
     for a in (20, 140, 260):

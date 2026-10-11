@@ -290,7 +290,9 @@ void APBXDirector::TeleportPlayer(const FVector& P, float Yaw) { FPBXSpot S; S.P
 void APBXDirector::ApplyPlayerLook()
 {
 	const bool bM = Game->State->bMale;
-	Player->ApplyLook(bM ? TEXT("m") : TEXT("f"), bM ? TEXT("Hair_Buzzed") : TEXT("Hair_Long"), .9f, bM ? TEXT("player_m") : TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
+	// he: the Fab "Free Stylized Boy" (retargeted UAL animations); she: Quaternius body + 3D clothes, cartoon proportions
+	if (bM) Player->ApplyLook(TEXT("boy"), FString(), .92f);
+	else Player->ApplyLook(TEXT("f"), TEXT("Hair_Long"), .9f, TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);
 }
