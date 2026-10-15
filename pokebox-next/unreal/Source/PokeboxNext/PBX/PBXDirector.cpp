@@ -1132,7 +1132,7 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	Bt.A.Z = PBXWorld::GroundZ(GetWorld(), Bt.A, 300.f, 1500.f, P.Z - 90.f); Bt.Bp.Z = PBXWorld::GroundZ(GetWorld(), Bt.Bp, 300.f, 1500.f, P.Z - 90.f);
 	Player->GetCharacterMovement()->StopMovementImmediately(); Player->FaceTowards(Bt.Bp, true);
 	// camera: behind and beside your Echo, the foe big in the upper right; pick the side with fewer obstacles
-	const float Dist = 740.f; float BestS = 1.f; int32 BestHits = 99;
+	const float Dist = 600.f; float BestS = 1.f; int32 BestHits = 99;
 	FCollisionQueryParams QP(SCENE_QUERY_STAT(PBXCam), false); QP.AddIgnoredActor(Player);
 	for (auto& KV : NPCs) QP.AddIgnoredActor(KV.Value);
 	for (float S : { 1.f, -1.f })
@@ -1144,7 +1144,7 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	}
 	Bt.CamS = BestS;
 	FVector C = Bt.A - D * Dist * .62f + Side * BestS * Dist * .4f; C.Z = FMath::Max(Bt.A.Z + 210.f + Dist * .16f, PBXWorld::GroundZ(GetWorld(), C, 500.f, 2000.f, Bt.A.Z) + 150.f);
-	const FVector Look = FMath::Lerp(Bt.A, Bt.Bp, .62f) + FVector(0, 0, 90);
+	const FVector Look = FMath::Lerp(Bt.A, Bt.Bp, .5f) + FVector(0, 0, 40);   // looks a bit down: the foe sits in the upper half, the banner below it
 	Cam->SetActorLocationAndRotation(C, (Look - C).Rotation());
 	Bt.CamBase = C; Bt.CamRot = (Look - C).Rotation(); Bt.Clock = 0.f; Bt.Punch = 0.f;
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTargetWithBlend(Cam, .6f, VTBlend_Cubic);
@@ -1155,7 +1155,7 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	}
 }
 
-static constexpr float StageFoeScale = 1.45f;   // the foe card stands ~1.4 m tall on the stage (95 cm in the field)
+static constexpr float StageFoeScale = 1.8f;   // the foe card stands ~1.7 m tall on the stage (95 cm in the field)
 
 void APBXDirector::ClearStage(const TArray<AActor*>& Keep)
 {
@@ -1184,10 +1184,17 @@ void APBXDirector::ClearStage(const TArray<AActor*>& Keep)
 		if (APBXNPC* Np = Cast<APBXNPC>(X)) { if (FVector2D::Distance(P, Mid) < 2500.f) { HideTree(Np); N++; } continue; }
 		if (APBXEcho* E = Cast<APBXEcho>(X)) { if (FVector2D::Distance(P, Mid) < 3000.f) { HideTree(E); N++; } continue; }
 		if (!X->IsA<AStaticMeshActor>()) continue;
-		FVector O, Ext; X->GetActorBounds(true, O, Ext);
-		if (Ext.Z * 2.f > 260.f || FMath::Max(Ext.X, Ext.Y) > 420.f) continue;   // trees, rocks, buildings stay
-		const FVector2D Q(O); const float R = FMath::Max(Ext.X, Ext.Y);
-		const float Dm = FMath::Min3(SegDist(Q, A, B), SegDist(Q, C, A), SegDist(Q, C, B));
+		FVector O, Ext; X->GetActorBounds(false, O, Ext);
+		const UStaticMeshComponent* SMC = static_cast<AStaticMeshActor*>(X)->GetStaticMeshComponent();
+		const bool bGrass = SMC && SMC->GetStaticMesh() && SMC->GetStaticMesh()->GetName().Contains(TEXT("Grass"));   // tall-grass patches can be big: hide them whatever their size
+		if (!bGrass && (Ext.Z * 2.f > 260.f || FMath::Max(Ext.X, Ext.Y) > 420.f)) continue;   // trees, rocks, buildings stay
+		const FVector2D Q(O); const float R = bGrass ? 0.f : FMath::Max(Ext.X, Ext.Y);
+		float Dm = FMath::Min3(SegDist(Q, A, B), SegDist(Q, C, A), SegDist(Q, C, B));
+		if (bGrass)   // a big patch: test its box against the arena instead of its centre
+		{
+			const FBox2D Bx(FVector2D(O - Ext), FVector2D(O + Ext));
+			for (const FVector2D& T : { A, B, Mid, (C + A) * .5f, (C + B) * .5f }) Dm = FMath::Min(Dm, FMath::Sqrt(Bx.ComputeSquaredDistanceToPoint(T)));
+		}
 		if (Dm < R + 160.f || FVector2D::Distance(Q, Mid) < 520.f + R) { HideTree(X); N++; }
 	}
 	PBXLOG("[PBX] stage cleared: %d actors hidden", N);

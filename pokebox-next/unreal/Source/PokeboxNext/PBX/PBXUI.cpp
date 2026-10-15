@@ -236,7 +236,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 				.RenderTransform_Lambda([this] { const float k = FMath::Clamp(M->MovesIn, 0.f, 1.f); return FSlateRenderTransform(FVector2D((1.f - FMath::Sin(k * PI * .5f)) * 760.f, 0)); })
 			]
 			// banner: slanted colour strip that pops in (wild appeared / super effective / critical)
-			+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Center)
+			+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Center).Padding(FMargin(0, 300, 0, 0))   // below the foe, above the plates
 			[
 				SNew(SBorder).BorderImage(BannerB.Get()).BorderBackgroundColor_Lambda([this] { return FSlateColor(M->BannerColor); }).Padding(FMargin(0, 18)).HAlign(HAlign_Center)
 				.Visibility_Lambda([this] { return Vis(M->BannerT > 0.f && !M->Banner.IsEmpty()); })
