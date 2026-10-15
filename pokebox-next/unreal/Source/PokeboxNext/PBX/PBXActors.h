@@ -2,6 +2,9 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+/** count of runtime look/Echo assets that failed to load (outfits, clothes, card textures); the autotest fails on any */
+extern int32 GPBXMissingAssets;
+
 #include "PBXActors.generated.h"
 
 class USkeletalMeshComponent;

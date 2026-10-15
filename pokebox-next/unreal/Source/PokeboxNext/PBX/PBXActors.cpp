@@ -17,6 +17,8 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "AIController.h"
 
+int32 GPBXMissingAssets = 0;
+
 // The Quaternius glTF characters face +Y after import; Unreal characters face +X.
 static const float PBX_MESH_YAW = -90.f;
 static const float PBX_CAPSULE_HALF = 90.f;
@@ -81,6 +83,7 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 	Hair->SetSkeletalMesh(H); Hair->SetVisibility(H != nullptr);
 	USkeletalMesh* C = nullptr;
 	if (bQ && !Outfit.IsEmpty()) C = Cast<USkeletalMesh>(PBXAssets::FindByName(TEXT("/Game/PBX/Characters/Clothes"), TEXT("SK_Cloth_") + Outfit, USkeletalMesh::StaticClass()));
+	if (bQ && !Outfit.IsEmpty() && !C) { GPBXMissingAssets++; UE_LOG(LogTemp, Warning, TEXT("[PBXASSET] clothes SK_Cloth_%s missing (%s)"), *Outfit, *GetName()); }
 	Clothes->SetSkeletalMesh(C); Clothes->SetVisibility(C != nullptr);
 	if (C)
 		if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Cloth.M_PBX_Cloth")))
@@ -100,7 +103,10 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 	{
 		const FString N = TEXT("T_Outfit_") + Outfit;
 		if (UTexture2D* T = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/PBX/Characters/Outfits/%s.%s"), *N, *N)))
+		{
 			if (UMaterialInstanceDynamic* MID = GetMesh()->CreateAndSetMaterialInstanceDynamic(0)) MID->SetTextureParameterValue(TEXT("BaseColorTexture"), T);
+		}
+		else { GPBXMissingAssets++; UE_LOG(LogTemp, Warning, TEXT("[PBXASSET] outfit texture %s missing (%s)"), *N, *GetName()); }
 	}
 	if (HairColor.A > 0.f && H)
 		for (int32 i = 0; i < Hair->GetNumMaterials(); i++)
@@ -231,7 +237,7 @@ bool APBXEcho::Setup(FName Card, float Height)
 	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Echo.M_PBX_Echo"));
 	const FPBXCardDef* C = PBXData::Card(Card);
 	UTexture2D* Tex = C ? LoadObject<UTexture2D>(nullptr, *C->EchoTexturePath()) : nullptr;
-	if (!M || !Mat || !Tex) { UE_LOG(LogTemp, Error, TEXT("[PBX] echo assets missing for %s (mesh %d mat %d tex %d)"), *Card.ToString(), M != nullptr, Mat != nullptr, Tex != nullptr); }
+	if (!M || !Mat || !Tex) { GPBXMissingAssets++; UE_LOG(LogTemp, Error, TEXT("[PBX] echo assets missing for %s (mesh %d mat %d tex %d)"), *Card.ToString(), M != nullptr, Mat != nullptr, Tex != nullptr); }
 	if (M) Paper->SetStaticMesh(M);
 	if (Mat) { MID = UMaterialInstanceDynamic::Create(Mat, this); if (Tex) MID->SetTextureParameterValue(TEXT("Tex"), Tex); Paper->SetMaterial(0, MID); }
 	Paper->SetRelativeScale3D(FVector(Height / 100.f));

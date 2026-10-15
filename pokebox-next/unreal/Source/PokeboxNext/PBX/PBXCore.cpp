@@ -63,7 +63,7 @@ namespace PBXData
 		const FColor* C = M.Find(T); return FLinearColor(C ? *C : FColor(200, 200, 200));
 	}
 	float LvMult(int32 Lv) { return .72f + Lv * .0125f; }
-	int32 StartLevel(const FPBXCardDef& C) { return 12 + C.Rarity * 2; }
+	int32 StartLevel(const FPBXCardDef& C) { return 10 + C.Rarity * 2; }   // council S6: the partner was Lv 18 on Route 1 (wild 8-15) — fights had no tension
 }
 
 // ------------------------------------------------------------------ fighters

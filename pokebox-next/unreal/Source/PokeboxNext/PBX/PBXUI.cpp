@@ -311,7 +311,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		]
 
 		// ---------------- big splash (chapter, captured, complete)
-		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(0, 0, 0, 160)
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(0, 0, 0, 420)   // high enough to clear faces
 		[
 			SNew(SVerticalBox).Visibility_Lambda([this] { return Vis(M->BigT > 0.f && !M->BigTitle.IsEmpty()); })
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->BigTitle); }).Font(PBXUI::Font(TEXT("title"), 96, 5))
@@ -421,7 +421,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(300).HeightOverride(470)[Btn]];
 		else Col->AddSlot().AutoHeight().Padding(0, 6)[SNew(SBox).WidthOverride(560)[Btn]];
 	}
-	if (M->bCards) return Row;
+	if (M->bCards) return SNew(SBox).WidthOverride(328.f * FMath::Max(1, M->Options.Num())).HeightOverride(470.f)[Row];   // explicit size: the card row came out zero-sized (all three cards drawn on one spot)
 	return Col;
 }
 
@@ -479,6 +479,7 @@ void SPBXHud::Tick(const FGeometry& G, const double Time, const float Dt)
 	{
 		BuiltOptions = M->OptionsRev; TArray<TSharedPtr<FSlateBrush>> Old = MoveTemp(KeepOpt); KeepOpt.Reset();
 		Sink = &KeepOpt; ChoiceHost->SetContent(MakeOptions()); Sink = &Keep; Invalidate(EInvalidateWidgetReason::Layout);
+		ChoiceHost->SlatePrepass(GetPrepassLayoutScaleMultiplier());   // measure the new buttons now, not a frame late
 	}
 	if (M->MovesRev != BuiltMoves && MovesHost.IsValid())
 	{

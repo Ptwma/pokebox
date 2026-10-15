@@ -20,6 +20,8 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HighResScreenshot.h"
 #include "HAL/FileManager.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
 #include "Engine/OverlapResult.h"
 #include "ImageUtils.h"
 #include "InputAction.h"
@@ -38,6 +40,7 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogPBX, Log, All);
 #define PBXLOG(Fmt, ...) UE_LOG(LogPBX, Display, TEXT(Fmt), ##__VA_ARGS__)
+static constexpr float PartnerFieldScale = .8f;   // the partner walking beside you (full size on the battle stage)
 static constexpr float BattleFOV = 55.f;
 
 static FVector JVec(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
@@ -273,7 +276,7 @@ void APBXDirector::SpawnPartner(bool bPop)
 		const FPBXCardDef* C = PBXData::Card(Card);
 		Partner->Setup(Card, 95.f * (C ? C->Size : 1.f)); Partner->PlaceAt(P);
 	}
-	Partner->Mode = APBXEcho::EMode::Follow; Partner->FollowTarget = Player; Partner->SetFaint(false);
+	Partner->Mode = APBXEcho::EMode::Follow; Partner->FollowTarget = Player; Partner->SetFaint(false); Partner->SetActorScale3D(FVector(PartnerFieldScale));
 	if (bPop) { Partner->PopIn(); Partner->Flash(FLinearColor(1, .95f, .7f), 4.f); }
 }
 
@@ -283,7 +286,7 @@ void APBXDirector::PlacePlayer(const FPBXSpot& S)
 	const float Z = PBXWorld::GroundZ(GetWorld(), S.Pos, 200.f, 1200.f, S.Pos.Z);
 	Player->SetActorLocationAndRotation(FVector(S.Pos.X, S.Pos.Y, Z + 95.f), FRotator(0, S.Yaw, 0), false, nullptr, ETeleportType::TeleportPhysics);
 	Player->GetCharacterMovement()->StopMovementImmediately();
-	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetControlRotation(FRotator(-12, S.Yaw, 0));
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetControlRotation(FRotator(S.Pos.Z < -3000.f ? -28.f : -12.f, S.Yaw, 0));   // indoors look down into the room
 	Player->SnapCamera();
 	LastSafe = Player->GetActorLocation();
 }
@@ -435,6 +438,19 @@ void APBXDirector::Tick(float Dt)
 	Super::Tick(Dt);
 	if (!UI.IsValid()) return;
 	TickTrain(Dt);
+	MusicHold = FMath::Max(0.f, MusicHold - Dt);
+	// indoors: a shorter, higher camera so the boom never presses the lens against the small rooms' walls (council S4)
+	if (Player && Player->Boom)
+	{
+		const bool bIn = Inside();
+		if (bIn != bWasInside)
+		{
+			bWasInside = bIn;
+			if (bIn) { OutdoorArm = Player->Boom->TargetArmLength; Player->Boom->TargetArmLength = 250.f; if (Player->Camera) Player->Camera->SetFieldOfView(85.f); }
+			else { Player->Boom->TargetArmLength = OutdoorArm; if (Player->Camera) Player->Camera->SetFieldOfView(75.f); }
+		}
+	}
+	if (MusicName.IsEmpty() && MusicHold <= 0.f && !Bt.bActive) Music(MapMusic());   // map theme (also after jingles)
 	// script queue
 	if (Queue.Num())
 	{
@@ -516,7 +532,7 @@ void APBXDirector::InConfirm()
 {
 	if (UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None)
 	{
-		if (UI->OnPick && UI->Options.IsValidIndex(UI->Selected) && UI->Options[UI->Selected].bEnabled) { TFunction<void(int32)> F = UI->OnPick; F(UI->Selected); }
+		if (UI->OnPick && UI->Options.IsValidIndex(UI->Selected) && UI->Options[UI->Selected].bEnabled) { Sfx(TEXT("sfx_confirm")); TFunction<void(int32)> F = UI->OnPick; F(UI->Selected); }
 		return;
 	}
 	if (Bt.bActive) { if (UI->bMoves) PickMove(UI->MoveSel); else bConfirm = true; return; }
@@ -536,6 +552,7 @@ void APBXDirector::InPause()
 }
 void APBXDirector::InNav(int32 Dx, int32 Dy)
 {
+	if (UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None || (Bt.bActive && UI->bMoves)) Sfx(TEXT("sfx_cursor"), .6f);
 	if (UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None)
 	{
 		const int32 N = UI->Options.Num(); if (!N) return;
@@ -616,6 +633,7 @@ void APBXDirector::UseDoor(const FPBXDoor& D, bool bFromOutside)
 {
 	if (bFromOutside && D.bLocked) { QSay({ { TEXT("note"), D.LockedText.IsEmpty() ? FString(TEXT("Rho's house. The door is locked. A scribbled note says: \"Out delivering. Or napping.\"")) : D.LockedText } }); return; }
 	const FPBXSpot To = bFromOutside ? D.Inside : D.Outside;
+	Sfx(TEXT("sfx_door"));
 	QFade(1.f, .3f);
 	QDo([this, To] { PlacePlayer(To); if (Partner) Partner->PlaceAt(To.Pos - FRotator(0, To.Yaw, 0).Vector() * 120.f); });
 	QWait(.15f);
@@ -660,7 +678,7 @@ void APBXDirector::TalkTo(APBXNPC* N)
 void APBXDirector::Rest()
 {
 	QFade(1.f, .5f);
-	QDo([this] { Game->HealAll(); if (Partner) Partner->SetFaint(false); });
+	QDo([this] { Game->HealAll(); if (Partner) Partner->SetFaint(false); Music(TEXT("")); Sfx(TEXT("jin_heal")); MusicHold = 2.6f; });
 	QWait(.6f);
 	QFade(0.f, .5f);
 	QDo([this] { SaveNow(false); Toast(TEXT("Your team is fully rested. Game saved.")); });
@@ -688,6 +706,7 @@ void APBXDirector::PickItem(int32 i)
 {
 	if (!Items.IsValidIndex(i)) return;
 	FPBXItem& I = Items[i]; const FName Id(*I.Id);
+	Sfx(TEXT("sfx_coin"));
 	if (Game->State->Picked.Contains(Id)) return;
 	Game->State->Picked.Add(Id);
 	if (AActor* A = I.Actor.Get()) { A->SetActorHiddenInGame(true); A->SetActorEnableCollision(false); }
@@ -711,8 +730,8 @@ void APBXDirector::OpenShop()
 		  Opt(TEXT("Leave"), TEXT(""), true, FLinearColor(.5f, .5f, .5f)) }, false,
 		[this](int32 i)
 		{
-			if (i == 0 && Game->State->Coins >= 100) { Game->State->Coins -= 100; Game->State->Potions++; Toast(TEXT("Bought a Potion.")); }
-			else if (i == 1 && Game->State->Coins >= 150) { Game->State->Coins -= 150; Game->State->Balls++; Toast(TEXT("Bought a Poké Ball.")); }
+			if (i == 0 && Game->State->Coins >= 100) { Game->State->Coins -= 100; Game->State->Potions++; Sfx(TEXT("sfx_coin")); Toast(TEXT("Bought a Potion.")); }
+			else if (i == 1 && Game->State->Coins >= 150) { Game->State->Coins -= 150; Game->State->Balls++; Sfx(TEXT("sfx_coin")); Toast(TEXT("Bought a Poké Ball.")); }
 			if (i == 2) { CloseChoice(); Menu = EMenu::None; QSay({ { TEXT("trader"), TEXT("Safe travels. Mind the bug kid — he'll talk your ear off.") } }); return; }
 			OpenShop(); if (UI->Options.IsValidIndex(i) && UI->Options[i].bEnabled) UI->Selected = i;
 		});
@@ -742,7 +761,7 @@ void APBXDirector::OpenMonActions(int32 i)
 	const FPBXMon& M = Game->State->Team[i]; const FPBXCardDef* C = PBXData::Card(M.Card);
 	const int32 Mx = MonMaxHP(M); const int32 H = M.HP < 0 ? Mx : M.HP;
 	auto Opt = [](const FString& T, const FString& S, bool bOk) { FPBXOption O; O.Title = T; O.Sub = S; O.bEnabled = bOk; O.Color = FLinearColor(.4f, .35f, .3f); return O; };
-	OpenChoice(C ? C->Name.ToUpper() : FString(TEXT("ECHO")), FString::Printf(TEXT("Lv %d · HP %d/%d · XP %d/%d"), M.Lv, H, Mx, M.XP, M.Lv * 12),
+	OpenChoice(C ? C->Name.ToUpper() : FString(TEXT("ECHO")), FString::Printf(TEXT("Lv %d · HP %d/%d · XP %d/%d"), M.Lv, H, Mx, M.XP, M.Lv * 18),
 		{ Opt(TEXT("Walk with me"), TEXT("make it your lead Echo"), i > 0 && H > 0), Opt(FString::Printf(TEXT("Use a Potion (%d)"), Game->State->Potions), TEXT("heals 60% HP"), Game->State->Potions > 0 && H < Mx && H > 0),
 		  Opt(TEXT("Back"), TEXT(""), true) }, false,
 		[this, i](int32 k)
@@ -1045,6 +1064,7 @@ void APBXDirector::TrainerSpotted(FName Id)
 {
 	APBXNPC* N = NPCs.FindRef(Id); const FPBXTrainer* T = Trainers.Find(Id); if (!N || !T) return;
 	PBXLOG("[PBX] spotted by %s", *Id.ToString());
+	Sfx(TEXT("sfx_spotted"));
 	Player->GetCharacterMovement()->StopMovementImmediately();
 	N->SetMarker(true); N->FaceTowards(PlayerLoc(), true);
 	UI->FlashT = .25f; UI->FlashColor = FLinearColor(1, .9f, .5f);
@@ -1113,6 +1133,35 @@ void APBXDirector::CompleteChapter()
 {
 	SetStep(EPBXStep::Done); SaveNow(false);
 	ShowMenu(EMenu::Complete);
+}
+
+// =================================================================== audio
+USoundBase* APBXDirector::Snd(const TCHAR* Name)
+{
+	const FName K(Name);
+	if (TObjectPtr<USoundBase>* F = SoundCache.Find(K)) return F->Get();
+	USoundBase* S = LoadObject<USoundBase>(nullptr, *FString::Printf(TEXT("/Game/PBX/Audio/%s.%s"), Name, Name));
+	if (!S) { GPBXMissingAssets++; UE_LOG(LogTemp, Warning, TEXT("[PBXASSET] sound %s missing"), Name); }
+	SoundCache.Add(K, S);
+	return S;
+}
+
+void APBXDirector::Sfx(const TCHAR* Name, float Vol)
+{
+	if (USoundBase* S = Snd(Name)) UGameplayStatics::PlaySound2D(this, S, .55f * Vol);
+}
+
+void APBXDirector::Music(const TCHAR* Name)
+{
+	if (MusicName == Name) return;
+	MusicName = Name;
+	if (MusicComp) { MusicComp->FadeOut(.5f, 0.f); MusicComp = nullptr; }
+	if (!*Name) return;
+	if (USoundBase* S = Snd(Name))
+	{
+		MusicComp = UGameplayStatics::SpawnSound2D(this, S, .32f, 1.f, 0.f, nullptr, false, false);
+		if (MusicComp) MusicComp->FadeIn(.7f, .32f);
+	}
 }
 
 // =================================================================== battles
@@ -1210,6 +1259,7 @@ void APBXDirector::ClearStage(const TArray<AActor*>& Keep)
 
 void APBXDirector::RestoreStage()
 {
+	if (Partner) Partner->SetActorScale3D(FVector(PartnerFieldScale));
 	for (const TWeakObjectPtr<AActor>& W : StageHidden) if (AActor* X = W.Get()) X->SetActorHiddenInGame(false);
 	StageHidden.Reset();
 }
@@ -1220,7 +1270,7 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	TArray<FPBXFighter> Mine; for (const FPBXMon& M : Game->State->Team) Mine.Add(FighterOf(M));
 	int32 First = Mine.IndexOfByPredicate([](const FPBXFighter& F) { return F.HP > 0; });
 	if (First < 0) { TeleportPlayer(LastSafe, Player->GetActorRotation().Yaw); Toast(TEXT("Your team is exhausted — rest at home first.")); return; }
-	Bt = FBattleCtx(); Bt.bActive = true; Bt.bWild = true; Bt.Foe = W; Bt.Mine = Partner;
+	Bt = FBattleCtx(); Bt.bActive = true; Bt.bWild = true; Bt.Foe = W; Bt.Mine = Partner; Music(TEXT("mus_battle"));
 	const int32 Patch = PatchOf(W->GetActorLocation()); const FIntPoint Lv = GrassLv.IsValidIndex(Patch) ? GrassLv[Patch] : FIntPoint(10, 12);
 	const FPBXCardDef* C = PBXData::Card(W->CardId); Bt.FoeLv = FMath::RandRange(Lv.X, Lv.Y);
 	if (Step() == EPBXStep::Capture && Game->State->Balls <= 0) { Game->State->Balls = 5; Toast(TEXT("Dr. Vale sent you 5 more Poké Balls.")); }
@@ -1231,8 +1281,8 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	SetupStage(W->GetActorLocation());
 	W->Mode = APBXEcho::EMode::Stage; W->PlaceAt(Bt.Bp); W->SetActorScale3D(FVector(StageFoeScale)); W->Flash(FLinearColor(1, 1, 1), 3.f);
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
-	Partner->PlaceAt(Bt.A); Partner->PopIn();
-	ClearStage({ W });
+	Partner->PlaceAt(Bt.A); Partner->PopIn(); Partner->SetActorScale3D(FVector(1.f));
+	ClearStage({ W }); Partner->SetActorScale3D(FVector(1.f));
 	if (FX) { FX->SetBase(0, Bt.A, 110.f, PBXData::TypeColor(Mine[First].Type)); FX->SetBase(1, Bt.Bp, 140.f, PBXData::TypeColor(C->Type)); }
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
@@ -1253,7 +1303,7 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	int32 First = Mine.IndexOfByPredicate([](const FPBXFighter& F) { return F.HP > 0; });
 	if (First < 0) { QSay({ { Who, TEXT("Your Echoes look wiped out. Go rest first — I'll wait. Probably.") } }); return; }
 	APBXNPC* N = NPCs.FindRef(Who); if (!N) return;
-	Bt = FBattleCtx(); Bt.bActive = true; Bt.bTrainer = true; Bt.Trainer = Who; Bt.Mine = Partner;
+	Bt = FBattleCtx(); Bt.bActive = true; Bt.bTrainer = true; Bt.Trainer = Who; Bt.Mine = Partner; Music(TEXT("mus_battle"));
 	TArray<FPBXFighter> Foes; const FPBXCardDef* C = nullptr;
 	if (const FPBXTrainer* T = Trainers.Find(Who))
 	{
@@ -1269,8 +1319,8 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	N->SetActorLocation(FVector(RhoAt.X, RhoAt.Y, PBXWorld::GroundZ(GetWorld(), RhoAt, 300.f, 1500.f, RhoAt.Z) + 92.f), false, nullptr, ETeleportType::TeleportPhysics);
 	N->FaceTowards(PlayerLoc(), true); N->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
-	Partner->PlaceAt(Bt.A); Partner->PopIn();
-	ClearStage({ E, N });
+	Partner->PlaceAt(Bt.A); Partner->PopIn(); Partner->SetActorScale3D(FVector(1.f));
+	ClearStage({ E, N }); Partner->SetActorScale3D(FVector(1.f));
 	if (FX) { FX->SetBase(0, Bt.A, 110.f, PBXData::TypeColor(Mine[First].Type)); FX->SetBase(1, Bt.Bp, 140.f, PBXData::TypeColor(C->Type)); }
 	Player->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
@@ -1354,6 +1404,7 @@ void APBXDirector::HitFX(int32 TargetSide, const FPBXEvent& E)
 {
 	APBXEcho* V = TargetSide == 0 ? Bt.Mine.Get() : Bt.Foe.Get(); if (!V) return;
 	const FVector At = V->GetActorLocation() + FVector(0, 0, 70);
+	Sfx(TEXT("sfx_hit"));
 	const float Power = (E.MoveKind == EPBXMove::Ult ? 2.f : E.MoveKind == EPBXMove::Sig ? 1.4f : 1.f) * (E.bCrit ? 1.4f : 1.f);
 	if (FX) FX->TypedHit(At, E.Type, Power);
 	FVector2D S; if (ToScreen(At, S)) PBXUI::SparkBurst(*UI, S, PBXData::TypeColor(E.Type) * 1.4f, FMath::RoundToInt(18 * Power), 700.f * Power, 11.f);
@@ -1446,7 +1497,7 @@ void APBXDirector::PlayEvents(const TArray<FPBXEvent>& Ev)
 		case FPBXEvent::Heal: QDo([this, E, EchoOf, ShowHP, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] += E.Dmg; ShowHP(E.Side); if (APBXEcho* V = EchoOf(E.Side)) { Floater(V->GetActorLocation(), FString::Printf(TEXT("+%d"), E.Dmg), FLinearColor(.4f, 1, .5f)); if (FX) FX->Burst(V->GetActorLocation() + FVector(0, 0, 30), FLinearColor(.4f, 1.f, .5f), 22, 120.f, 22.f, 1.2f, 220.f, .9f, 1, .8f); } }); QWait(.6f); break;
 		case FPBXEvent::Burn: QDo([this, E, EchoOf, ShowHP, Who, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] -= E.Dmg; ShowHP(E.Side); UI->Log = FString::Printf(TEXT("%s is hurt by its burn!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side)) { V->Hurt(); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), FLinearColor(1, .5f, .2f)); if (FX) FX->TypedHit(V->GetActorLocation() + FVector(0, 0, 50), TEXT("Fire"), .6f); } }); QWait(.8f); break;
 		case FPBXEvent::Cure: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s recovered from its %s."), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name), *E.St.ToString()); }); QWait(.6f); break;
-		case FPBXEvent::KO: QDo([this, E, EchoOf, Who, Sim] { UI->Log = FString::Printf(TEXT("%s fainted!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side))
+		case FPBXEvent::KO: QDo([this, E, EchoOf, Who, Sim] { Sfx(TEXT("sfx_faint")); UI->Log = FString::Printf(TEXT("%s fainted!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side))
 			{ V->SetFaint(true); if (FX) { FX->Burst(V->GetActorLocation() + FVector(0, 0, 40), FLinearColor(.55f, .52f, .58f), 30, 260.f, 60.f, 1.1f, 60.f, .6f, 0, 2.f); FX->Burst(V->GetActorLocation() + FVector(0, 0, 80), FLinearColor(1, 1, 1), 16, 500.f, 26.f, .6f, -300.f, .4f, 1); } Bt.Punch = 1.f; UI->ShakeT = .5f; } }); QWait(1.2f); break;
 		case FPBXEvent::Switch:
 			QDo([this, E, EchoOf, ShowHP, Who, Sim]
@@ -1487,7 +1538,7 @@ void APBXDirector::TryCapture()
 			Ball->GetStaticMeshComponent()->SetMaterial(0, D);
 		}
 	}
-	Bt.Ball = Ball;
+	Bt.Ball = Ball; Sfx(TEXT("sfx_ball_throw"));
 	const FVector From = PlayerLoc() + FVector(0, 0, 70), To = F->GetActorLocation() + FVector(0, 0, 60);
 	QWait(.25f);
 	Q([this, From, To](float T)
@@ -1510,6 +1561,7 @@ void APBXDirector::TryCapture()
 		QDo([this, F]
 		{
 			const FPBXFighter& Foe = Bt.B.Active(1);
+			Sfx(TEXT("sfx_capture"));
 			UI->Log = FString::Printf(TEXT("Gotcha! %s was captured!"), *Foe.Name);
 			Splash(TEXT("GOTCHA!"), FString::Printf(TEXT("%s was bound to a blank Lattice card"), *Foe.Name), 2.4f);
 		});
@@ -1551,8 +1603,8 @@ void APBXDirector::EndBattle(const FString& Result)
 		{
 			FPBXMon& M = Game->State->Team[i]; if (i < Bt.B.Team[0].Num() && Bt.B.Team[0][i].HP <= 0) continue;
 			M.XP += Xp; bool bUp = false;
-			while (M.XP >= M.Lv * 12 && M.Lv < 60) { M.XP -= M.Lv * 12; M.Lv++; bUp = true; }
-			if (bUp) Toast(FString::Printf(TEXT("%s grew to Lv %d!"), *PBXData::Card(M.Card)->Name, M.Lv));
+			while (M.XP >= M.Lv * 18 && M.Lv < 60) { M.XP -= M.Lv * 18; M.Lv++; bUp = true; }   // ~7-9 wins per level around Lv 12
+			if (bUp) { Sfx(TEXT("sfx_levelup")); Toast(FString::Printf(TEXT("%s grew to Lv %d!"), *PBXData::Card(M.Card)->Name, M.Lv)); }
 		}
 	}
 	if (bCaught)
@@ -1560,7 +1612,8 @@ void APBXDirector::EndBattle(const FString& Result)
 		const bool bTeam = Game->AddMon(Foe.CardId, Bt.FoeLv); Game->State->Captures++;
 		Toast(FString::Printf(TEXT("%s joined %s."), *Foe.Name, bTeam ? TEXT("your team") : TEXT("your card box")));
 	}
-	if (bWin && Bt.bTrainer) { Game->State->Coins += Reward; Game->State->Wins++; Toast(FString::Printf(TEXT("You won %d coins!"), Reward)); }
+	if (bWin || bCaught) { Music(TEXT("")); Sfx(TEXT("jin_victory")); MusicHold = 3.f; } else { Music(TEXT("")); MusicHold = .5f; }
+	if (bWin && Bt.bTrainer) { Sfx(TEXT("sfx_coin")); Game->State->Coins += Reward; Game->State->Wins++; Toast(FString::Printf(TEXT("You won %d coins!"), Reward)); }
 	// tear down the stage
 	if (AStaticMeshActor* B = Bt.Ball.Get()) B->Destroy();
 	APBXEcho* F = Bt.Foe.Get();
@@ -1683,7 +1736,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		FString P = Game->HasPartner() ? PBXData::Card(Game->State->Team[0].Card)->Name : FString(TEXT("-"));
 		if (Step() >= EPBXStep::Route1Clear)
 		{
-			OpenChoice(TEXT("ROUTE 1 CLEARED"), FString::Printf(TEXT("Mistvale and its Warden are the next level (not built yet).\nLead: %s Lv %d · Team %d · Echoes caught: %d · Trainers beaten: %d · Play time: %d min"),
+			OpenChoice(TEXT("ROUTE 1 CLEARED"), FString::Printf(TEXT("The road to Mistvale is washed out — the Warden's crews are clearing it. Rest up, Ranger.\nLead: %s Lv %d · Team %d · Echoes caught: %d · Trainers beaten: %d · Play time: %d min"),
 				*P, Game->HasPartner() ? Game->State->Team[0].Lv : 0, Game->State->Team.Num(), Game->State->Captures, Game->State->Beaten.Num(), FMath::FloorToInt(Game->State->PlayTime / 60.f)),
 				{ Opt(TEXT("Keep exploring Route 1"), TEXT("your progress is saved")), Opt(TEXT("Quit to title"), TEXT("")) }, false,
 				[this](int32 i)
@@ -1899,15 +1952,31 @@ bool APBXDirector::BeautyPass(float Dt)
 }
 
 // =================================================================== autoplay test
+bool APBXDirector::ShotFirst(const TCHAR* N)
+{
+	if (ShotDoneName == N) { ShotDoneName.Reset(); return false; }
+	Shot(N); ShotPendingName = N; ShotWait = 3;
+	return true;
+}
+
 void APBXDirector::Shot(const FString& N)
 {
 	const FString Path = FPaths::ProjectSavedDir() / TEXT("pbx_auto") / (N + TEXT(".png"));
 	FScreenshotRequest::RequestScreenshot(Path, true, false);
 	AutoShots++; PBXLOG("[PBXAUTO] shot %s", *N);
+	// honest shots (council 2026-10-16): a frame that shows a half-typed line, an empty menu or an empty move list is a failure
+	auto Bad = [this, &N](const TCHAR* Why) { PBXLOG("[PBXAUTO] FAIL shot %s: %s", *N, Why); bAutoFail = true; };
+	if (UI->Mode == EPBXUIMode::Dialogue && UI->Line.Len() >= 3 && UI->Visible < 3.f) Bad(TEXT("dialogue not typed yet"));
+	if ((UI->Mode == EPBXUIMode::Choice || UI->Mode == EPBXUIMode::Menu) && UI->Options.Num() == 0) Bad(TEXT("menu with no options"));
+	if (Bt.bActive && UI->bMoves && (UI->Moves.Num() == 0 || UI->MovesIn < 1.f)) Bad(TEXT("move list empty or still sliding in"));
+	if (GPBXMissingAssets > 0) { PBXLOG("[PBXAUTO] FAIL shot %s: %d missing assets so far (see [PBXASSET] lines)", *N, GPBXMissingAssets); bAutoFail = true; GPBXMissingAssets = 0; }
 }
 
 void APBXDirector::AutoTick(float Dt)
 {
+	// a requested screenshot is taken when the frame renders: hold the script for a few frames so actions that follow the
+	// shot (teleports, doors, dialogues) do not end up in the picture (council 2026-10-16: shots were one step late)
+	if (ShotWait > 0) { if (--ShotWait == 0) ShotDoneName = ShotPendingName; return; }
 	AutoT += Dt; AutoStepT += Dt;
 	auto Fail = [this](const TCHAR* Why) { PBXLOG("[PBXAUTO] FAIL step %d: %s", AutoStep, Why); bAutoFail = true; AutoNext(); };
 	auto Idle = [this] { return !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore; };
@@ -1917,35 +1986,35 @@ void APBXDirector::AutoTick(float Dt)
 	{
 	case 0: if (AutoT > 4.f) { Shot(TEXT("01_title")); AutoNext(); } break;
 	case 1: if (AutoStepT > 1.f) { ShowMenu(EMenu::Gender); AutoNext(); } break;
-	case 2: if (AutoStepT > 1.f) { Shot(TEXT("02_gender")); StartNewGame(true); AutoNext(); } break;
-	case 3: if (AutoStepT > 4.5f && Idle()) { Shot(TEXT("03_house")); if (APBXNPC* N = NPCs.FindRef(TEXT("mom"))) { TeleportPlayer(N->GetActorLocation() + N->GetActorForwardVector() * 150.f, 0); TalkTo(N); } AutoNext(); } break;
+	case 2: if (AutoStepT > 2.f) { if (ShotFirst(TEXT("02_gender"))) break; StartNewGame(true); AutoNext(); } break;
+	case 3: if (AutoStepT > 4.5f && Idle()) { if (ShotFirst(TEXT("03_house"))) break; if (APBXNPC* N = NPCs.FindRef(TEXT("mom"))) { TeleportPlayer(N->GetActorLocation() + N->GetActorForwardVector() * 150.f, 0); TalkTo(N); } AutoNext(); } break;
 	case 4: if (AutoStepT > 1.2f && UI->Mode == EPBXUIMode::Dialogue && UI->Visible >= UI->Line.Len()) { Shot(TEXT("04_dialogue_mum")); AutoNext(); } break;
 	case 5: if (Idle()) { if (const FPBXDoor* D = DoorById(TEXT("house"))) UseDoor(*D, false); AutoNext(); } break;
 	case 6: if (UI->Mode == EPBXUIMode::Dialogue && UI->Visible >= UI->Line.Len() && AutoStepT > 1.5f) { Shot(TEXT("05_rho_greets")); AutoNext(); } break;
-	case 7: if (Idle() && Step() == EPBXStep::GoLab) { Shot(TEXT("06_town_objective")); if (const FPBXDoor* D = DoorById(TEXT("lab"))) { FPBXSpot S = D->Outside; S.Pos += FRotator(0, S.Yaw, 0).Vector() * 600.f; S.Yaw += 180.f; PlacePlayer(S); } AutoNext(); } break;
-	case 8: if (AutoStepT > 2.5f) { Shot(TEXT("07_lab_outside")); if (const FPBXDoor* D = DoorById(TEXT("lab"))) UseDoor(*D, true); AutoNext(); } break;
-	case 9: if (Idle() && AutoStepT > 1.5f) { Shot(TEXT("08_lab_inside")); if (APBXNPC* V = NPCs.FindRef(TEXT("vale"))) { TeleportPlayer(V->GetActorLocation() + V->GetActorForwardVector() * 170.f, 0); TalkTo(V); } AutoNext(); } break;
-	case 10: if (UI->Mode == EPBXUIMode::Choice && AutoStepT > 1.5f) { Shot(TEXT("09_starter_choice")); InNav(1, 0); AutoNext(); } break;
+	case 7: if (Idle() && Step() == EPBXStep::GoLab) { if (ShotFirst(TEXT("06_town_objective"))) break; if (const FPBXDoor* D = DoorById(TEXT("lab"))) { FPBXSpot S = D->Outside; S.Pos += FRotator(0, S.Yaw, 0).Vector() * 600.f; S.Yaw += 180.f; PlacePlayer(S); } AutoNext(); } break;
+	case 8: if (AutoStepT > 2.5f) { if (ShotFirst(TEXT("07_lab_outside"))) break; if (const FPBXDoor* D = DoorById(TEXT("lab"))) UseDoor(*D, true); AutoNext(); } break;
+	case 9: if (Idle() && AutoStepT > 1.5f) { if (ShotFirst(TEXT("08_lab_inside"))) break; if (APBXNPC* V = NPCs.FindRef(TEXT("vale"))) { TeleportPlayer(V->GetActorLocation() + V->GetActorForwardVector() * 170.f, 0); TalkTo(V); } AutoNext(); } break;
+	case 10: if (UI->Mode == EPBXUIMode::Choice && AutoStepT > 2.5f) { if (ShotFirst(TEXT("09_starter_choice"))) break; InNav(1, 0); AutoNext(); } break;
 	case 11: if (AutoStepT > .8f) { InConfirm(); AutoNext(); } break;
 	case 12: if (Idle() && Step() == EPBXStep::Capture) { Shot(TEXT("10_partner")); AutoNext(); } break;
 	case 13: if (AutoStepT > 1.f) { if (const FPBXDoor* D = DoorById(TEXT("lab"))) UseDoor(*D, false); AutoNext(); } break;
 	case 14: if (Idle() && AutoStepT > 1.f)
 		{
-			Shot(TEXT("11_outside_partner"));
+			if (ShotFirst(TEXT("11_outside_partner"))) break;
 			if (Grass.Num()) { const FVector2D C = Grass[0].GetCenter(); TeleportPlayer(FVector(C.X + 900.f, C.Y, 0), 180.f); }
 			AutoNext();
 		} break;
-	case 15: if (AutoStepT > 3.f && Idle()) { Shot(TEXT("12_tall_grass")); APBXEcho* Best = nullptr; for (APBXEcho* W : Wilds) if (W && !W->IsHidden()) { Best = W; break; } if (Best) TeleportPlayer(Best->GetActorLocation() - FVector(400, 0, 0), 0.f); AutoNext(); } break;
+	case 15: if (AutoStepT > 3.f && Idle()) { if (ShotFirst(TEXT("12_tall_grass"))) break; APBXEcho* Best = nullptr; for (APBXEcho* W : Wilds) if (W && !W->IsHidden()) { Best = W; break; } if (Best) TeleportPlayer(Best->GetActorLocation() - FVector(400, 0, 0), 0.f); AutoNext(); } break;
 	case 16: if (Bt.bActive && UI->BannerT > 0.f && AutoStepT > .6f) { Shot(TEXT("13_battle_intro")); AutoNext(); } else if (AutoStepT > 6.f && Idle()) { APBXEcho* Best = nullptr; for (APBXEcho* W : Wilds) if (W && !W->IsHidden()) { Best = W; break; } if (Best) TeleportPlayer(Best->GetActorLocation() + FVector(60, 0, 0), 0.f); AutoStepT = 0.f; } break;
-	case 17: if (Bt.bActive && UI->bMoves) { Shot(TEXT("14_battle_moves")); AutoNext(); } break;
+	case 17: if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("14_battle_moves")); AutoNext(); } break;
 	case 18: if (Bt.bActive && UI->ShakeT > .05f) { Shot(TEXT("15_battle_hit")); AutoNext(); } else if (!Bt.bActive && AutoStepT > 2.f) AutoNext(); break;
 	case 19: if (UI->BigT > 1.5f && UI->BigTitle == TEXT("GOTCHA!")) { Shot(TEXT("16_gotcha")); AutoNext(); }
 		else if (Idle() && Step() == EPBXStep::Capture && AutoStepT > 3.f) { AutoStep = 15; AutoStepT = 0.f; PBXLOG("[PBXAUTO] capture missed — retry"); }
 		else if (Idle() && Step() >= EPBXStep::RhoBattle) AutoNext();
 		break;
 	case 20: if (Idle() && Step() == EPBXStep::RhoBattle) { if (APBXNPC* R = NPCs.FindRef(TEXT("rho"))) { TeleportPlayer(R->GetActorLocation() + R->GetActorForwardVector() * 180.f, 0); TalkTo(R); } AutoNext(); } break;
-	case 21: if (Bt.bActive && UI->bMoves) { Shot(TEXT("17_rival_battle")); AutoNext(); } break;
-	case 22: if (!Bt.bActive && UI->Mode == EPBXUIMode::Dialogue && AutoStepT > 1.f) { Shot(TEXT("18_after_rival")); AutoNext(); } break;
+	case 21: if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("17_rival_battle")); AutoNext(); } break;
+	case 22: if (!Bt.bActive && UI->Mode == EPBXUIMode::Dialogue && AutoStepT > 1.f && UI->Visible >= UI->Line.Len()) { Shot(TEXT("18_after_rival")); AutoNext(); } break;
 	case 23: if (Idle())
 		{
 			if (Step() != EPBXStep::Rest) { PBXLOG("[PBXAUTO] rival battle lost, retrying after rest (step %d)", (int32)Step()); }
@@ -1955,7 +2024,8 @@ void APBXDirector::AutoTick(float Dt)
 	case 24: if (AutoStepT > 1.f && Idle()) { Rest(); AutoNext(); } break;
 		case 25: if (Idle() && AutoStepT > 2.f)
 		{
-			Shot(TEXT("19_rested"));
+			if (ShotFirst(TEXT("19_rested"))) break;
+			PBXLOG("[PBXAUTO] rested: player %s bed %s inside=%d", *PlayerLoc().ToCompactString(), *BedPos.ToCompactString(), Inside() ? 1 : 0);
 			if (Step() == EPBXStep::RhoBattle) { AutoStep = 20; AutoStepT = 0.f; break; }
 			if (Step() != EPBXStep::Gate) { Fail(TEXT("expected Gate step after rest")); break; }
 			// the landslide is gone: walk up to the open Route 1 gate
@@ -1966,7 +2036,7 @@ void APBXDirector::AutoTick(float Dt)
 	case 26: if (!BeautyPass(Dt)) break;
 		if (AutoStepT > 2.f && Idle())
 		{
-			Shot(TEXT("20_gate_open"));
+			if (ShotFirst(TEXT("20_gate_open"))) break;
 			const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.Id == TEXT("route1"); });
 			if (E) TeleportPlayer(E->Pos, 180.f);   // StoryTick sees the exit and loads Route 1 (AutoResume = 27 -> Route 1 continues at 100)
 			AutoNext();
@@ -1979,16 +2049,16 @@ void APBXDirector::AutoTick(float Dt)
 		if (APBXNPC* J = NPCs.FindRef(TEXT("joey"))) { TeleportPlayer(J->Home + FRotator(0, J->HomeYaw, 0).Vector() * 520.f, J->HomeYaw + 180.f); AutoNext(); }
 		else Fail(TEXT("no joey")); break;
 	case 102: if (UI->Mode == EPBXUIMode::Dialogue && AutoStepT > .5f && UI->Visible >= UI->Line.Len()) { Shot(TEXT("24_trainer_spotted")); AutoNext(); } break;
-	case 103: if (Bt.bActive && UI->bMoves) { Shot(TEXT("25_trainer_battle")); AutoNext(); } break;
-	case 104: if (Bt.bActive && Bt.B.Act[1] > 0 && UI->bMoves) { Shot(TEXT("25b_trainer_second_echo")); AutoNext(); } else if (!Bt.bActive) AutoNext(); break;
+	case 103: if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("25_trainer_battle")); AutoNext(); } break;
+	case 104: if (Bt.bActive && Bt.B.Act[1] > 0 && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("25b_trainer_second_echo")); AutoNext(); } else if (!Bt.bActive) AutoNext(); break;
 	case 105: if (!Bt.bActive && Idle() && AutoStepT > 1.f)
 		{
-			Shot(TEXT("26_after_trainer"));
+			if (ShotFirst(TEXT("26_after_trainer"))) break;
 			PBXLOG("[PBXAUTO] joey %s", Game->State->Beaten.Contains(TEXT("joey")) ? TEXT("beaten") : TEXT("NOT beaten (lost)"));
 			if (APBXNPC* H = NPCs.FindRef(TEXT("healer"))) { TeleportPlayer(H->GetActorLocation() + H->GetActorForwardVector() * 170.f, H->HomeYaw + 180.f); TalkTo(H); }
 			AutoNext();
 		} break;
-	case 106: if (Idle() && AutoStepT > 1.f) { Shot(TEXT("27_rest_stop")); if (APBXNPC* T = NPCs.FindRef(TEXT("trader"))) { TeleportPlayer(T->GetActorLocation() + T->GetActorForwardVector() * 170.f, T->HomeYaw + 180.f); TalkTo(T); } AutoNext(); } break;
+	case 106: if (Idle() && AutoStepT > 1.f) { if (ShotFirst(TEXT("27_rest_stop"))) break; if (APBXNPC* T = NPCs.FindRef(TEXT("trader"))) { TeleportPlayer(T->GetActorLocation() + T->GetActorForwardVector() * 170.f, T->HomeYaw + 180.f); TalkTo(T); } AutoNext(); } break;
 	case 107: { static bool bOpen = false; if (Menu == EMenu::Confirm && !bOpen) { bOpen = true; AutoStepT = 0.f; } else if (bOpen && AutoStepT > .8f) { Shot(TEXT("28_shop")); AutoNext(); } } break;   // wait for the list to lay out
 	case 108:
 		{
@@ -2013,12 +2083,12 @@ void APBXDirector::AutoTick(float Dt)
 			if (!Best) for (APBXEcho* W : Wilds) if (W && !W->IsHidden()) { Best = W; break; }
 			if (Best) { TeleportPlayer(Best->GetActorLocation() + FVector(60, 0, 0), 180.f); AutoNext(); }
 		} break;
-	case 113: if (Bt.bActive && UI->bMoves) { Shot(TEXT("30_wild_meadow")); AutoNext(); } else if (AutoStepT > 6.f) { AutoStep = 112; AutoStepT = 0.f; } break;
+	case 113: if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("30_wild_meadow")); AutoNext(); } else if (AutoStepT > 6.f) { AutoStep = 112; AutoStepT = 0.f; } break;
 	case 114: if (!Bt.bActive && Idle() && AutoStepT > 1.f) { AutoNext(); } break;
 	case 115: if (!BeautyPass(Dt)) break;
 		{ const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (!E) { Fail(TEXT("no end exit")); break; }
 		if (Idle()) { TeleportPlayer(E->Pos + FVector(1200, 0, 0), 180.f); AutoNext(); } } break;
-	case 116: if (AutoStepT > 2.f && Idle()) { Shot(TEXT("31_mistvale_gate")); const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (E) TeleportPlayer(E->Pos, 180.f); AutoNext(); } break;
+	case 116: if (AutoStepT > 2.f && Idle()) { if (ShotFirst(TEXT("31_mistvale_gate"))) break; const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (E) TeleportPlayer(E->Pos, 180.f); AutoNext(); } break;
 	case 117: if (Menu == EMenu::Complete && AutoStepT > 1.f) { Shot(TEXT("32_route1_cleared")); AutoNext(); }
 		else if (UI->Mode == EPBXUIMode::Dialogue && AutoStepT > .8f) InConfirm();
 		break;

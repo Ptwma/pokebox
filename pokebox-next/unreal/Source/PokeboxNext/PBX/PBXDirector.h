@@ -10,6 +10,7 @@
 #include "PBX/PBXUI.h"
 #include "PBX/PBXGame.h"
 #include "PBX/PBXFX.h"
+class UAudioComponent; class USoundBase;
 #include "PBXDirector.generated.h"
 
 class APBXPlayer; class APBXNPC; class APBXEcho; class ACameraActor; class AStaticMeshActor; class UInputAction; class UInputMappingContext;
@@ -176,8 +177,19 @@ private:
 	bool bAuto = false; int32 AutoStep = 0; float AutoT = 0.f, AutoStepT = 0.f; int32 AutoShots = 0; bool bAutoFail = false;
 	void AutoTick(float Dt);
 	void Shot(const FString& Name);
+	bool ShotFirst(const TCHAR* Name);   // true = shot requested, come back next tick; false = shot done, carry on
+	int32 ShotWait = 0; FString ShotPendingName, ShotDoneName;
 	void AutoNext() { AutoStep++; AutoStepT = 0.f; }
 	void TeleportPlayer(const FVector& P, float Yaw);
+	// ---- audio (original chiptune, tools/chiptune.py -> /Game/PBX/Audio): one music track at a time + 2D sound effects
+	UPROPERTY() TObjectPtr<UAudioComponent> MusicComp;
+	UPROPERTY() TMap<FName, TObjectPtr<USoundBase>> SoundCache;
+	FString MusicName; float MusicHold = 0.f;
+	bool bWasInside = false; float OutdoorArm = 430.f;
+	USoundBase* Snd(const TCHAR* Name);
+	void Sfx(const TCHAR* Name, float Vol = 1.f);
+	void Music(const TCHAR* Name);
+	const TCHAR* MapMusic() const { return IsTown() ? TEXT("mus_town") : TEXT("mus_route"); }
 	// fixed "player-truth" beauty cams (council 2026-10-16): same poses every run, guarded, captions in Saved/pbx_auto/beauty.txt
 	int32 BeautyIdx = -1, BeautyPhase = 0; float BeautyT = 0.f; FPBXSpot BeautyBack; TArray<FString> BeautyDone;
 	bool BeautyPass(float Dt);   // true once every cam of the current map has been shot

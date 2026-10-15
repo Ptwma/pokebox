@@ -87,11 +87,21 @@ def _check_materials(c):
                 elif any(b in t.get_path_name() for b in BAD_TEX): bad.append('?slot %d texture %s = engine default' % (i, tp.get_editor_property('parameter_info').name))
     return bad
 
-def run(map_name):
+# intentional contacts: a stall belongs to its seller, a gate sign to its guard (label prefix -> gameplay point label)
+ALLOW = {('SM_PROP_market', 'npc merchant'), ('SM_PROP_market', 'npc trader'), ('SM_Sign', 'npc guard'), ('SM_Sign', 'npc merchant'),
+         ('SM_Fence', 'npc scout'), ('SM_PROP_walkway', 'npc fisher')}
+NO_DROP = ('SM_PROP_walkway', 'SM_PROP_lamp', 'SM_PROP_sign')   # piers stand over water, lamps hang: never 'drop' them
+
+def _allowed(lbl, pl): return any(lbl.startswith(a) and pl == b for (a, b) in ALLOW)
+
+def run(map_name, fix=False):
+    """fix=True repairs what can be repaired safely and saves the level:
+       plants lose collision; props blocking a door lane are pushed sideways out of it; small props on a gameplay point are
+       deleted; floating props are dropped onto the ground. Everything it did is listed as FIXED in the report."""
     world = _world()
     G = json.load(open(DATA + map_name + '.json', encoding='utf-8')) if os.path.exists(DATA + map_name + '.json') else {}
     pts = _points(G); lanes = _lanes(G)
-    fails, warns = [], []
+    fails, warns, fixed = [], [], []
     actors = unreal.EditorLevelLibrary.get_all_level_actors()
     for a in actors:
         lbl = a.get_actor_label()
@@ -117,26 +127,49 @@ def run(map_name):
         blocking = c is not None and c.get_collision_enabled() != unreal.CollisionEnabled.NO_COLLISION
         building = is_bp or max(ext.x, ext.y) > 450.0
         soft = lbl.startswith(SOFT) or path.split('.')[-1].startswith(SOFT)
-        if blocking and soft: warns.append('COLLIDES  plant %s has collision (the player bumps into it)' % lbl)
+        if blocking and soft:
+            if fix:
+                for sc in a.get_components_by_class(unreal.StaticMeshComponent): sc.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+                fixed.append('COLLISION OFF  %s' % lbl); blocking = False
+            else: warns.append('COLLIDES  plant %s has collision (the player bumps into it)' % lbl)
         if blocking and tall > 30.0 and not building and not soft:
-            for (pl, x, y, z) in pts:
-                if abs(z - o.z) > 400.0: continue        # interiors sit 60 m below; don't mix floors
-                d = _dist2d_box(x, y, mn, mx)
-                if d < (NPC_R if pl.startswith('npc ') else CLEAR_R): fails.append('KEEP-CLEAR  %s is %.0f cm from %s' % (lbl, d, pl))
+            gone = False
             for (pl, z, P) in lanes:
                 if abs(z - o.z) > 400.0: continue
                 d = min(_dist2d_box(x, y, mn, mx) for (x, y) in P)
-                if d < LANE_HALF: fails.append('DOOR-LANE  %s sits in the walk-up lane of %s' % (lbl, pl))
+                if d < LANE_HALF:
+                    if fix:   # push it sideways, perpendicular to the lane, until its box clears the lane by 50 cm
+                        (x0, y0), (x1, y1) = P[0], P[-1]; L = math.hypot(x1 - x0, y1 - y0) or 1.0
+                        nx, ny = -(y1 - y0) / L, (x1 - x0) / L
+                        side = 1.0 if (o.x - x0) * nx + (o.y - y0) * ny >= 0 else -1.0
+                        shift = LANE_HALF + max(ext.x, ext.y) + 50.0
+                        a.set_actor_location(a.get_actor_location() + unreal.Vector(nx * side * shift, ny * side * shift, 0.0), False, True)
+                        fixed.append('MOVED  %s %.0f cm out of %s' % (lbl, shift, pl)); o, ext = a.get_actor_bounds(False); mn, mx = o - ext, o + ext
+                    else: fails.append('DOOR-LANE  %s sits in the walk-up lane of %s' % (lbl, pl))
+            for (pl, x, y, z) in pts:
+                if gone or abs(z - o.z) > 400.0: continue        # interiors sit 60 m below; don't mix floors
+                d = _dist2d_box(x, y, mn, mx)
+                if d < (NPC_R if pl.startswith('npc ') else CLEAR_R) and not _allowed(lbl, pl):
+                    if fix and (tall < 250.0 or d < 60.0):   # big rocks too when they sit right ON the point
+                        fixed.append('DELETED  %s (%.0f cm from %s)' % (lbl, d, pl)); unreal.EditorLevelLibrary.destroy_actor(a); gone = True
+                    else: fails.append('KEEP-CLEAR  %s is %.0f cm from %s' % (lbl, d, pl))
+            if gone: continue
         # ---- floating / buried (single props only)
         if not building and c is not None and tall > 10.0:
             g = _ground_below(world, o.x, o.y, mx.z + 50.0, [a])   # from the top: a prop sunk into a slope must still see that slope
             if g is not None:
-                if mn.z - g > FLOAT_TOL: fails.append('FLOATING  %s bottom %.0f cm above ground' % (lbl, mn.z - g))
+                if mn.z - g > FLOAT_TOL:
+                    if fix and not lbl.startswith(NO_DROP):
+                        a.set_actor_location(a.get_actor_location() - unreal.Vector(0.0, 0.0, mn.z - g - 3.0), False, True)
+                        fixed.append('DROPPED  %s %.0f cm onto the ground' % (lbl, mn.z - g))
+                    else: fails.append('FLOATING  %s bottom %.0f cm above ground' % (lbl, mn.z - g))
                 elif g - mn.z > .6 * tall and tall > 60.0: warns.append('BURIED  %s sunk %.0f of %.0f cm' % (lbl, g - mn.z, tall))
     out = os.path.join(SAVED, 'pbx_validate_%s.txt' % map_name)
     with open(out, 'w', encoding='utf-8') as fh:
-        fh.write('%s  FAIL %d  WARN %d  (points checked %d, actors %d)\n\n' % (map_name, len(fails), len(warns), len(pts), len(actors)))
+        fh.write('%s  FAIL %d  WARN %d  FIXED %d  (points checked %d, actors %d)\n\n' % (map_name, len(fails), len(warns), len(fixed), len(pts), len(actors)))
+        for l in fixed: fh.write('FIXED ' + l + '\n')
         for l in sorted(set(fails)): fh.write('FAIL ' + l + '\n')
         for l in sorted(set(warns)): fh.write('WARN ' + l + '\n')
-    print('[pbx] VALIDATE %s FAIL %d WARN %d -> %s' % (map_name, len(set(fails)), len(set(warns)), out))
+    if fix and fixed: unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
+    print('[pbx] VALIDATE %s FAIL %d WARN %d FIXED %d -> %s' % (map_name, len(set(fails)), len(set(warns)), len(fixed), out))
     return sorted(set(fails)), sorted(set(warns))

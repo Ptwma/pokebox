@@ -114,6 +114,22 @@ def fix_kit_materials():
         MEL.update_material_instance(mi); EAL.save_loaded_asset(mi); n += 1
     log('qprops materials fixed', n)
 
+def master_echo():
+    """Echo card material: UNLIT (council 2026-10-16) — a printed card reads the same in sun, shade or backlight; the lit
+    version turned wild Echoes into black silhouettes under trees. Emissive = card art x Brightness, plus the hit flash."""
+    m = _fresh('M_PBX_Echo', G + '/Materials')
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED); m.set_editor_property('two_sided', True)
+    m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    t = _texp(m, 'Tex', -900, 0, default=WHITE)
+    MEL.connect_material_property(t, 'A', unreal.MaterialProperty.MP_OPACITY_MASK)
+    base = _mul(m, t, _scalar(m, 'Brightness', .92, -900, 200), -600, 100, 'RGB')
+    fl = _mul(m, _vec(m, 'FlashColor', (1, 1, 1, 1), -900, 300), _scalar(m, 'Flash', 0.0, -900, 450), -600, 350)
+    flash = _mul(m, t, fl, -400, 250, 'RGB')
+    add = _e(m, unreal.MaterialExpressionAdd, -200, 200); MEL.connect_material_expressions(base, '', add, 'A'); MEL.connect_material_expressions(flash, '', add, 'B')
+    MEL.connect_material_property(add, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    return m
+
 def import_echoes():
     """paper Echo cut-outs (made from the user's local card images — never in git) + their master material"""
     d = os.path.join(SRC, 'echo'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.png')]
@@ -123,16 +139,19 @@ def import_echoes():
         if isinstance(t, unreal.Texture2D):
             t.set_editor_property('max_texture_size', 1024); t.set_editor_property('lod_group', unreal.TextureGroup.TEXTUREGROUP_UI if False else unreal.TextureGroup.TEXTUREGROUP_WORLD)
             EAL.save_loaded_asset(t)
-    m = _fresh('M_PBX_Echo', G + '/Materials')
-    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED); m.set_editor_property('two_sided', True)
-    t = _texp(m, 'Tex', -900, 0, default=WHITE)
-    MEL.connect_material_property(t, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
-    MEL.connect_material_property(t, 'A', unreal.MaterialProperty.MP_OPACITY_MASK)
-    fl = _mul(m, _vec(m, 'FlashColor', (1, 1, 1, 1), -900, 300), _scalar(m, 'Flash', 0.0, -900, 450), -600, 350)
-    MEL.connect_material_property(_mul(m, t, fl, -400, 250, 'RGB'), '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-    MEL.connect_material_property(_scalar(m, 'Roughness', .85, -600, 100), '', unreal.MaterialProperty.MP_ROUGHNESS)
-    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    master_echo()
     log('echoes', len(files))
+
+def import_audio():
+    """original chiptune music + SFX (tools/chiptune.py -> PokeboxNext_src/audio/*.wav) -> /Game/PBX/Audio; mus_* loop"""
+    d = os.path.join(SRC, 'audio'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.wav')]
+    got = _import(files, G + '/Audio')
+    for p in EAL.list_assets(G + '/Audio', recursive=False):
+        w = EAL.load_asset(p)
+        if isinstance(w, unreal.SoundWave):
+            w.set_editor_property('looping', w.get_name().startswith('mus_')); EAL.save_loaded_asset(w)
+    log('audio', len(files), len(got))
+    return got
 
 def import_outfits():
     d = os.path.join(SRC, 'outfits'); files = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.startswith('T_Outfit_') and f.endswith('.png')]
@@ -690,6 +709,9 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
     except Exception as ex: log('recapture', ex)
     les.save_current_level()
     log('level built', len(plan['objects']), 'objects', 'missing', sorted(missing))
+    try:   # every rebuild repairs keep-clear / floating / plant-collision problems the generator left behind (council 2026-10-16)
+        import pbx_validate; pbx_validate.run(map_name, fix=True)
+    except Exception as ex: log('validate fix', ex)
 
 ROUTE1_MESHES = ['SM_R1_Ground', 'SM_R1_Mountains', 'SM_R1_Hut', 'SM_R1_GateEast', 'SM_R1_GateWest', 'SM_ItemBall']
 
