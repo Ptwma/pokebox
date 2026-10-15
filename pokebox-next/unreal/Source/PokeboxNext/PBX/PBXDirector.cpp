@@ -19,6 +19,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HighResScreenshot.h"
+#include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -977,6 +978,7 @@ void APBXDirector::StoryTick(float Dt)
 		else if (SafeT > .5f && Player->GetCharacterMovement()->IsMovingOnGround()) { LastSafe = P; SafeT = 0.f; }
 	}
 	else if (SafeT > .5f && Player->GetCharacterMovement()->IsMovingOnGround()) { LastSafe = P; SafeT = 0.f; }
+	if (BeautyIdx >= 0) return;   // autotest beauty cams: no exits, trainers or wild contacts while the camera tour runs
 	// exits: walk out of the level
 	if (!Inside() && !bTraveling)
 		for (const FPBXExit& E : Exits)
@@ -1701,6 +1703,130 @@ void APBXDirector::ToTitle()
 	ShowMenu(EMenu::Title);
 }
 
+// =================================================================== beauty cams (autotest)
+namespace PBXBeauty
+{
+	enum class EA : uint8 { DoorIn, DoorOut, Npc, Spot, Wild, ExitEnd, Abs, Alias };
+	// Off: local offset (cm) in the anchor's yaw frame (world frame for Wild / ExitEnd / Abs). Yaw: added to the anchor yaw.
+	// Cine cams: Abs = camera at Off looking at Aim; otherwise camera at the offset, pitch = Aim.X.
+	struct FCam { const TCHAR* Id; const TCHAR* Map; EA A; const TCHAR* Key; FVector Off; float Yaw; bool bCine; FVector Aim; const TCHAR* Judge; };
+	static const FCam Cams[] = {
+		{ TEXT("bc_01_home"),      TEXT("L_Town"),   EA::DoorIn,  TEXT("house"),  FVector(150, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("home interior: placeholder furniture, does it read as a family home") },
+		{ TEXT("bc_02_plaza"),     TEXT("L_Town"),   EA::DoorOut, TEXT("house"),  FVector(250, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("first plaza frame: partner sticker scale, style clash, stray props") },
+		{ TEXT("bc_03_lab_door"),  TEXT("L_Town"),   EA::DoorOut, TEXT("lab"),    FVector(600, 0, 0),  180.f,  false, FVector::ZeroVector, TEXT("walk-up to the lab: entrance clear and readable, sign in frame") },
+		{ TEXT("bc_04_lab"),       TEXT("L_Town"),   EA::DoorIn,  TEXT("lab"),    FVector(300, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("lab interior: reads as a lab, starter cards readable") },
+		{ TEXT("bc_05_ground"),    TEXT("L_Town"),   EA::DoorOut, TEXT("house"),  FVector(350, 0, 300),180.f,  true,  FVector(-40, 0, 0),  TEXT("plaza ground: flagstone scale, seams, tiling") },
+		{ TEXT("bc_06_skyline"),   TEXT("L_Town"),   EA::Abs,     TEXT(""),       FVector(900, -4500, 700), 0.f, true, FVector(3000, 2500, 600), TEXT("harbor skyline: station, tunnel portal, grey boxes, world edge") },
+		{ TEXT("bc_07_grass"),     TEXT("L_Town"),   EA::Wild,    TEXT(""),       FVector(500, 0, 0),  180.f,  false, FVector::ZeroVector, TEXT("tall grass + wild Echo: Echo readable (no black silhouette), grass") },
+		{ TEXT("bc_08_battle_wild"), TEXT("L_Town"), EA::Alias,   TEXT("13_battle_intro"), FVector::ZeroVector, 0.f, false, FVector::ZeroVector, TEXT("wild battle: both Echoes visible and sized, no stray NPCs, banner inside the screen") },
+		{ TEXT("bc_09_r1_valley"), TEXT("L_Route1"), EA::Spot,    TEXT("from_lumen"), FVector(200, 0, 0), 0.f, false, FVector::ZeroVector, TEXT("Route 1 valley: grey walls, stray logs/crates/fences, road reads") },
+		{ TEXT("bc_10_battle_trainer"), TEXT("L_Route1"), EA::Alias, TEXT("25_trainer_battle"), FVector::ZeroVector, 0.f, false, FVector::ZeroVector, TEXT("trainer battle: staging, trainer visible, both Echoes sized") },
+		{ TEXT("bc_11_rest"),      TEXT("L_Route1"), EA::Npc,     TEXT("healer"), FVector(450, 150, 0), 180.f, false, FVector::ZeroVector, TEXT("Ranger Rest: healer/trader materials, sign, campfire scene") },
+		{ TEXT("bc_12_mistvale"),  TEXT("L_Route1"), EA::ExitEnd, TEXT(""),       FVector(1000, 0, 0), 180.f,  false, FVector::ZeroVector, TEXT("Mistvale gate: does the world's end look intended") },
+	};
+	static void Note(const FString& Line)
+	{
+		const FString Path = FPaths::ProjectSavedDir() / TEXT("pbx_auto") / TEXT("beauty.txt");
+		FFileHelper::SaveStringToFile(Line + TEXT("\n"), *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
+		PBXLOG("[PBXAUTO] beauty %s", *Line);
+	}
+}
+
+bool APBXDirector::BeautyPass(float Dt)
+{
+	using namespace PBXBeauty;
+	if (BeautyDone.Contains(MapName)) return true;
+	const int32 N = UE_ARRAY_COUNT(Cams);
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	auto Idle = [this] { return !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore; };
+	if (BeautyIdx < 0)
+	{
+		if (!Idle() || !Player) return false;
+		if (MapName == TEXT("L_Town")) IFileManager::Get().Delete(*(FPaths::ProjectSavedDir() / TEXT("pbx_auto") / TEXT("beauty.txt")));
+		BeautyBack.Pos = Player->GetActorLocation(); BeautyBack.Yaw = Player->GetActorRotation().Yaw;
+		BeautyIdx = 0; BeautyPhase = 0; BeautyT = 0.f;
+	}
+	BeautyT += Dt;
+	// one extra ungraded "suspect" shot per map at a random gameplay spot (seed logged) so fixes can't be tuned to the 12 frames only
+	const bool bSuspect = BeautyIdx == N;
+	if (BeautyIdx > N)
+	{
+		if (PC) PC->SetViewTarget(Player);
+		PlacePlayer(BeautyBack); if (Partner) Partner->PlaceAt(BeautyBack.Pos - FRotator(0, BeautyBack.Yaw, 0).Vector() * 120.f);
+		BeautyDone.Add(MapName); BeautyIdx = -1; AutoStepT = 0.f;
+		return true;
+	}
+	const FCam* C = bSuspect ? nullptr : &Cams[BeautyIdx];
+	if (C && (FString(C->Map) != MapName))   { BeautyIdx++; return false; }
+	if (C && C->A == EA::Alias) { Note(FString::Printf(TEXT("%s\tALIAS %s\t%s"), C->Id, C->Key, C->Judge)); BeautyIdx++; return false; }
+	if (BeautyPhase == 0)
+	{
+		FPBXSpot A; bool bOk = true; FString Why;
+		if (bSuspect)
+		{
+			TArray<FPBXSpot> Pool;
+			for (const auto& KV : Spots) if (KV.Value.Pos.Z > -3000.f && !KV.Key.EndsWith(TEXT("_hint"))) Pool.Add(KV.Value);
+			for (const FPBXDoor& D : Doors) if (D.Outside.Pos != FVector::ZeroVector) Pool.Add(D.Outside);
+			const int32 Seed = (int32)(FPlatformTime::Cycles() % 1000003); FRandomStream R(Seed);
+			if (Pool.Num()) { A = Pool[R.RandHelper(Pool.Num())]; A.Pos += FRotator(0, R.FRandRange(0.f, 360.f), 0).Vector() * R.FRandRange(300.f, 1500.f); A.Yaw = R.FRandRange(0.f, 360.f); }
+			else bOk = false;
+			Why = FString::Printf(TEXT("seed %d"), Seed);
+		}
+		else switch (C->A)
+		{
+		case EA::DoorIn: case EA::DoorOut:
+			{ const FPBXDoor* D = Doors.FindByPredicate([C](const FPBXDoor& X) { return X.Id == C->Key; }); if (D) A = C->A == EA::DoorIn ? D->Inside : D->Outside; else bOk = false; } break;
+		case EA::Npc: { APBXNPC* P = NPCs.FindRef(FName(C->Key)); if (P) { A.Pos = P->Home; A.Yaw = P->HomeYaw; } else bOk = false; } break;
+		case EA::Spot: { const FPBXSpot* S = Spots.Find(C->Key); if (S) A = *S; else bOk = false; } break;
+		case EA::Wild: { bOk = false; for (APBXEcho* W : Wilds) if (W && !W->IsHidden()) { A.Pos = W->GetActorLocation(); A.Yaw = 0.f; bOk = true; break; } } break;
+		case EA::ExitEnd: { const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (E) { A.Pos = E->Pos; A.Yaw = 0.f; } else bOk = false; } break;
+		case EA::Abs: A.Pos = FVector::ZeroVector; A.Yaw = 0.f; break;
+		default: bOk = false;
+		}
+		const FString Id = bSuspect ? FString::Printf(TEXT("bc_13_suspect_%s"), *MapName) : FString(C->Id);
+		if (!bOk) { Note(FString::Printf(TEXT("%s\tFAIL anchor missing\t%s"), *Id, C ? C->Judge : TEXT("random spot"))); bAutoFail = true; BeautyIdx++; return false; }
+		const bool bWorld = C && (C->A == EA::Wild || C->A == EA::ExitEnd || C->A == EA::Abs);
+		const FVector Off = C ? C->Off : FVector::ZeroVector;
+		const FVector P = A.Pos + (bWorld ? Off : FRotator(0, A.Yaw, 0).RotateVector(Off));
+		const float Yaw = A.Yaw + (C ? C->Yaw : 0.f);
+		if (C && C->bCine && Cam && PC)
+		{
+			const FRotator R = C->A == EA::Abs ? (C->Aim - P).Rotation() : FRotator(C->Aim.X, Yaw, 0);
+			Cam->SetActorLocationAndRotation(P, R); Cam->GetCameraComponent()->SetFieldOfView(70.f); PC->SetViewTarget(Cam);
+		}
+		else
+		{
+			if (PC) PC->SetViewTarget(Player);
+			FPBXSpot S; S.Pos = FVector(P.X, P.Y, A.Pos.Z); S.Yaw = Yaw; PlacePlayer(S);
+			if (Partner) Partner->PlaceAt(Player->GetActorLocation() - FRotator(0, Yaw, 0).Vector() * 120.f);
+		}
+		if (bSuspect) Note(FString::Printf(TEXT("%s\tINFO %s at %s"), *Id, *Why, *P.ToCompactString()));
+		BeautyPhase = 1; BeautyT = 0.f; return false;
+	}
+	if (BeautyPhase == 1)
+	{
+		if (BeautyT < 2.f || (!Idle() && BeautyT < 6.f)) return false;   // settle: streaming, exposure, camera lag
+		const FString Id = bSuspect ? FString::Printf(TEXT("bc_13_suspect_%s"), *MapName) : FString(C->Id);
+		// guard: the camera must not sit inside / against geometry and must be at least 1.2 m above the ground
+		FString Bad;
+		if (APlayerCameraManager* PCM = UGameplayStatics::GetPlayerCameraManager(this, 0))
+		{
+			const FVector L = PCM->GetCameraLocation();
+			FCollisionQueryParams QP(SCENE_QUERY_STAT(PBXBeauty), false); QP.AddIgnoredActor(Player); if (Partner) QP.AddIgnoredActor(Partner);
+			if (GetWorld()->OverlapAnyTestByChannel(L, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(50.f), QP)) Bad += TEXT("camera within 0.5 m of geometry; ");
+			FHitResult H;
+			if (GetWorld()->LineTraceSingleByChannel(H, L, L - FVector(0, 0, 20000), ECC_Visibility, QP) && L.Z - H.ImpactPoint.Z < 120.f) Bad += FString::Printf(TEXT("camera only %.0f cm above ground; "), L.Z - H.ImpactPoint.Z);
+		}
+		if (!Idle()) Bad += TEXT("game not idle (dialogue/battle/menu); ");
+		Shot(Bad.IsEmpty() ? Id : Id + TEXT("_FAIL"));
+		Note(FString::Printf(TEXT("%s\t%s\t%s"), *Id, Bad.IsEmpty() ? TEXT("PASS") : *(TEXT("FAIL ") + Bad), C ? C->Judge : TEXT("random spot (ungraded)")));
+		if (!Bad.IsEmpty() && !bSuspect) bAutoFail = true;
+		BeautyPhase = 2; BeautyT = 0.f; return false;
+	}
+	if (BeautyT > .6f) { BeautyIdx++; BeautyPhase = 0; BeautyT = 0.f; }   // let the screenshot land before moving
+	return false;
+}
+
 // =================================================================== autoplay test
 void APBXDirector::Shot(const FString& N)
 {
@@ -1766,7 +1892,8 @@ void APBXDirector::AutoTick(float Dt)
 			if (!E) { Fail(TEXT("no route1 exit")); break; }
 			TeleportPlayer(E->Pos + FVector(900, 0, 0), 180.f); AutoNext();
 		} break;
-	case 26: if (AutoStepT > 2.f && Idle())
+	case 26: if (!BeautyPass(Dt)) break;
+		if (AutoStepT > 2.f && Idle())
 		{
 			Shot(TEXT("20_gate_open"));
 			const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.Id == TEXT("route1"); });
@@ -1817,7 +1944,8 @@ void APBXDirector::AutoTick(float Dt)
 		} break;
 	case 113: if (Bt.bActive && UI->bMoves) { Shot(TEXT("30_wild_meadow")); AutoNext(); } else if (AutoStepT > 6.f) { AutoStep = 112; AutoStepT = 0.f; } break;
 	case 114: if (!Bt.bActive && Idle() && AutoStepT > 1.f) { AutoNext(); } break;
-	case 115: { const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (!E) { Fail(TEXT("no end exit")); break; }
+	case 115: if (!BeautyPass(Dt)) break;
+		{ const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (!E) { Fail(TEXT("no end exit")); break; }
 		if (Idle()) { TeleportPlayer(E->Pos + FVector(1200, 0, 0), 180.f); AutoNext(); } } break;
 	case 116: if (AutoStepT > 2.f && Idle()) { Shot(TEXT("31_mistvale_gate")); const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (E) TeleportPlayer(E->Pos, 180.f); AutoNext(); } break;
 	case 117: if (Menu == EMenu::Complete && AutoStepT > 1.f) { Shot(TEXT("32_route1_cleared")); AutoNext(); }

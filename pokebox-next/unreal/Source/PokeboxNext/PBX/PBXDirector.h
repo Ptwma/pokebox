@@ -174,6 +174,9 @@ private:
 	void Shot(const FString& Name);
 	void AutoNext() { AutoStep++; AutoStepT = 0.f; }
 	void TeleportPlayer(const FVector& P, float Yaw);
+	// fixed "player-truth" beauty cams (council 2026-10-16): same poses every run, guarded, captions in Saved/pbx_auto/beauty.txt
+	int32 BeautyIdx = -1, BeautyPhase = 0; float BeautyT = 0.f; FPBXSpot BeautyBack; TArray<FString> BeautyDone;
+	bool BeautyPass(float Dt);   // true once every cam of the current map has been shot
 	float PlayTimeAcc = 0.f;
 	bool bRunHeld = false;
 };
