@@ -38,6 +38,7 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogPBX, Log, All);
 #define PBXLOG(Fmt, ...) UE_LOG(LogPBX, Display, TEXT(Fmt), ##__VA_ARGS__)
+static constexpr float BattleFOV = 55.f;
 
 static FVector JVec(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
 {
@@ -455,7 +456,7 @@ void APBXDirector::Tick(float Dt)
 		const FVector Off = Right * FMath::Sin(Bt.Clock * .45f) * 45.f + FVector(0, 0, FMath::Sin(Bt.Clock * .31f) * 14.f) + Fwd * Bt.Punch * 60.f
 			+ FVector(FMath::Sin(Bt.Clock * 83.f), FMath::Cos(Bt.Clock * 71.f), FMath::Sin(Bt.Clock * 97.f)) * Sh;
 		Cam->SetActorLocationAndRotation(Bt.CamBase + Off, Bt.CamRot + FRotator(0, FMath::Sin(Bt.Clock * .45f) * -1.6f, 0));
-		Cam->GetCameraComponent()->SetFieldOfView(70.f - Bt.Punch * 9.f);
+		Cam->GetCameraComponent()->SetFieldOfView(BattleFOV - Bt.Punch * 7.f);
 	}
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	const float Scale = FMath::Max(.1f, UWidgetLayoutLibrary::GetViewportScale(this));
@@ -1128,24 +1129,30 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	FVector D = FoePos - P; D.Z = 0; if (D.SizeSquared() < 1.f) D = Player->GetActorForwardVector(); D.Normalize();
 	const FVector Side(-D.Y, D.X, 0);
 	Bt.D = D; Bt.Side = Side;
-	Bt.A = P + D * 240.f - Side * 60.f; Bt.Bp = P + D * 620.f + Side * 40.f;   // foe 3.8 m from your Echo (was 6.2): readable at 1280x720
-	Bt.A.Z = PBXWorld::GroundZ(GetWorld(), Bt.A, 300.f, 1500.f, P.Z - 90.f); Bt.Bp.Z = PBXWorld::GroundZ(GetWorld(), Bt.Bp, 300.f, 1500.f, P.Z - 90.f);
-	Player->GetCharacterMovement()->StopMovementImmediately(); Player->FaceTowards(Bt.Bp, true);
-	// camera: behind and beside your Echo, the foe big in the upper right; pick the side with fewer obstacles
-	const float Dist = 600.f; float BestS = 1.f; int32 BestHits = 99;
-	FCollisionQueryParams QP(SCENE_QUERY_STAT(PBXCam), false); QP.AddIgnoredActor(Player);
-	for (auto& KV : NPCs) QP.AddIgnoredActor(KV.Value);
-	for (float S : { 1.f, -1.f })
+	Bt.A = P + D * 240.f - Side * 60.f;
+	Bt.A.Z = PBXWorld::GroundZ(GetWorld(), Bt.A, 300.f, 1500.f, P.Z - 90.f);
+	// Pokémon diagonal: foe 5 m ahead and 1 m to the right, camera behind-right. Mirror it only if trees/walls block that side.
+	auto Frame = [&](float S, FVector& OutBp, FVector& OutC)
 	{
-		FVector C = Bt.A - D * Dist * .62f + Side * S * Dist * .4f; C.Z = FMath::Max(Bt.A.Z + 210.f + Dist * .16f, PBXWorld::GroundZ(GetWorld(), C, 500.f, 2000.f, Bt.A.Z) + 150.f);
+		OutBp = Bt.A + D * 500.f + Side * 100.f * S; OutBp.Z = PBXWorld::GroundZ(GetWorld(), OutBp, 300.f, 1500.f, P.Z - 90.f);
+		OutC = Bt.A - D * 420.f + Side * 300.f * S; OutC.Z = FMath::Max(Bt.A.Z + 200.f, PBXWorld::GroundZ(GetWorld(), OutC, 500.f, 2000.f, Bt.A.Z) + 150.f);
+		FCollisionQueryParams QP(SCENE_QUERY_STAT(PBXCam), false); QP.AddIgnoredActor(Player);
+		for (auto& KV : NPCs) QP.AddIgnoredActor(KV.Value);
 		int32 Hits = 0;
-		for (const FVector& T : { Bt.A, Bt.Bp, (Bt.A + Bt.Bp) * .5f }) if (GetWorld()->LineTraceTestByChannel(C, T + FVector(0, 0, 110), ECC_Visibility, QP)) Hits++;
-		if (Hits < BestHits) { BestHits = Hits; BestS = S; }
-	}
-	Bt.CamS = BestS;
-	FVector C = Bt.A - D * Dist * .62f + Side * BestS * Dist * .4f; C.Z = FMath::Max(Bt.A.Z + 210.f + Dist * .16f, PBXWorld::GroundZ(GetWorld(), C, 500.f, 2000.f, Bt.A.Z) + 150.f);
-	const FVector Look = FMath::Lerp(Bt.A, Bt.Bp, .5f) + FVector(0, 0, 40);   // looks a bit down: the foe sits in the upper half, the banner below it
-	Cam->SetActorLocationAndRotation(C, (Look - C).Rotation());
+		for (const FVector& T : { Bt.A, OutBp }) if (GetWorld()->LineTraceTestByChannel(OutC, T + FVector(0, 0, 60), ECC_Visibility, QP)) Hits++;
+		return Hits;
+	};
+	FVector BpR, CR, BpL, CL;
+	const int32 HitsR = Frame(1.f, BpR, CR), HitsL = Frame(-1.f, BpL, CL);
+	const bool bMirror = HitsR > 0 && HitsL < HitsR;
+	Bt.Bp = bMirror ? BpL : BpR;
+	Player->GetCharacterMovement()->StopMovementImmediately(); Player->FaceTowards(Bt.Bp, true);
+	// camera (Pokémon battle framing, solved for 1280x720 / FOV 55): 4.2 m behind your Echo, 3 m to its right, 2 m up, aimed at the
+	// middle of the arena -> your Echo lower-left (~0.25, 0.63, 30% of the height), the foe upper-right (~0.64, 0.37, 22%)
+	Bt.CamS = bMirror ? -1.f : 1.f;
+	const FVector C = bMirror ? CL : CR;
+	const FVector Look = (Bt.A + Bt.Bp) * .5f + FVector(0, 0, 40);
+	Cam->SetActorLocationAndRotation(C, (Look - C).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(BattleFOV);
 	Bt.CamBase = C; Bt.CamRot = (Look - C).Rotation(); Bt.Clock = 0.f; Bt.Punch = 0.f;
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTargetWithBlend(Cam, .6f, VTBlend_Cubic);
 	if (FX)
@@ -1155,7 +1162,7 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	}
 }
 
-static constexpr float StageFoeScale = 1.8f;   // the foe card stands ~1.7 m tall on the stage (95 cm in the field)
+static constexpr float StageFoeScale = 1.3f;   // depth does the rest: your Echo is close and big, the foe far and smaller (Pokémon convention)
 
 void APBXDirector::ClearStage(const TArray<AActor*>& Keep)
 {
@@ -1197,6 +1204,7 @@ void APBXDirector::ClearStage(const TArray<AActor*>& Keep)
 		}
 		if (Dm < R + 160.f || FVector2D::Distance(Q, Mid) < 520.f + R) { HideTree(X); N++; }
 	}
+	HideTree(Player);   // the half-visible player at the frame edge read as a bug: the trainer steps out like the Gen 1-3 back sprite
 	PBXLOG("[PBX] stage cleared: %d actors hidden", N);
 }
 
@@ -1225,16 +1233,17 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
 	Partner->PlaceAt(Bt.A); Partner->PopIn();
 	ClearStage({ W });
+	if (FX) { FX->SetBase(0, Bt.A, 110.f, PBXData::TypeColor(Mine[First].Type)); FX->SetBase(1, Bt.Bp, 140.f, PBXData::TypeColor(C->Type)); }
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
-	UI->IntroT = 1.9f; UI->IntroA = UI->Plate[0].Name; UI->IntroB = C->Name; UI->IntroColA = PBXData::TypeColor(UI->Plate[0].Type) * .85f; UI->IntroColB = PBXData::TypeColor(C->Type) * .85f;
-	UI->FlashT = .8f; UI->FlashColor = FLinearColor::White;
+	UI->IntroT = 0.f;   // wild battles start in place (Scarlet/Violet): no VS bars, just the flash and the banner
+	UI->FlashT = .5f; UI->FlashColor = FLinearColor::White;
 	PBXLOG("[PBX] wild battle vs %s Lv%d", *C->Name, Bt.FoeLv);
 	const FString WildName = C->Name;
-	QWait(1.9f);
+	QWait(.6f);
 	QDo([this, WildName] { BattleBanner(FString::Printf(TEXT("A wild %s appeared!"), *WildName), FLinearColor(.12f, .5f, .25f, .92f), 1.3f);
 		if (FX) { FX->Ring(Bt.Bp + FVector(0, 0, 10), FLinearColor(.5f, 1, .6f), 220.f, 30); FX->Ring(Bt.A + FVector(0, 0, 10), FLinearColor(1, .85f, .4f), 200.f, 26); } });
-	QWait(1.1f); QDo([this] { ShowMoves(); });
+	QWait(1.45f); QDo([this] { ShowMoves(); });   // after the banner (1.3 s): one message at a time
 }
 
 void APBXDirector::StartTrainerBattle(FName Who)
@@ -1262,6 +1271,7 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
 	Partner->PlaceAt(Bt.A); Partner->PopIn();
 	ClearStage({ E, N });
+	if (FX) { FX->SetBase(0, Bt.A, 110.f, PBXData::TypeColor(Mine[First].Type)); FX->SetBase(1, Bt.Bp, 140.f, PBXData::TypeColor(C->Type)); }
 	Player->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
@@ -1272,7 +1282,7 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	QWait(1.9f);
 	QDo([this, TName] { BattleBanner(FString::Printf(TEXT("%s wants to battle!"), *TName), FLinearColor(.6f, .12f, .12f, .92f), 1.3f);
 		if (FX) { FX->Ring(Bt.Bp + FVector(0, 0, 10), FLinearColor(.6f, .7f, 1), 220.f, 30); FX->Ring(Bt.A + FVector(0, 0, 10), FLinearColor(1, .85f, .4f), 200.f, 26); } });
-	QWait(1.1f); QDo([this] { ShowMoves(); });
+	QWait(1.45f); QDo([this] { ShowMoves(); });   // after the banner (1.3 s): one message at a time
 }
 
 void APBXDirector::SyncPlates()
@@ -1527,7 +1537,7 @@ void APBXDirector::EndBattle(const FString& Result)
 {
 	PBXLOG("[PBX] battle end: %s", *Result);
 	SaveTeamHP();
-	if (FX) FX->SetAmbient(false);
+	if (FX) { FX->SetAmbient(false); FX->ClearBases(); }
 	if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f);
 	const FPBXTrainer* TR = Bt.bTrainer ? Trainers.Find(Bt.Trainer) : nullptr; const int32 Reward = TR ? TR->Reward : 300;
 	if (Result == TEXT("win")) { Splash(TEXT("VICTORY!"), Bt.bTrainer ? FString::Printf(TEXT("+%d coins"), Reward) : FString(TEXT("Your Echo grows stronger")), 2.2f); PBXUI::Confetti(*UI, 160); }

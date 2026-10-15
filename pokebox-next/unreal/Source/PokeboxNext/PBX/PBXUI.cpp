@@ -224,7 +224,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			// battle log: slim dark strip under the top bar
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 66)
 			[
-				SNew(SBox).WidthOverride(820).Visibility_Lambda([this] { return Vis(!M->Log.IsEmpty() && M->IntroT <= 0.f); })
+				SNew(SBox).WidthOverride(820).Visibility_Lambda([this] { return Vis(!M->Log.IsEmpty() && M->IntroT <= 0.f && M->BannerT <= 0.f); })
 				[
 					SNew(SBorder).BorderImage(LogB.Get()).Padding(FMargin(26, 10))
 					[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Log); }).Font(PBXUI::Font(TEXT("bold"), 27, 1)).ColorAndOpacity(FLinearColor::White).AutoWrapText(true).Justification(ETextJustify::Center)]

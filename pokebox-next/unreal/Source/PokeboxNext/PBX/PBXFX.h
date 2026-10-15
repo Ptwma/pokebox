@@ -27,6 +27,9 @@ public:
 	/** soft rising motes around a box (battle stage atmosphere) */
 	void SetAmbient(bool bOn, const FVector& A = FVector::ZeroVector, const FVector& B = FVector::ZeroVector, FLinearColor C = FLinearColor(1, .85f, .5f));
 	void Clear();
+	/** battle bases (Gen 4-5 platforms): a soft type-tinted disc with a dotted rim lying flat on the ground, slot 0 = yours, 1 = foe */
+	void SetBase(int32 Slot, const FVector& P, float Radius, FLinearColor C);
+	void ClearBases() { Bases[0].bOn = Bases[1].bOn = false; }
 
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UInstancedStaticMeshComponent> Dots;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UInstancedStaticMeshComponent> Stars;
@@ -35,6 +38,8 @@ private:
 	struct FP { FVector P, V; FLinearColor C; float Size, Life, Age = 0.f, Grav, Drag, Spin, Rot; uint8 Shape; };
 	struct FB { FVector From, To; FLinearColor C; float Secs, T = 0.f, Size, Acc = 0.f; uint8 Shape; };
 	TArray<FP> Ps; TArray<FB> Beams;
+	struct FBase { bool bOn = false; FVector P = FVector::ZeroVector; float R = 100.f; FLinearColor C = FLinearColor::White; };
+	TStaticArray<FBase, 2> Bases;
 	bool bAmb = false; FVector AmbA, AmbB; FLinearColor AmbC; float AmbAcc = 0.f;
 	void Add(const FP& P) { if (Ps.Num() < 900) Ps.Add(P); }
 	void Rebuild();

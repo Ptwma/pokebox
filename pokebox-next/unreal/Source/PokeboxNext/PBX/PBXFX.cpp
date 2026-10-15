@@ -101,6 +101,12 @@ void APBXFX::Ring(const FVector& P, FLinearColor C, float Radius, int32 N, float
 	}
 }
 
+void APBXFX::SetBase(int32 Slot, const FVector& P, float Radius, FLinearColor C)
+{
+	if (Slot < 0 || Slot > 1) return;
+	Bases[Slot].bOn = true; Bases[Slot].P = P; Bases[Slot].R = Radius; Bases[Slot].C = C;
+}
+
 void APBXFX::SetAmbient(bool bOn, const FVector& A, const FVector& B, FLinearColor C) { bAmb = bOn; AmbA = A; AmbB = B; AmbC = C; }
 
 void APBXFX::Tick(float Dt)
@@ -156,6 +162,20 @@ void APBXFX::Rebuild()
 		const int32 k = X.Shape == 1 ? 1 : 0;
 		T[k].Add(FTransform(Q, X.P, FVector(S)));
 		D[k].Append({ X.C.R, X.C.G, X.C.B, FMath::Clamp(A, 0.f, 1.f) });
+	}
+	// battle bases: flat on the ground (not camera-facing), drawn with the soft dot
+	for (const FBase& B : Bases)
+	{
+		if (!B.bOn) continue;
+		const FVector At = B.P + FVector(0, 0, 4.f);
+		T[0].Add(FTransform(FQuat::Identity, At, FVector(B.R / 50.f, B.R / 50.f, 1.f)));
+		D[0].Append({ B.C.R * .9f, B.C.G * .9f, B.C.B * .9f, .42f });
+		for (int32 i = 0; i < 28; i++)
+		{
+			const float A = 2.f * PI * i / 28.f;
+			T[0].Add(FTransform(FQuat::Identity, At + FVector(FMath::Cos(A), FMath::Sin(A), 0) * B.R, FVector(.16f, .16f, 1.f)));
+			D[0].Append({ 1.f, 1.f, 1.f, .85f });
+		}
 	}
 	UInstancedStaticMeshComponent* C[2] = { Dots, Stars };
 	for (int32 k = 0; k < 2; k++)
