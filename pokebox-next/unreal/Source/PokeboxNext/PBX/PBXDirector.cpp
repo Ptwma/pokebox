@@ -20,6 +20,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HighResScreenshot.h"
 #include "HAL/FileManager.h"
+#include "Engine/OverlapResult.h"
 #include "ImageUtils.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -1712,7 +1713,7 @@ namespace PBXBeauty
 	struct FCam { const TCHAR* Id; const TCHAR* Map; EA A; const TCHAR* Key; FVector Off; float Yaw; bool bCine; FVector Aim; const TCHAR* Judge; };
 	static const FCam Cams[] = {
 		{ TEXT("bc_01_home"),      TEXT("L_Town"),   EA::DoorIn,  TEXT("house"),  FVector(150, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("home interior: placeholder furniture, does it read as a family home") },
-		{ TEXT("bc_02_plaza"),     TEXT("L_Town"),   EA::DoorOut, TEXT("house"),  FVector(250, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("first plaza frame: partner sticker scale, style clash, stray props") },
+		{ TEXT("bc_02_plaza"),     TEXT("L_Town"),   EA::DoorOut, TEXT("house"),  FVector(650, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("first plaza frame: partner sticker scale, style clash, stray props") },
 		{ TEXT("bc_03_lab_door"),  TEXT("L_Town"),   EA::DoorOut, TEXT("lab"),    FVector(600, 0, 0),  180.f,  false, FVector::ZeroVector, TEXT("walk-up to the lab: entrance clear and readable, sign in frame") },
 		{ TEXT("bc_04_lab"),       TEXT("L_Town"),   EA::DoorIn,  TEXT("lab"),    FVector(300, 0, 0),    0.f,  false, FVector::ZeroVector, TEXT("lab interior: reads as a lab, starter cards readable") },
 		{ TEXT("bc_05_ground"),    TEXT("L_Town"),   EA::DoorOut, TEXT("house"),  FVector(350, 0, 300),180.f,  true,  FVector(-40, 0, 0),  TEXT("plaza ground: flagstone scale, seams, tiling") },
@@ -1813,7 +1814,13 @@ bool APBXDirector::BeautyPass(float Dt)
 		{
 			const FVector L = PCM->GetCameraLocation();
 			FCollisionQueryParams QP(SCENE_QUERY_STAT(PBXBeauty), false); QP.AddIgnoredActor(Player); if (Partner) QP.AddIgnoredActor(Partner);
-			if (GetWorld()->OverlapAnyTestByChannel(L, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(50.f), QP)) Bad += TEXT("camera within 0.5 m of geometry; ");
+			TArray<FOverlapResult> Ov;
+			if (GetWorld()->OverlapMultiByChannel(Ov, L, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(50.f), QP))
+				for (const FOverlapResult& O : Ov)
+				{
+					AActor* A = O.GetActor(); if (!A || A->IsA<APBXEcho>() || (Player && A->GetAttachParentActor() == Player)) continue;
+					Bad += FString::Printf(TEXT("camera within 0.5 m of %s; "), *A->GetActorNameOrLabel()); break;
+				}
 			FHitResult H;
 			if (GetWorld()->LineTraceSingleByChannel(H, L, L - FVector(0, 0, 20000), ECC_Visibility, QP) && L.Z - H.ImpactPoint.Z < 120.f) Bad += FString::Printf(TEXT("camera only %.0f cm above ground; "), L.Z - H.ImpactPoint.Z);
 		}

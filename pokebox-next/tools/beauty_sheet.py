@@ -42,7 +42,7 @@ def tile(path, w, h, label, status, judge, F, f):
     col = (90, 220, 120) if status.startswith(('PASS', 'ALIAS', 'INFO')) else (255, 90, 90)
     d.rectangle([0, h, w, h + 64], fill=(18, 18, 22))
     d.text((8, h + 4), label, fill=(255, 255, 255), font=F)
-    d.text((w - 8 - d.textlength(status[:40], font=F), h + 4), status[:40], fill=col, font=F)
+    d.text((w - 8 - d.textlength(status[:34], font=F), h + 4), status[:34], fill=col, font=F)
     d.text((8, h + 34), ('judge: ' + judge)[:110], fill=(200, 200, 210), font=f)
     return t
 
