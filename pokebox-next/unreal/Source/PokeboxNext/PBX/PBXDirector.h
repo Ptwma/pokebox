@@ -147,6 +147,10 @@ private:
 	void StartWildBattle(APBXEcho* W);
 	void StartTrainerBattle(FName Who);
 	void SetupStage(const FVector& FoePos);
+	// battle staging: hide small props / plants / other NPCs and wild Echoes that would cover the arena or the camera's view of it
+	TArray<TWeakObjectPtr<AActor>> StageHidden;
+	void ClearStage(const TArray<AActor*>& Keep);
+	void RestoreStage();
 	void ShowMoves();
 	void PickMove(int32 i);
 	void PlayEvents(const TArray<FPBXEvent>& Ev);

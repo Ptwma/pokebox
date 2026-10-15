@@ -1128,7 +1128,7 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	FVector D = FoePos - P; D.Z = 0; if (D.SizeSquared() < 1.f) D = Player->GetActorForwardVector(); D.Normalize();
 	const FVector Side(-D.Y, D.X, 0);
 	Bt.D = D; Bt.Side = Side;
-	Bt.A = P + D * 240.f - Side * 60.f; Bt.Bp = P + D * 860.f + Side * 40.f;
+	Bt.A = P + D * 240.f - Side * 60.f; Bt.Bp = P + D * 620.f + Side * 40.f;   // foe 3.8 m from your Echo (was 6.2): readable at 1280x720
 	Bt.A.Z = PBXWorld::GroundZ(GetWorld(), Bt.A, 300.f, 1500.f, P.Z - 90.f); Bt.Bp.Z = PBXWorld::GroundZ(GetWorld(), Bt.Bp, 300.f, 1500.f, P.Z - 90.f);
 	Player->GetCharacterMovement()->StopMovementImmediately(); Player->FaceTowards(Bt.Bp, true);
 	// camera: behind and beside your Echo, the foe big in the upper right; pick the side with fewer obstacles
@@ -1155,6 +1155,50 @@ void APBXDirector::SetupStage(const FVector& FoePos)
 	}
 }
 
+static constexpr float StageFoeScale = 1.45f;   // the foe card stands ~1.4 m tall on the stage (95 cm in the field)
+
+void APBXDirector::ClearStage(const TArray<AActor*>& Keep)
+{
+	RestoreStage();
+	const FVector2D A(Bt.A), B(Bt.Bp), C(Bt.CamBase), Mid = (A + B) * .5f;
+	auto SegDist = [](const FVector2D& P, const FVector2D& S0, const FVector2D& S1)
+	{
+		const FVector2D D = S1 - S0; const float L2 = D.SizeSquared();
+		const float t = L2 > 1.f ? FMath::Clamp(FVector2D::DotProduct(P - S0, D) / L2, 0.f, 1.f) : 0.f;
+		return FVector2D::Distance(P, S0 + D * t);
+	};
+	auto HideTree = [this](AActor* X)
+	{
+		if (!X || X->IsHidden()) return;
+		X->SetActorHiddenInGame(true); StageHidden.Add(X);
+		TArray<AActor*> Kids; X->GetAttachedActors(Kids, true, true);
+		for (AActor* K : Kids) if (K && !K->IsHidden()) { K->SetActorHiddenInGame(true); StageHidden.Add(K); }
+	};
+	int32 N = 0;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* X = *It;
+		if (!X || X == Player.Get() || X == Partner.Get() || X == this || X == Cam.Get() || X == FX.Get() || Keep.Contains(X) || X->IsHidden()) continue;
+		if (X->GetAttachParentActor()) continue;   // handled with its parent (hair, clothes)
+		const FVector2D P(X->GetActorLocation());
+		if (APBXNPC* Np = Cast<APBXNPC>(X)) { if (FVector2D::Distance(P, Mid) < 2500.f) { HideTree(Np); N++; } continue; }
+		if (APBXEcho* E = Cast<APBXEcho>(X)) { if (FVector2D::Distance(P, Mid) < 3000.f) { HideTree(E); N++; } continue; }
+		if (!X->IsA<AStaticMeshActor>()) continue;
+		FVector O, Ext; X->GetActorBounds(true, O, Ext);
+		if (Ext.Z * 2.f > 260.f || FMath::Max(Ext.X, Ext.Y) > 420.f) continue;   // trees, rocks, buildings stay
+		const FVector2D Q(O); const float R = FMath::Max(Ext.X, Ext.Y);
+		const float Dm = FMath::Min3(SegDist(Q, A, B), SegDist(Q, C, A), SegDist(Q, C, B));
+		if (Dm < R + 160.f || FVector2D::Distance(Q, Mid) < 520.f + R) { HideTree(X); N++; }
+	}
+	PBXLOG("[PBX] stage cleared: %d actors hidden", N);
+}
+
+void APBXDirector::RestoreStage()
+{
+	for (const TWeakObjectPtr<AActor>& W : StageHidden) if (AActor* X = W.Get()) X->SetActorHiddenInGame(false);
+	StageHidden.Reset();
+}
+
 void APBXDirector::StartWildBattle(APBXEcho* W)
 {
 	if (Bt.bActive || !W || !Partner) return;
@@ -1170,9 +1214,10 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	Bt.B.Team[0] = Mine; Bt.B.Team[1] = { Foe }; Bt.B.Act[0] = First;
 	Game->State->Seen.AddUnique(W->CardId);
 	SetupStage(W->GetActorLocation());
-	W->Mode = APBXEcho::EMode::Stage; W->PlaceAt(Bt.Bp); W->Flash(FLinearColor(1, 1, 1), 3.f);
+	W->Mode = APBXEcho::EMode::Stage; W->PlaceAt(Bt.Bp); W->SetActorScale3D(FVector(StageFoeScale)); W->Flash(FLinearColor(1, 1, 1), 3.f);
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
 	Partner->PlaceAt(Bt.A); Partner->PopIn();
+	ClearStage({ W });
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
 	UI->IntroT = 1.9f; UI->IntroA = UI->Plate[0].Name; UI->IntroB = C->Name; UI->IntroColA = PBXData::TypeColor(UI->Plate[0].Type) * .85f; UI->IntroColB = PBXData::TypeColor(C->Type) * .85f;
@@ -1202,13 +1247,14 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	Bt.B.Team[0] = Mine; Bt.B.Team[1] = Foes; Bt.B.Act[0] = First;
 	SetupStage(N->GetActorLocation());
 	APBXEcho* E = GetWorld()->SpawnActor<APBXEcho>(APBXEcho::StaticClass(), FTransform(Bt.Bp));
-	if (E) { E->Setup(C->Id, 95.f * C->Size); E->PlaceAt(Bt.Bp); E->Mode = APBXEcho::EMode::Stage; E->PopIn(); }
+	if (E) { E->Setup(C->Id, 95.f * C->Size); E->PlaceAt(Bt.Bp); E->SetActorScale3D(FVector(StageFoeScale)); E->Mode = APBXEcho::EMode::Stage; E->PopIn(); }
 	Bt.Foe = E; Bt.bOwnsFoe = true;
 	const FVector RhoAt = Bt.Bp + Bt.D * 230.f + Bt.Side * 120.f;
 	N->SetActorLocation(FVector(RhoAt.X, RhoAt.Y, PBXWorld::GroundZ(GetWorld(), RhoAt, 300.f, 1500.f, RhoAt.Z) + 92.f), false, nullptr, ETeleportType::TeleportPhysics);
 	N->FaceTowards(PlayerLoc(), true); N->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
 	Partner->PlaceAt(Bt.A); Partner->PopIn();
+	ClearStage({ E, N });
 	Player->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
 	SyncPlates(); UI->Plate[0].ShownHP = UI->Plate[0].HP; UI->Plate[1].ShownHP = UI->Plate[1].HP;
@@ -1501,7 +1547,8 @@ void APBXDirector::EndBattle(const FString& Result)
 	// tear down the stage
 	if (AStaticMeshActor* B = Bt.Ball.Get()) B->Destroy();
 	APBXEcho* F = Bt.Foe.Get();
-	if (F) { if (Bt.bOwnsFoe) F->Destroy(); else { F->SetActorHiddenInGame(true); F->SetFaint(false); F->Mode = APBXEcho::EMode::Wander; } }
+	if (F) { if (Bt.bOwnsFoe) F->Destroy(); else { F->SetActorHiddenInGame(true); F->SetFaint(false); F->SetActorScale3D(FVector(1.f)); F->Mode = APBXEcho::EMode::Wander; } }
+	RestoreStage();
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTargetWithBlend(Player, .6f, VTBlend_Cubic);
 	Player->StopAction(.3f);
 	const FName Trainer = Bt.Trainer; const bool bWasTrainer = Bt.bTrainer, bStory = Bt.bStory;

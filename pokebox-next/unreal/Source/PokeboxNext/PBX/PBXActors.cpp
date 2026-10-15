@@ -270,7 +270,7 @@ void APBXEcho::Tick(float Dt)
 		if (Mode == EMode::Follow && FollowTarget.IsValid())
 		{
 			const AActor* A = FollowTarget.Get();
-			const FVector Want = A->GetActorLocation() - A->GetActorForwardVector() * 130.f + A->GetActorRightVector() * 95.f;
+			const FVector Want = A->GetActorLocation() - A->GetActorForwardVector() * 20.f + A->GetActorRightVector() * 150.f;   // beside you, not between you and the camera
 			const float Dist = FVector::Dist2D(Want, Loc);
 			if (Dist > 900.f) Loc = FVector(Want.X, Want.Y, PBXWorld::GroundZ(W, Want, 300.f, 1500.f, Loc.Z)); // teleported (doors)
 			else if (Dist > 60.f) StepTowards(Want, FMath::Clamp(Dist * 2.2f, 150.f, 700.f));
