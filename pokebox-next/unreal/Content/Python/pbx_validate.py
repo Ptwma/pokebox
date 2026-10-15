@@ -13,7 +13,10 @@ EAL = unreal.EditorAssetLibrary
 SAVED = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir())
 DATA = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()) + 'PBX/Data/'
 
-CLEAR_R = 200.0          # cm, keep-clear radius around gameplay points
+CLEAR_R = 200.0          # cm, keep-clear radius around doors, exits, items and named spots
+NPC_R = 120.0            # cm, around NPCs (they stand next to stalls and fences on purpose)
+LANE_LEN, LANE_HALF = 800.0, 150.0   # cm, the walk-up lane in front of every outside door
+SOFT = ('SM_Flower', 'SM_Grass', 'SM_Fol_', 'SM_Plant', 'SM_Fern', 'SM_Mushroom', 'SM_Clover')   # small plants: never 'block', but must not collide
 FLOAT_TOL = 30.0         # cm
 SKIP_LABELS = ('Ground', 'GroundFar', 'Mountains', 'R1_Ground', 'R1_Mountains', 'SkyDome', 'Sea', 'PostProcess', 'PlayerStart',
                'RoomLight', 'WindowFill')
@@ -33,7 +36,7 @@ def _points(G):
     for d in G.get('doors', []):
         add('door %s outside' % d['id'], (d.get('outside') or {}).get('pos'))
         add('door %s inside' % d['id'], (d.get('inside') or {}).get('pos'))
-    for n in G.get('npcs', []): add('npc %s' % n['id'], n.get('pos'))
+    for n in G.get('npcs', []): add('npc %s' % n['id'], n.get('pos'))   # radius NPC_R (label starts with 'npc ')
     for k, s in (G.get('spots') or {}).items():
         if k.endswith('_hint') or k in ('starter_table', 'bed'): continue
         add('spot %s' % k, s.get('pos') if isinstance(s, dict) else s)
@@ -42,12 +45,24 @@ def _points(G):
     if G.get('new_game'): add('new_game', G['new_game'].get('pos'))
     return P
 
+def _lanes(G):
+    """(label, points along the lane) from each outside door 8 m out towards/through its standing spot"""
+    L = []
+    for d in G.get('doors', []):
+        od, sp_ = d.get('out_door'), (d.get('outside') or {}).get('pos')
+        if not od: continue
+        if sp_: dx, dy = sp_[0] - od[0], sp_[1] - od[1]
+        else: continue
+        n = math.hypot(dx, dy) or 1.0; dx, dy = dx / n, dy / n
+        L.append(('door %s lane' % d['id'], od[2], [(od[0] + dx * t, od[1] + dy * t) for t in range(0, int(LANE_LEN) + 1, 50)]))
+    return L
+
 def _dist2d_box(x, y, mn, mx):
     dx = max(mn.x - x, 0.0, x - mx.x); dy = max(mn.y - y, 0.0, y - mx.y)
     return math.hypot(dx, dy)
 
 def _ground_below(world, x, y, z_top, ignore):
-    h = unreal.SystemLibrary.line_trace_single(world, unreal.Vector(x, y, z_top + 50.0), unreal.Vector(x, y, z_top - 20000.0),
+    h = unreal.SystemLibrary.line_trace_single(world, unreal.Vector(x, y, z_top), unreal.Vector(x, y, z_top - 20000.0),
                                                unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, True, ignore, unreal.DrawDebugTrace.NONE, True)
     if not h: return None
     for v in h.to_tuple()[4:7]:
@@ -68,14 +83,14 @@ def _check_materials(c):
         if isinstance(m, unreal.MaterialInstanceConstant):
             for tp in m.get_editor_property('texture_parameter_values') or []:
                 t = tp.get_editor_property('parameter_value')
-                if t is None: bad.append('slot %d texture %s missing' % (i, tp.get_editor_property('parameter_info').name))
-                elif any(b in t.get_path_name() for b in BAD_TEX): bad.append('slot %d texture %s = engine default' % (i, tp.get_editor_property('parameter_info').name))
+                if t is None: bad.append('?slot %d texture %s missing' % (i, tp.get_editor_property('parameter_info').name))
+                elif any(b in t.get_path_name() for b in BAD_TEX): bad.append('?slot %d texture %s = engine default' % (i, tp.get_editor_property('parameter_info').name))
     return bad
 
 def run(map_name):
     world = _world()
     G = json.load(open(DATA + map_name + '.json', encoding='utf-8')) if os.path.exists(DATA + map_name + '.json') else {}
-    pts = _points(G)
+    pts = _points(G); lanes = _lanes(G)
     fails, warns = [], []
     actors = unreal.EditorLevelLibrary.get_all_level_actors()
     for a in actors:
@@ -92,7 +107,8 @@ def run(map_name):
         # ---- materials (every static mesh component, blueprints included)
         for sc in a.get_components_by_class(unreal.StaticMeshComponent):
             if not sc.get_editor_property('static_mesh'): continue
-            for b in _check_materials(sc): fails.append('MATERIAL  %s (%s): %s' % (lbl, sc.get_editor_property('static_mesh').get_name(), b))
+            for b in _check_materials(sc):
+                (warns if b.startswith('?') else fails).append('MATERIAL  %s (%s): %s' % (lbl, sc.get_editor_property('static_mesh').get_name(), b.lstrip('?')))
         for sk in a.get_components_by_class(unreal.SkeletalMeshComponent):
             for i, m in enumerate(sk.get_materials()):
                 if m is None or any(b in m.get_path_name() for b in BAD_MAT): fails.append('MATERIAL  %s skeletal slot %d default/empty' % (lbl, i))
@@ -100,14 +116,20 @@ def run(map_name):
         # ---- keep-clear: only things you would bump into (collision on, taller than 30 cm, not a building — buildings own their door)
         blocking = c is not None and c.get_collision_enabled() != unreal.CollisionEnabled.NO_COLLISION
         building = is_bp or max(ext.x, ext.y) > 450.0
-        if blocking and tall > 30.0 and not building:
+        soft = lbl.startswith(SOFT) or path.split('.')[-1].startswith(SOFT)
+        if blocking and soft: warns.append('COLLIDES  plant %s has collision (the player bumps into it)' % lbl)
+        if blocking and tall > 30.0 and not building and not soft:
             for (pl, x, y, z) in pts:
                 if abs(z - o.z) > 400.0: continue        # interiors sit 60 m below; don't mix floors
                 d = _dist2d_box(x, y, mn, mx)
-                if d < CLEAR_R: fails.append('KEEP-CLEAR  %s is %.0f cm from %s' % (lbl, d, pl))
+                if d < (NPC_R if pl.startswith('npc ') else CLEAR_R): fails.append('KEEP-CLEAR  %s is %.0f cm from %s' % (lbl, d, pl))
+            for (pl, z, P) in lanes:
+                if abs(z - o.z) > 400.0: continue
+                d = min(_dist2d_box(x, y, mn, mx) for (x, y) in P)
+                if d < LANE_HALF: fails.append('DOOR-LANE  %s sits in the walk-up lane of %s' % (lbl, pl))
         # ---- floating / buried (single props only)
         if not building and c is not None and tall > 10.0:
-            g = _ground_below(world, o.x, o.y, mn.z, [a])
+            g = _ground_below(world, o.x, o.y, mx.z + 50.0, [a])   # from the top: a prop sunk into a slope must still see that slope
             if g is not None:
                 if mn.z - g > FLOAT_TOL: fails.append('FLOATING  %s bottom %.0f cm above ground' % (lbl, mn.z - g))
                 elif g - mn.z > .6 * tall and tall > 60.0: warns.append('BURIED  %s sunk %.0f of %.0f cm' % (lbl, g - mn.z, tall))
