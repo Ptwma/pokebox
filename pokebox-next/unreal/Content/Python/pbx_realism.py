@@ -5,7 +5,7 @@
 #   import pbx_realism; pbx_realism.level()         on the open level: physical sky + volumetric clouds instead of the
 #                                                   painted dome, real-time sky light, haze, neutral grade, comic pass off
 # pbx_build.build_level() calls level() after every rebuild. Source files: PokeboxNext_src/polyhaven (CC0, local only).
-import unreal, os, glob
+import unreal, os, glob, math
 
 SRC = r"E:\GAME-APP-DEV\POKEMON\PokeboxNext_src"
 PH = os.path.join(SRC, 'polyhaven')
@@ -103,7 +103,17 @@ float nz = (m1 - 0.5) * 34.0 + (m2 - 0.5) * 12.0;
 float rockW = smoothstep(RockA, RockB, slope + (m2 - 0.5) * 0.18);
 float alpine = smoothstep(AlpineZ - 12.0, AlpineZ + 12.0, p.z + nz);
 float snowW = smoothstep(SnowZ, SnowZ + 14.0, p.z + nz) * (1.0 - smoothstep(0.72, 0.93, slope + (m2 - 0.5) * 0.25));
-float3 col = lerp(g * GrassTint, r * RockTint, saturate(max(rockW, alpine * 0.85)));
+// near the village the meadow uses the same leafy-grass scan + tint as the town ground (no seam where they meet)
+float nearW = 1.0 - smoothstep(170.0, 430.0, length(p.xy - float2(0.0, 10.0)));
+float3 gn = Texture2DSample(Near, NearSampler, p.xy / 25.0).rgb * NearTint;
+g = lerp(g * GrassTint, gn, nearW);
+float3 col = lerp(g, r * RockTint, saturate(max(rockW, alpine * 0.85)));
+// beaches and the sea floor: sand below ~1 m, with a ragged edge
+float3 sd = Texture2DSample(Sand, SandSampler, p.xy / 6.0).rgb * float3(1.1, 1.05, 0.95);
+col = lerp(col, sd, 1.0 - smoothstep(-0.3, 1.3, p.z + (m2 - 0.5) * 1.6));
+// the Lamplighters' Path: worn dirt where the terrain's vertex colour R says so
+float3 dt = Texture2DSample(Dirt, DirtSampler, p.xy / 4.0).rgb;
+col = lerp(col, dt, saturate(VC.r * (0.8 + 0.4 * m2)));
 col = lerp(col, s * SnowTint, snowW);
 col *= lerp(0.82, 1.15, m1 * 0.6 + m2 * 0.4);
 float rough = lerp(lerp(0.95, 0.88, rockW), 0.55, snowW);
@@ -113,7 +123,7 @@ MOUNTAIN_PARAMS = [('GrassSize', 38.0), ('RockSize', 34.0), ('SnowSize', 9.0), (
 
 def master_mountain():
     m = B._fresh('M_PBX_Mountain', G + '/Materials'); E = B._e
-    keys = [k for k, _ in MOUNTAIN_PARAMS] + ['WP', 'N', 'Grass', 'Rock', 'Snow', 'Macro', 'GrassTint', 'RockTint', 'SnowTint', 'Mode']
+    keys = [k for k, _ in MOUNTAIN_PARAMS] + ['WP', 'N', 'VC', 'Grass', 'Rock', 'Snow', 'Near', 'Sand', 'Dirt', 'Macro', 'GrassTint', 'RockTint', 'SnowTint', 'NearTint', 'Mode']
     nodes = []
     for mode, y0 in ((0, 0), (1, 900)):
         cu = E(m, unreal.MaterialExpressionCustom, -300, y0); cu.set_editor_property('code', MOUNTAIN_HLSL)
@@ -127,14 +137,16 @@ def master_mountain():
     for k, v in MOUNTAIN_PARAMS: shared[k] = B._scalar(m, k, v, -1100, y); y += 70
     shared['WP'] = E(m, unreal.MaterialExpressionWorldPosition, -1100, y); y += 100
     shared['N'] = E(m, unreal.MaterialExpressionVertexNormalWS, -1100, y); y += 100
-    for k, tex in (('Grass', 'aerial_grass_rock_diff'), ('Rock', 'aerial_rocks_02_diff'), ('Snow', 'snow_02_diff')):
+    shared['VC'] = E(m, unreal.MaterialExpressionVertexColor, -1100, y); y += 100
+    for k, tex in (('Grass', 'aerial_grass_rock_diff'), ('Rock', 'aerial_rocks_02_diff'), ('Snow', 'snow_02_diff'), ('Near', 'leafy_grass_diff'),
+                   ('Sand', f'{G}/Tex/coast_sand_01_diff'), ('Dirt', 'stony_dirt_path_diff')):
         o = E(m, unreal.MaterialExpressionTextureObjectParameter, -1100, y); o.set_editor_property('parameter_name', k + 'Tex')
         t = T(tex)
         if t: o.set_editor_property('texture', t)
         shared[k] = o; y += 150
     o = E(m, unreal.MaterialExpressionTextureObjectParameter, -1100, y); o.set_editor_property('parameter_name', 'MacroTex')
     o.set_editor_property('texture', unreal.load_asset('/Game/DreamscapeSeries/SharedResources/Textures/Utility/T_MacroVariation')); shared['Macro'] = o; y += 150
-    for k, v in (('GrassTint', (.74, .92, .56, 1)), ('RockTint', (.95, .95, .97, 1)), ('SnowTint', (1.05, 1.07, 1.1, 1))):
+    for k, v in (('GrassTint', (.74, .92, .56, 1)), ('RockTint', (.95, .95, .97, 1)), ('SnowTint', (1.05, 1.07, 1.1, 1)), ('NearTint', GRASS_TINT)):
         shared[k] = B._vec(m, k, v, -1100, y); y += 120
     for mode, cu in enumerate(nodes):
         for k in keys[:-1]: MEL.connect_material_expressions(shared[k], 'RGB' if k.endswith('Tint') else '', cu, k)
@@ -148,6 +160,181 @@ def master_mountain():
     return m
 
 def _ph(n): return {'BaseTex': f'{TEX}/PH_{n}_diff', 'NormalTex': f'{TEX}/PH_{n}_nor', 'ArmTex': f'{TEX}/PH_{n}_arm'}
+
+# ------------------------------------------------------------------ water (2026-10-23): Single Layer Water shading (real
+# absorption / scattering, Lumen reflections), Gerstner swell moving the sea mesh, rippled normals, shore foam.
+# WAVES must stay identical to APBXBoat's buoyancy (C++): (direction deg in UE XY, wavelength m, amplitude m)
+WAVES = [(84.0, 23.0, .20), (101.0, 13.5, .11), (70.0, 7.8, .055), (115.0, 4.6, .025)]
+GERSTNER = r"""
+float3 o = 0; float2 sl = 0;
+float2 q = WP.xy / 100.0;
+WAVEBODY
+return Mode > 0.5 ? normalize(float3(-sl.x, -sl.y, 1.0)) : o * 100.0;
+"""
+def _gerstner_code():
+    b = ''
+    for i, (deg, lam, amp) in enumerate(WAVES):
+        k = 6.2831853 / lam; c = (9.81 / k) ** .5; a = math.radians(deg)
+        b += (f"{{ float2 d = float2({math.cos(a):.5f}, {math.sin(a):.5f}); float f = {k:.5f} * (dot(d, q) - {c:.5f} * T);"
+              f" float A = {amp:.4f} * Amp; o.xy += d * (0.7 * A) * cos(f); o.z += A * sin(f); sl += d * ({k:.5f} * A) * cos(f); }}\n")
+    return GERSTNER.replace('WAVEBODY', b)
+
+def _custom(m, code, inputs, x, y, out=unreal.CustomMaterialOutputType.CMOT_FLOAT3):
+    cu = B._e(m, unreal.MaterialExpressionCustom, x, y); cu.set_editor_property('code', code); cu.set_editor_property('output_type', out)
+    ins = []
+    for k in inputs:
+        ci = unreal.CustomInput(); ci.set_editor_property('input_name', k); ins.append(ci)
+    cu.set_editor_property('inputs', ins); return cu
+
+def _water_common(m, flow_uv=False):
+    """shared: SLW shading model + output node, detail ripples, foam. Returns (normal_node_ws or None)"""
+    E = B._e
+    m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_SINGLE_LAYER_WATER)
+    for k in ('used_with_nanite',):
+        try: m.set_editor_property(k, False)
+        except Exception: pass
+    out = E(m, unreal.MaterialExpressionSingleLayerWaterMaterialOutput, 400, 600)
+    MEL.connect_material_expressions(B._vec(m, 'Scattering', (.012, .035, .038, 1), 100, 500), '', out, 'ScatteringCoefficients')
+    MEL.connect_material_expressions(B._vec(m, 'Absorption', (.42, .09, .06, 1), 100, 650), '', out, 'AbsorptionCoefficients')
+    MEL.connect_material_expressions(B._scalar(m, 'PhaseG', .1, 100, 800), '', out, 'PhaseG')
+    return out
+
+def master_sea():
+    m = B._fresh('M_PBX_Sea', G + '/Materials'); E = B._e
+    _water_common(m)
+    m.set_editor_property('tangent_space_normal', False)
+    wp = E(m, unreal.MaterialExpressionWorldPosition, -1600, 0); tm = E(m, unreal.MaterialExpressionTime, -1600, 120)
+    amp = B._scalar(m, 'WaveAmp', 1.0, -1600, 220)
+    ins = ['WP', 'T', 'Amp', 'Mode']
+    nodes = []
+    for mode, y in ((0, 0), (1, 400)):
+        cu = _custom(m, _gerstner_code(), ins, -1200, y)
+        MEL.connect_material_expressions(wp, '', cu, 'WP'); MEL.connect_material_expressions(tm, '', cu, 'T'); MEL.connect_material_expressions(amp, '', cu, 'Amp')
+        c = E(m, unreal.MaterialExpressionConstant, -1400, y + 300); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
+        nodes.append(cu)
+    MEL.connect_material_property(nodes[0], '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    # detail ripples (two scrolling samples of the tileable normal) bent around the swell normal, plus shore foam
+    tex = unreal.load_asset(G + '/Tex/T_WaterNormal')
+    o = E(m, unreal.MaterialExpressionTextureObjectParameter, -1200, 800); o.set_editor_property('parameter_name', 'RippleTex')
+    if tex: o.set_editor_property('texture', tex)
+    sd = E(m, unreal.MaterialExpressionSceneDepthWithoutWater, -1200, 1000); pd = E(m, unreal.MaterialExpressionPixelDepth, -1200, 1100)
+    code = r"""
+float2 q = WP.xy / 100.0;
+float3 a = Texture2DSample(Rip, RipSampler, q / 9.0 + T * float2(0.011, 0.017)).xyz * 2 - 1;
+float3 b = Texture2DSample(Rip, RipSampler, q / 4.3 - T * float2(0.019, -0.008)).xyz * 2 - 1;
+float3 d = normalize(float3((a.xy + b.xy) * RipStr, 1.0));
+float3 n = normalize(Swell);
+float3 t = normalize(cross(float3(0, 1, 0), n)); float3 bt = cross(n, t);
+float3 N = normalize(t * d.x + bt * d.y + n * d.z);
+float depth = max(0.0, SD - PD);
+float foam = (1.0 - smoothstep(4.0, 38.0, depth)) * saturate(0.35 + 0.6 * (a.x * b.y));
+return Mode > 0.5 ? float3(foam, depth, 0) : N;
+"""
+    cn = []
+    for mode, y in ((0, 800), (1, 1200)):
+        cu = _custom(m, code, ['WP', 'T', 'Rip', 'RipStr', 'Swell', 'SD', 'PD', 'Mode'], -700, y)
+        MEL.connect_material_expressions(wp, '', cu, 'WP'); MEL.connect_material_expressions(tm, '', cu, 'T'); MEL.connect_material_expressions(o, '', cu, 'Rip')
+        MEL.connect_material_expressions(B._scalar(m, 'RippleStrength', .55, -1000, y + 200), '', cu, 'RipStr')
+        MEL.connect_material_expressions(nodes[1], '', cu, 'Swell'); MEL.connect_material_expressions(sd, '', cu, 'SD'); MEL.connect_material_expressions(pd, '', cu, 'PD')
+        c = E(m, unreal.MaterialExpressionConstant, -900, y + 300); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
+        cn.append(cu)
+    MEL.connect_material_property(cn[0], '', unreal.MaterialProperty.MP_NORMAL)
+    fm = E(m, unreal.MaterialExpressionComponentMask, -300, 1200); fm.set_editor_property('r', True); MEL.connect_material_expressions(cn[1], '', fm, '')
+    base = E(m, unreal.MaterialExpressionLinearInterpolate, -100, 900)
+    MEL.connect_material_expressions(B._vec(m, 'WaterColor', (.0, .0, .0, 1), -300, 900), '', base, 'A')
+    MEL.connect_material_expressions(B._vec(m, 'FoamColor', (.85, .88, .88, 1), -300, 1000), '', base, 'B'); MEL.connect_material_expressions(fm, '', base, 'Alpha')
+    MEL.connect_material_property(base, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    rough = E(m, unreal.MaterialExpressionLinearInterpolate, -100, 1100); rough.set_editor_property('const_a', .035); rough.set_editor_property('const_b', .6)
+    MEL.connect_material_expressions(fm, '', rough, 'Alpha'); MEL.connect_material_property(rough, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    log('sea instr', MEL.get_statistics(m).num_pixel_shader_instructions)
+    return m
+
+def master_river():
+    """the stream: same water shading, ripples scrolling DOWNSTREAM along the ribbon's UV.x (metres), white water where
+    the ribbon is steep (rapids) and along the banks"""
+    m = B._fresh('M_PBX_River', G + '/Materials'); E = B._e
+    _water_common(m)
+    m.set_editor_property('tangent_space_normal', False)
+    uv = E(m, unreal.MaterialExpressionTextureCoordinate, -1400, 0); tm = E(m, unreal.MaterialExpressionTime, -1400, 120)
+    vn = E(m, unreal.MaterialExpressionVertexNormalWS, -1400, 240)
+    sd = E(m, unreal.MaterialExpressionSceneDepthWithoutWater, -1400, 360); pd = E(m, unreal.MaterialExpressionPixelDepth, -1400, 460)
+    tex = unreal.load_asset(G + '/Tex/T_WaterNormal')
+    o = E(m, unreal.MaterialExpressionTextureObjectParameter, -1400, 600); o.set_editor_property('parameter_name', 'RippleTex')
+    if tex: o.set_editor_property('texture', tex)
+    code = r"""
+float steep = saturate((1.0 - normalize(VN).z - 0.07) * 7.0);
+float sp = Speed * (1.0 + 2.5 * steep);
+float3 a = Texture2DSample(Rip, RipSampler, float2(UV.x / 3.0 - T * sp / 3.0, UV.y * 0.7)).xyz * 2 - 1;
+float3 b = Texture2DSample(Rip, RipSampler, float2(UV.x / 1.7 - T * sp * 1.3 / 1.7, UV.y * 0.45 + 0.3)).xyz * 2 - 1;
+float3 n = normalize(VN);
+float3 t = normalize(cross(float3(0, 0, 1), n) + float3(0.0001, 0, 0)); float3 bt = cross(n, t);
+float3 N = normalize(t * (a.y + b.y) * 0.5 + bt * (a.x + b.x) * 0.5 + n);
+float depth = max(0.0, SD - PD);
+float foam = saturate(steep * (0.45 + 0.4 * a.x) + (1.0 - smoothstep(2.0, 10.0, depth)) * 0.12);
+return Mode > 0.5 ? float3(foam, 0, 0) : N;
+"""
+    cn = []
+    for mode, y in ((0, 0), (1, 400)):
+        cu = _custom(m, code, ['UV', 'T', 'VN', 'SD', 'PD', 'Rip', 'Speed', 'Mode'], -800, y)
+        for k, nd in (('UV', uv), ('T', tm), ('VN', vn), ('SD', sd), ('PD', pd), ('Rip', o)): MEL.connect_material_expressions(nd, '', cu, k)
+        MEL.connect_material_expressions(B._scalar(m, 'FlowSpeed', 1.1, -1100, y + 200), '', cu, 'Speed')
+        c = E(m, unreal.MaterialExpressionConstant, -1000, y + 300); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
+        cn.append(cu)
+    MEL.connect_material_property(cn[0], '', unreal.MaterialProperty.MP_NORMAL)
+    fm = E(m, unreal.MaterialExpressionComponentMask, -400, 400); fm.set_editor_property('r', True); MEL.connect_material_expressions(cn[1], '', fm, '')
+    base = E(m, unreal.MaterialExpressionLinearInterpolate, -100, 300)
+    MEL.connect_material_expressions(B._vec(m, 'WaterColor', (.0, .0, .0, 1), -300, 200), '', base, 'A')
+    MEL.connect_material_expressions(B._vec(m, 'FoamColor', (.9, .92, .92, 1), -300, 300), '', base, 'B'); MEL.connect_material_expressions(fm, '', base, 'Alpha')
+    MEL.connect_material_property(base, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    rough = E(m, unreal.MaterialExpressionLinearInterpolate, -100, 500); rough.set_editor_property('const_a', .05); rough.set_editor_property('const_b', .55)
+    MEL.connect_material_expressions(fm, '', rough, 'Alpha'); MEL.connect_material_property(rough, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m)
+    log('river instr', MEL.get_statistics(m).num_pixel_shader_instructions)
+    return m
+
+def water_inputs():
+    """the ripple normal map (tools/water_normal.py) + the sea / river meshes"""
+    B._import([os.path.join(SRC, 'tex', 'T_WaterNormal.png')], G + '/Tex')
+    t = unreal.load_asset(G + '/Tex/T_WaterNormal')
+    if t:
+        t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_NORMALMAP); t.set_editor_property('srgb', False)
+        t.set_editor_property('flip_green_channel', True); EAL.save_loaded_asset(t)
+    B.import_meshes(only=['SM_Water', 'SM_River', 'SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'])
+
+def water_materials():
+    sea = master_sea(); riv = master_river()
+    for mesh, mat in (('SM_Water', sea), ('SM_River', riv)):
+        sm = unreal.load_asset(f'{G}/Meshes/{mesh}')
+        if not sm: log('missing', mesh); continue
+        for i in range(len(sm.get_editor_property('static_materials'))): sm.set_material(i, mat)
+        try:
+            ns = sm.get_editor_property('nanite_settings'); ns.set_editor_property('enabled', False); sm.set_editor_property('nanite_settings', ns)
+        except Exception as ex: log('nanite', mesh, ex)
+        bs = sm.get_editor_property('body_setup')
+        if bs: bs.set_editor_property('collision_trace_flag', unreal.CollisionTraceFlag.CTF_USE_DEFAULT)
+        EAL.save_loaded_asset(sm)
+    # meshes re-imported on their own (tunnel): each slot named M_X gets /Game/PBX/Materials/Inst/MI_X
+    for mesh in ('SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'):
+        sm = unreal.load_asset(f'{G}/Meshes/{mesh}')
+        if not sm: continue
+        for i, sl in enumerate(sm.get_editor_property('static_materials')):
+            nm = str(sl.get_editor_property('material_slot_name')).split('.')[0]
+            mi = unreal.load_asset(f'{G}/Materials/Inst/MI_{nm[2:]}') if nm.startswith('M_') else None
+            if mi: sm.set_material(i, mi)
+            else: log('tunnel slot without material', nm)
+        bs = sm.get_editor_property('body_setup')
+        if bs: bs.set_editor_property('collision_trace_flag', unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
+        EAL.save_loaded_asset(sm)
+    # tunnel / built stone: photo-scanned rubble stone instead of the painted wall
+    st = unreal.load_asset(f'{G}/Materials/Inst/MI_Stone')
+    if st:
+        for k, v in {'BaseTex': f'{G}/Tex/rustic_stone_wall_diff', 'NormalTex': f'{G}/Tex/rustic_stone_wall_nor', 'ArmTex': f'{G}/Tex/rustic_stone_wall_arm'}.items():
+            tx = unreal.load_asset(v)
+            if tx: MEL.set_material_instance_texture_parameter_value(st, k, tx)
+        MEL.set_material_instance_scalar_parameter_value(st, 'UVScale', .4); MEL.set_material_instance_vector_parameter_value(st, 'Tint', unreal.LinearColor(.95, .93, .9, 1))
+        MEL.update_material_instance(st); EAL.save_loaded_asset(st)
+    log('water + stone materials')
 
 # ground layers (town + Route 1): grass / dirt road / sand / paving
 GROUND_REAL = {'GrassBase': f'{TEX}/PH_leafy_grass_diff', 'GrassNor': f'{TEX}/PH_leafy_grass_nor', 'GrassArm': f'{TEX}/PH_leafy_grass_arm',

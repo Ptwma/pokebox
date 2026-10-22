@@ -291,9 +291,38 @@ PLATFORM = (34.6, 38.4, -20.0, 24.0) # x0, x1, y0, y1 (top at +0.55 m)
 # new village houses (2026-10-22): (blueprint, door x, door y, facing) — doors open onto the new side paths
 NEW_HOUSES = [(12, 6.2, 15.5, (-1, 0)), (8, 5.8, 31.0, (-1, 0)), (11, -6.2, 15.0, (1, 0)), (7, 22.0, -15.0, (0, 1)), (1, -11.1, -16.2, (1, 0))]
 NEW_HOUSE_BLOCKS = [(11.2, 14.2, 9.5), (9.9, 30.8, 10.5), (-10.7, 15.7, 10.0), (21.9, -22.8, 11.0), (-15.3, -16.2, 6.5)]
-PADS = [(9.9, 30.8, 11.0)]          # ground levelled under the harbour inn (outside the flat village core)
+PADS = [(9.9, 30.8, 11.0), (-85.0, -80.8, 7.0), (95.0, -72.8, 7.0), (92.0, -30.8, 7.0)]   # levelled ground: harbour inn, the windmills
+# 2026-10-23 (phase 2): seven more houses — a harbour lane in the south-west, a farm hamlet across the stream in the east
+# (reached over a stone bridge), two cottages behind the lab — and three more windmills, two of them at the mountains' foot
+NEW_HOUSES2 = [(2, -14.0, 33.5, (0, 1)), (10, -30.0, 33.5, (0, 1)), (4, 68.0, 0.0, (-1, 0)), (12, 68.0, -22.0, (-1, 0)),
+               (2, 82.0, 14.0, (0, -1)), (1, -13.0, -46.0, (0, 1)), (11, 14.0, -44.0, (0, 1))]
+NEW_HOUSE_BLOCKS2 = [(-14, 29.3, 7.0), (-30.3, 31, 6.5), (72, .4, 11.5), (73, -23.3, 10.5), (82, 17, 6.5), (-13, -50.3, 6.5), (13.3, -48.5, 9.5)]
+WINDMILLS = [(-85.0, -78.0), (95.0, -70.0), (92.0, -28.0)]
+# the Lamplighters' Path: from behind the memorial garden up the north-western slope to the old Rest (a clearing with the
+# keepers' graves) and on to the cairn on the ridge. The only way up; beyond the cairn the forest closes.
+TRAIL = [(-36, -46), (-48, -62), (-62, -82), (-78, -106), (-92, -132), (-95, -150), (-90, -165), (-80, -182), (-68, -198), (-60, -208)]
+REST = (-90.0, -165.0)
+def trail_dist(x, y):
+    best = 1e9
+    for (ax, ay), (bx, by) in zip(TRAIL[:-1], TRAIL[1:]):
+        dx, dy = bx - ax, by - ay; L2 = dx * dx + dy * dy
+        u = max(0, min(1, ((x - ax) * dx + (y - ay) * dy) / L2)); best = min(best, math.hypot(x - ax - dx * u, y - ay - dy * u))
+    return best
+# carved wooden signs (3D lettering on the board) and notes / grave inscriptions (read with E) — a small story off the
+# main game: the keepers of the old harbour lamp, and the storm night Ansel Vorn took the lamp up to the ridge
+LORE_SIGNS = [((-38.5, -49.0), (-1, 1), "LAMPLIGHTERS' PATH\nup to the old Rest\nmind the roots"),
+              ((-79.5, -103.0), (1, 1), "'Light the lamp,\nthen come home.'\n— carved by A.V."),
+              ((-84.0, -158.0), (1, 1), "HERE REST THE KEEPERS\nOF THE HARBOUR LAMP"),
+              ((-63.0, -203.0), (0, 1), "Beyond the cairn\nthe forest closes.\nNo keeper went further.")]
+LORE_NOTES = [((-93.5, -161.5), "Ledger of the Lamplighters' Rest. Oil: 12 casks. Wicks: 40. The lighthouse on the island is finished. After tonight the lamp up here goes dark for good."),
+              ((-96.5, -166.0), "Ansel's note: The storm came early and Mara's boat is still out past the island. I am taking the lamp up to the ridge so she can see the shore. If you find this, keep a light in the window."),
+              ((-88.5, -170.5), "ANSEL VORN — Keeper of the Harbour Lamp. He lit the way."),
+              ((-91.5, -171.0), "MARA VORN — Fisher. She came home."),
+              ((-85.5, -169.5), "The first keepers. Their names are worn away; someone still leaves pebbles on the stone."),
+              ((-61.0, -206.0), "A torn page wedged under the cairn: '...his Echo card was never found. Fishers say a small light still moves between the pines on stormy nights...'")]
 
-def height(x, y):
+
+def height_raw(x, y):
     """flat village plateau, soft hills inland, slope down to the beach on the south (+y)"""
     h = 0.0
     h += .35 * math.sin(x * .07) * math.cos(y * .05) + .25 * math.sin(x * .13 + 1.3) * math.sin(y * .11 + .4)
@@ -308,6 +337,10 @@ def height(x, y):
         k = min(1, max(0, (abs(x - TRACK_X) - 4.0) / 7.0)); k = k * k * (3 - 2 * k)
         h = h * k
     return h
+
+def height(x, y):
+    """town ground height with the stream bed carved in (2026-10-23)"""
+    return river_carve(x, y, height_raw(x, y))
 
 def path_mask(x, y, plan):
     m = 0.0
@@ -360,10 +393,6 @@ def echo_card():
     bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_EchoCard.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL', axis_forward='-Z', axis_up='Y',
                              mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
 
-def water_plane():
-    bm = bmesh.new(); bmesh.ops.create_grid(bm, x_segments=40, y_segments=20, size=1)
-    bmesh.ops.scale(bm, vec=Vector((1600, 700, 1)), verts=bm.verts)
-    ob = mesh_obj('SM_Water', bm); set_mat(ob, 'M_Water'); return export(ob, 'SM_Water')
 
 
 # ------------------------------------------------------------------ railway (station, platform, track, tunnel, train)
@@ -405,79 +434,174 @@ def track():
     for s_ in (-1, 1): P.append(cyl(f'tr_bufpad{s_}', .16, .2, (s_ * .72, y - .17, .75), 'M_Iron', rot=(math.pi / 2, 0, 0), seg=12))
     return join(P, 'SM_Track')
 
+def _arch_outline(w, h, n=18):
+    """inner outline of the opening, bottom-right -> up -> over the half-round top -> down to bottom-left"""
+    r = w / 2; pts = [(r, 0.0), (r, h)]
+    for k in range(1, n): a = math.pi * k / n; pts.append((r * math.cos(a), h + r * math.sin(a)))
+    pts += [(-r, h), (-r, 0.0)]; return pts
+
 def tunnel_portal():
-    """stone arch built into the mountain face; the opening is 5.6 m wide x 6.4 m high, dark inside"""
-    P = []; w, h, d = 5.6, 4.6, 1.6
-    for s_ in (-1, 1): P.append(box(f'tp_pier{s_}', 2.2, d, h, (s_ * (w / 2 + 1.1), 0, 0), 'M_Stone', bevel=.05))
-    n = 11
-    for i in range(n):            # voussoirs of a round arch
-        a0 = math.pi * i / n; a1 = math.pi * (i + 1) / n; am = (a0 + a1) / 2
-        r = w / 2 + .55
-        ob = box(f'tp_v{i}', 1.1, d, math.pi * r / n + .05, (0, 0, 0), 'M_Stone', bevel=.04)
-        ob.rotation_euler = (0, -(am - math.pi / 2), 0)
-        ob.location = (math.cos(am) * r, 0, h + math.sin(am) * r - (math.pi * r / n) / 2 * 0)
-        P.append(ob)
-    P.append(box('tp_wall', w + 7.0, d * .8, 3.0, (0, .3, h + w / 2 + .6), 'M_Stone', bevel=.05))      # wall above the arch
-    P.append(box('tp_cornice', w + 7.4, d + .3, .35, (0, 0, h + w / 2 + 3.5), 'M_Stone', bevel=.05))
-    # the cliff the tunnel is cut into: rock masses either side of and above the tube, up to the mountain behind
-    for s_ in (-1, 1): P.append(box(f'tp_cliff{s_}', 14.0, 32.0, 20.0, (s_ * (w / 2 + 2.2 + 7.0), -16.6, -1.0), 'M_CliffRock', bevel=.3))
-    P.append(box('tp_cliff_top', w + 4.4, 32.0, 20.0 - (h + w / 2 + 3.9), (0, -16.6, h + w / 2 + 3.9), 'M_CliffRock', bevel=.3))
-    P.append(box('tp_cliff_mid', w + 4.4, 30.0, 4.2, (0, -17.6, h + w / 2 - .3), 'M_CliffRock', bevel=0))
-    # darkness: a black tube going into the hill
-    P.append(box('tp_dark_back', w + .2, .2, h + w / 2 + .2, (0, -30, 0), 'M_TunnelDark', bevel=0))
-    for s_ in (-1, 1): P.append(box(f'tp_dark_side{s_}', .2, 30, h + w / 2, (s_ * (w / 2 + .05), -15, 0), 'M_TunnelDark', bevel=0))
-    P.append(box('tp_dark_top', w + .2, 30, .2, (0, -15, h + w / 2 - .1), 'M_TunnelDark', bevel=0))
-    P.append(box('tp_dark_floor', w + .2, 29.2, .08, (0, -15.8, .02), 'M_TunnelDark', bevel=0))
-    # the rails run on into the dark
-    for s_ in (-1, 1): P.append(box(f'tp_rail{s_}', .09, 20.0, .14, (s_ * .72, -11, .26), 'M_Metal', bevel=0))
+    """2026-10-23: a real railway tunnel. Stone headwall (18 x 11 m) with a cut-stone arch ring, coping, two flared wing
+    walls retaining the cutting, and a 60 m stone-lined bore (it bends nothing: the far part fades into soot-black).
+    The tunnel mountain (tunnel_bump) rises as a cliff right behind the headwall, so the bore is always under rock.
+    Local -Y = into the mountain. Origin = rail level at the portal face."""
+    import bmesh as _bm
+    W, H = 5.6, 4.6; HW, HH, T = 18.0, 11.0, 1.6; P = []
+    inner = _arch_outline(W, H); N = len(inner)
+    # outer boundary walked the same way: right edge up, along the top, left edge down
+    outer = []
+    for k, (x, z) in enumerate(inner):
+        f = k / (N - 1)                                   # 0 .. 1 along the path
+        per = 2 * HH + HW; d = f * per
+        if d < HH: outer.append((HW / 2, d))
+        elif d < HH + HW: outer.append((HW / 2 - (d - HH), HH))
+        else: outer.append((-HW / 2, HH - (d - HH - HW)))
+    bm = _bm.new()
+    def ring(y): return [bm.verts.new((x, y, z)) for (x, z) in inner], [bm.verts.new((x, y, z)) for (x, z) in outer]
+    fi, fo = ring(0.0); bi, bo = ring(-T)
+    for k in range(N - 1):
+        bm.faces.new((fi[k], fo[k], fo[k + 1], fi[k + 1]))          # front face (towards the town, +y)
+        bm.faces.new((bi[k + 1], bo[k + 1], bo[k], bi[k]))          # back face
+        bm.faces.new((fi[k + 1], bi[k + 1], bi[k], fi[k]))          # intrados (inside the opening)
+        bm.faces.new((fo[k], bo[k], bo[k + 1], fo[k + 1]))          # outer edges
+    bm.faces.new((fo[0], fi[0], bi[0], bo[0])); bm.faces.new((fi[-1], fo[-1], bo[-1], bi[-1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)        # closed solid: outward normals
+    hw = mesh_obj('tn_headwall', bm); set_mat(hw, 'M_Stone'); P.append(hw)
+    # arch ring of voussoirs standing proud of the wall + keystone, piers' plinths, coping on top
+    n = 13; r = W / 2 + .45
+    for i in range(n):
+        am = math.pi * (i + .5) / n
+        ob = box(f'tn_v{i}', .95, .3, math.pi * r / n - .04, (0, 0, 0), 'M_Stone', bevel=.03)
+        ob.rotation_euler = (0, -(am - math.pi / 2), 0); ob.location = (math.cos(am) * r, .15, H + math.sin(am) * r); P.append(ob)
+    P.append(box('tn_key', .8, .45, 1.1, (0, .2, H + W / 2 + .05), 'M_Stone', bevel=.04))
+    for s_ in (-1, 1): P.append(box(f'tn_plinth{s_}', 1.4, .45, 1.0, (s_ * (W / 2 + .7), .2, 0), 'M_Stone', bevel=.04))
+    P.append(box('tn_coping', HW + .6, T + .5, .45, (0, -T / 2 + .1, HH), 'M_Stone', bevel=.05))
+    # wing walls: flare out towards the town at 30 deg, 11 -> 2.5 m high over 11 m, retaining the cutting's slopes
+    for s_ in (-1, 1):
+        bm = _bm.new(); L = 11.0; th = 1.1
+        ang = math.radians(30) * s_
+        def pt(u, z, o):          # u along the wall (0 at the headwall), o across (0 = front face)
+            x0, y0 = s_ * (HW / 2 - .4), 0.0
+            dx, dy = math.sin(ang) * 1.0, math.cos(ang) * 1.0      # direction away from the headwall, towards the town
+            return (x0 + dx * u + (-dy * s_) * o, y0 + dy * u + (dx * s_) * o, z)
+        top = lambda u: HH - (HH - 2.5) * (u / L)
+        vs = [bm.verts.new(pt(u, z, o)) for (u, z, o) in [(0, 0, 0), (L, 0, 0), (L, top(L), 0), (0, top(0), 0),
+                                                            (0, 0, th), (L, 0, th), (L, top(L), th), (0, top(0), th)]]
+        for f in ((0, 1, 2, 3), (5, 4, 7, 6), (4, 0, 3, 7), (1, 5, 6, 2), (3, 2, 6, 7), (4, 5, 1, 0)): bm.faces.new([vs[k] for k in f])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        ob = mesh_obj(f'tn_wing{s_}', bm); set_mat(ob, 'M_Stone'); P.append(ob)
+    # the bore: the same arch profile swept 60 m into the mountain, faces pointing inwards; stone for 12 m, then soot-black
+    for (y0, y1, m) in ((-T, -12.0, 'M_Stone'), (-12.0, -60.0, 'M_TunnelDark')):
+        bm = _bm.new(); a = [bm.verts.new((x, y0, z)) for (x, z) in inner]; b = [bm.verts.new((x, y1, z)) for (x, z) in inner]
+        for k in range(N - 1): bm.faces.new((b[k], b[k + 1], a[k + 1], a[k]))      # normals point into the bore
+        bm.normal_update()
+        ob = mesh_obj(f'tn_bore{y0}', bm); set_mat(ob, m); P.append(ob)
+    P.append(box('tn_end', W + .4, .3, H + W / 2 + .3, (0, -60.2, 0), 'M_TunnelDark', bevel=0))
+    P.append(box('tn_floor', W, 58.5, .1, (0, -31.0, -.02), 'M_Gravel', bevel=0))
+    for s_ in (-1, 1): P.append(box(f'tn_rail{s_}', .09, 58.0, .14, (s_ * .72, -31.0, .26), 'M_Metal', bevel=0))
+    for k in range(29): P.append(box(f'tn_sleeper{k}', 2.4, .25, .12, (0, -3.0 - k * 2.0, .08), 'M_WoodDark', bevel=0))
     return join(P, 'SM_Tunnel')
 
-def loco():
-    """chunky toy-like steam locomotive, front towards local -Y (north). Origin: rail top, centre."""
-    P = []; z0 = .32
-    P.append(box('lo_frame', 2.3, 9.0, .45, (0, 0, z0 + .45), 'M_Iron', bevel=.03))
-    P.append(cyl('lo_boiler', 1.05, 5.4, (0, -4.6, z0 + 2.05), 'M_TrainRed', rot=(-math.pi / 2, 0, 0), seg=20))
-    for k in range(4): P.append(cyl(f'lo_band{k}', 1.09, .12, (0, -4.6 + .9 + k * 1.25, z0 + 2.05), 'M_Brass', rot=(-math.pi / 2, 0, 0), seg=20))
-    P.append(cyl('lo_smokebox', 1.08, .7, (0, -4.6, z0 + 2.05), 'M_Iron', rot=(math.pi / 2, 0, 0), seg=20))
-    P.append(cyl('lo_lamp', .28, .3, (0, -4.65, z0 + 2.95), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
-    P.append(cyl('lo_chimney', .38, 1.3, (0, -3.6, z0 + 2.9), 'M_Iron', seg=14))
-    P.append(cyl('lo_chimtop', .55, .32, (0, -3.6, z0 + 4.1), 'M_Iron', seg=14))
-    P.append(cyl('lo_dome', .45, .55, (0, -1.6, z0 + 3.0), 'M_Brass', seg=14))
-    P.append(box('lo_cab', 2.5, 2.8, 2.6, (0, 2.3, z0 + .9), 'M_TrainRed', bevel=.05))
-    P.append(box('lo_cabroof', 2.8, 3.2, .18, (0, 2.3, z0 + 3.5), 'M_Iron', bevel=.04))
-    for s_ in (-1, 1): P.append(box(f'lo_cabwin{s_}', .06, 1.0, .8, (s_ * 1.26, 2.0, z0 + 2.3), 'M_Glass', bevel=0))
-    P.append(box('lo_cow', 2.2, .9, .5, (0, -4.9, z0 + .1), 'M_Red', rot=(math.radians(-25), 0, 0), bevel=.03))   # cow-catcher
-    P.append(box('lo_buffer', 2.5, .2, .3, (0, -4.55, z0 + .7), 'M_Red', bevel=.02))
+def _body_shell(name, L, W, H, z0, m, nose=0.0, seg=10):
+    """a rail-vehicle body: straight sides with a slight tumblehome, an arched roof, closed ends. Length along local Y.
+    nose > 0 rounds the plan of both ends (locomotive cabs). Origin: centre, z0 = floor level above rail top."""
+    prof = [(W / 2 - .04, 0.0), (W / 2, .35), (W / 2, H - .55)]
+    for k in range(1, seg):
+        a = math.pi / 2 * k / seg; prof.append((W / 2 - .55 * (1 - math.cos(a)) * 1.0 - (W / 2 - .6) * (1 - math.cos(a)) ** 3 * 0, H - .55 + .55 * math.sin(a)))
+    prof.append((W / 2 - .6, H)); prof += [(-x, z) for (x, z) in reversed(prof)]
+    rows = []; N = 24
+    bm = bmesh.new()
+    for r in range(N + 1):
+        y = -L / 2 + L * r / N; e = min(1, (L / 2 - abs(y)) / max(nose, 1e-3)) if nose > 0 else 1.0
+        sc = .78 + .22 * math.sqrt(max(0, e)) if nose > 0 else 1.0
+        rows.append([bm.verts.new((x * sc, y, z0 + z)) for (x, z) in prof])
+    n = len(prof)
+    for r in range(N):
+        for q in range(n - 1): bm.faces.new((rows[r][q], rows[r][q + 1], rows[r + 1][q + 1], rows[r + 1][q]))
+    for r in (0, N): bm.faces.new(rows[r] if r == 0 else list(reversed(rows[r])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = mesh_obj(name, bm); set_mat(ob, m)
+    return ob
+
+def _bogie(P, tag, y, z0, wheel_r=.5, base=2.6):
+    """two axles; the wheels stand ON the rail top (local z = 0)"""
+    P.append(box(f'{tag}_frame', 2.2, base + 1.2, .4, (0, y, wheel_r + .05), 'M_Iron', bevel=.04))
     for s_ in (-1, 1):
-        for k, yy in enumerate((-2.8, -1.0, .8)):
-            P.append(cyl(f'lo_wheel{s_}{k}', .62, .16, (s_ * 1.0, yy, z0 + .3), 'M_Iron', rot=(0, math.pi / 2, 0), seg=18))
-            P.append(cyl(f'lo_hub{s_}{k}', .2, .2, (s_ * 1.06, yy, z0 + .3), 'M_Red', rot=(0, math.pi / 2, 0), seg=10))
-        P.append(box(f'lo_rod{s_}', .06, 3.8, .12, (s_ * 1.12, -1.0, z0 + .22), 'M_Metal', bevel=0))
-        P.append(box(f'lo_step{s_}', .4, .5, .08, (s_ * 1.2, 3.2, z0 + .1), 'M_Iron', bevel=0))
-    ob = join(P, 'SM_TrainLoco'); return ob
+        P.append(box(f'{tag}_side{s_}', .18, base + 1.6, .55, (s_ * 1.0, y, wheel_r - .3), 'M_Iron', bevel=.03))
+        for a in (-base / 2, base / 2):
+            P.append(cyl(f'{tag}_w{s_}{a}', wheel_r, .14, (s_ * .74, y + a, wheel_r), 'M_Metal', rot=(0, math.pi / 2, 0), seg=20))
+            P.append(cyl(f'{tag}_ab{s_}{a}', .17, .3, (s_ * 1.12, y + a, wheel_r), 'M_Iron', rot=(0, math.pi / 2, 0), seg=10))
+            P.append(cyl(f'{tag}_sp{s_}{a}', .13, .35, (s_ * 1.0, y + a, wheel_r + .2), 'M_Metal', seg=8))
+
+def loco():
+    """2026-10-23: a realistic Swiss-style electric locomotive (Re 4/4 II proportions): 15 m red body with rounded cab
+    ends, wrap-around windscreens, louvre bands, two pantographs and roof insulators, two 2-axle bogies, buffers,
+    headlights. Front towards local -Y (north). Origin: rail top, centre."""
+    P = []; L, W, H, zf = 14.8, 2.95, 2.75, 1.25
+    P.append(_body_shell('lo_body', L, W, H, zf, 'M_TrainRed', nose=1.6))
+    P.append(box('lo_under', 2.6, L - 1.2, .55, (0, 0, zf - .55), 'M_Iron', bevel=.03))
+    for k, yy in enumerate((-3.8, -1.3, 1.3, 3.8)): P.append(box(f'lo_tank{k}', 2.1, 1.6, .45, (0, yy, zf - .95), 'M_Iron', bevel=.06))
+    for yb in (-L / 2 + 3.3, L / 2 - 3.3): _bogie(P, f'lo_b{yb}', yb, .32, wheel_r=.62, base=2.6)
+    for e in (-1, 1):                       # cab ends: windscreens, lights, buffers, coupler, handrails
+        ye = e * (L / 2 - .05)
+        for s_ in (-1, 1): P.append(box(f'lo_ws{e}{s_}', 1.15, .06, .95, (s_ * .62, ye + e * .02, zf + 1.45), 'M_Glass', rot=(math.radians(-12 * e), 0, math.radians(8 * s_ * e)), bevel=0))
+        P.append(box(f'lo_ws_mid{e}', .08, .08, .95, (0, ye + e * .05, zf + 1.45), 'M_Iron', bevel=0))
+        for s_ in (-1, 1): P.append(cyl(f'lo_hl{e}{s_}', .13, .08, (s_ * .95, ye + e * .05, zf + .45), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
+        P.append(cyl(f'lo_hlt{e}', .12, .08, (0, ye + e * .03, zf + 2.55), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
+        P.append(box(f'lo_beam{e}', 2.8, .3, .55, (0, ye + e * .12, zf - .55), 'M_Iron', bevel=.03))
+        for s_ in (-1, 1):
+            P.append(cyl(f'lo_bufs{e}{s_}', .09, .45, (s_ * .875, ye + e * .45, zf - .3), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=10))
+            P.append(cyl(f'lo_bufh{e}{s_}', .22, .06, (s_ * .875, ye + e * .7, zf - .3), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=16))
+            P.append(box(f'lo_hr{e}{s_}', .04, .04, 1.2, (s_ * 1.35, ye - e * .5, zf + .2), 'M_Metal', bevel=0))
+        P.append(box(f'lo_hook{e}', .2, .5, .14, (0, ye + e * .4, zf - .3), 'M_Metal', bevel=0))
+        P.append(box(f'lo_stripe{e}', 2.9, .05, .12, (0, ye + e * .02, zf + .85), 'M_TrainCream', bevel=0))
+    for s_ in (-1, 1):                      # sides: cab doors + windows, louvre bands, a white line
+        for e in (-1, 1):
+            P.append(box(f'lo_door{s_}{e}', .05, .75, 1.9, (s_ * (W / 2 + .005), e * (L / 2 - 1.9), zf + .25), 'M_TrainRed', bevel=.01))
+            P.append(box(f'lo_dwin{s_}{e}', .05, .5, .55, (s_ * (W / 2 + .02), e * (L / 2 - 1.9), zf + 1.45), 'M_Glass', bevel=0))
+        for k in range(5):
+            P.append(box(f'lo_louv{s_}{k}', .05, 1.25, .7, (s_ * (W / 2 + .01), -3.4 + k * 1.7, zf + 1.3), 'M_Iron', bevel=0))
+        P.append(box(f'lo_line{s_}', .03, L - 3.0, .08, (s_ * (W / 2 + .015), 0, zf + .7), 'M_TrainCream', bevel=0))
+    for k, yy in enumerate((-3.6, 3.6)):     # pantographs (lowered-diamond frame) + insulators + roof conduit
+        P.append(box(f'lo_pbase{k}', 1.6, 1.2, .12, (0, yy, zf + H + .02), 'M_Metal', bevel=0))
+        for s_ in (-1, 1): P.append(box(f'lo_parm{k}{s_}', .06, 1.7, .06, (s_ * .45, yy, zf + H + .45), 'M_Metal', rot=(math.radians(22 * s_), 0, 0), bevel=0))
+        P.append(box(f'lo_phead{k}', 1.9, .12, .05, (0, yy, zf + H + .78), 'M_Metal', bevel=0))
+        for s_ in (-1, 1): P.append(cyl(f'lo_ins{k}{s_}', .07, .25, (s_ * .6, yy + .7, zf + H), 'M_Trim', seg=8))
+    P.append(box('lo_conduit', .12, 7.0, .1, (.4, 0, zf + H + .05), 'M_Metal', bevel=0))
+    return join(P, 'SM_TrainLoco')
 
 def carriage():
-    """passenger carriage, 12 m, green with cream window band; origin rail top, centre"""
-    P = []; z0 = .32; L = 12.0
-    P.append(box('ca_frame', 2.4, L, .4, (0, 0, z0 + .45), 'M_Iron', bevel=.03))
-    P.append(box('ca_body', 2.7, L - .4, 1.3, (0, 0, z0 + .85), 'M_TrainGreen', bevel=.05))
-    P.append(box('ca_band', 2.74, L - .45, 1.0, (0, 0, z0 + 2.1), 'M_TrainCream', bevel=.04))
-    P.append(box('ca_top', 2.7, L - .4, .3, (0, 0, z0 + 3.1), 'M_TrainGreen', bevel=.04))
-    P.append(box('ca_roof', 2.9, L - .1, .22, (0, 0, z0 + 3.4), 'M_Iron', bevel=.08))
+    """2026-10-23: a realistic 14 m regional coach (dark green with a cream window band): arched-roof body, 7 framed windows
+    a side, sliding doors at both ends, roof vents, two bogies, gangway bellows, buffers. Origin: rail top, centre."""
+    P = []; L, W, H, zf = 14.0, 2.85, 2.7, 1.12
+    P.append(_body_shell('ca_body', L, W, H, zf, 'M_TrainGreen'))
+    P.append(box('ca_under', 2.5, L - 1.0, .45, (0, 0, zf - .45), 'M_Iron', bevel=.03))
+    for yb in (-L / 2 + 2.6, L / 2 - 2.6): _bogie(P, f'ca_b{yb}', yb, .32, wheel_r=.46, base=2.5)
     for s_ in (-1, 1):
-        for k in range(6):
-            y = -L / 2 + 1.3 + k * 1.9
-            if k == 3: P.append(box(f'ca_door{s_}', .06, 1.0, 2.0, (s_ * 1.38, y, z0 + .95), 'M_Door', bevel=0)); continue
-            P.append(box(f'ca_win{s_}{k}', .06, 1.3, .75, (s_ * 1.38, y, z0 + 2.2), 'M_Glass', bevel=0))
-        for yy in (-L / 2 + 1.6, L / 2 - 1.6):
-            for dy in (-.6, .6): P.append(cyl(f'ca_wh{s_}{yy}{dy}', .42, .14, (s_ * .95, yy + dy, z0 + .1), 'M_Iron', rot=(0, math.pi / 2, 0), seg=14))
-    for e in (-1, 1): P.append(box(f'ca_buf{e}', 2.0, .25, .3, (0, e * (L / 2 + .05), z0 + .7), 'M_Iron', bevel=.02))
+        x = s_ * (W / 2 + .012)
+        P.append(box(f'ca_band{s_}', .03, L - .3, .95, (x, 0, zf + 1.05), 'M_TrainCream', bevel=0))
+        for k in range(7):
+            y = -L / 2 + 2.6 + k * 1.47
+            P.append(box(f'ca_win{s_}{k}', .04, 1.12, .78, (s_ * (W / 2 + .03), y, zf + 1.13), 'M_Glass', bevel=0))
+            P.append(box(f'ca_wfr{s_}{k}', .03, 1.22, .06, (s_ * (W / 2 + .04), y, zf + 1.93), 'M_Metal', bevel=0))
+        for e in (-1, 1):
+            P.append(box(f'ca_door{s_}{e}', .05, .95, 2.0, (s_ * (W / 2 + .02), e * (L / 2 - .9), zf + .02), 'M_Door', bevel=.01))
+            P.append(box(f'ca_dwin{s_}{e}', .05, .45, .6, (s_ * (W / 2 + .045), e * (L / 2 - .9), zf + 1.25), 'M_Glass', bevel=0))
+            P.append(box(f'ca_step{s_}{e}', .35, .95, .06, (s_ * (W / 2 - .05), e * (L / 2 - .9), zf - .35), 'M_Metal', bevel=0))
+    for k in range(5): P.append(box(f'ca_vent{k}', .45, .6, .18, (0, -5.0 + k * 2.5, zf + H - .02), 'M_Metal', bevel=.04))
+    for e in (-1, 1):
+        ye = e * (L / 2)
+        P.append(box(f'ca_gang{e}', 1.2, .35, 2.1, (0, ye + e * .15, zf), 'M_Iron', bevel=.08))
+        P.append(box(f'ca_beam{e}', 2.6, .25, .45, (0, ye + e * .1, zf - .5), 'M_Iron', bevel=.03))
+        for s_ in (-1, 1):
+            P.append(cyl(f'ca_bufs{e}{s_}', .09, .4, (s_ * .875, ye + e * .35, zf - .3), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=10))
+            P.append(cyl(f'ca_bufh{e}{s_}', .21, .06, (s_ * .875, ye + e * .58, zf - .3), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=16))
     return join(P, 'SM_TrainCar')
 
 # ------------------------------------------------------------------ distant landscape (skirt around the town square, mountains, sky)
 def far_height(x, y):
     """continues height() outside the 220 m town square: the hills keep rising to a plateau, the sea floor keeps sinking"""
-    return height(max(-110, min(110, x)), max(-110, min(110, y))) if (abs(x) <= 110 and abs(y) <= 110) else height(x, y)
+    return height_raw(max(-110, min(110, x)), max(-110, min(110, y))) if (abs(x) <= 110 and abs(y) <= 110) else height_raw(x, y)
 
 def ground_far():
     """coarse ring of terrain from the town square out to 700 m, vertex-coloured grass (tinted darker with distance)"""
@@ -634,55 +758,270 @@ def dem_game(x, y):
     return (dem_real(-x * DEM_K, y * DEM_K) - _DEM['e0']) / DEM_K
 
 def real_weight(x, y):
-    """0 in the village / sea, 1 in the mountains"""
+    """0 in the village, 1 in the mountains (the sea is handled by the coastline, not here)"""
     d = math.hypot(x, y + 10)
-    w = min(1, max(0, (d - 150) / 120)); w = w * w * (3 - 2 * w)
-    w *= 1 - min(1, max(0, (y - 20) / 60))                 # the south is the sea
-    return w
+    w = min(1, max(0, (d - 150) / 120)); return w * w * (3 - 2 * w)
+
+def _ss(a, b, t):
+    t = min(1, max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t)
+
+def coast_y(x):
+    """the shoreline: the harbour bay in front of the village, headlands curving south on both sides (2026-10-23)"""
+    ax = abs(x)
+    return 45.0 if ax < 110 else 45.0 + (ax - 110) * .55 + max(0, ax - 400) * .35
 
 def tunnel_bump(x, y):
-    """the railway mountain: a local ridge right behind the portal (y < TRACK_Y0) so the tunnel always runs into rock.
-    Local only (about 90 m wide, 200 m deep) — it hands over to the real relief behind it."""
+    """the railway mountain behind the portal: rises as a cliff right behind the stone headwall (dy 0..3 m, hidden by the
+    1.5 m deep headwall and its wing walls) so the 60 m tube is always under >= 2 m of rock, then hands over to the relief."""
     dy = TRACK_Y0 - y
-    if dy < -2 or dy > 260: return -99.0
-    gx = math.exp(-((x - TRACK_X) / 45.0) ** 2)
-    rise = min(1, (dy + 2) / 10.0); fall = 1 - min(1, max(0, (dy - 110) / 150.0)); fall = fall * fall * (3 - 2 * fall)
-    k = gx * rise * fall
-    return (24.0 + 46.0 * min(1, dy / 70.0)) * k if k > .03 else -99.0
+    if dy < -1.0 or dy > 300: return -99.0
+    gx = math.exp(-((x - TRACK_X) / 55.0) ** 2)
+    if gx < .03: return -99.0
+    rise = _ss(-1.0, 2.5, dy); fall = 1 - _ss(140, 300, dy)
+    return (10.6 + 50.0 * _ss(2.5, 90, dy)) * rise * fall * (gx if dy > 70 else max(gx, _ss(14, 9, abs(x - TRACK_X))))
 
-def real_height(x, y):
-    base = far_height(x, y); base = min(base, 16.0) if y < 45 else min(base, -8.0)
-    w = real_weight(x, y); z = base + w * max(-20.0, dem_game(x, y)) - (1 - w) * 2.5
-    tb = tunnel_bump(x, y)
-    if tb > -50: z = max(z, base + tb)
+def real_height_raw(x, y):
+    """terrain outside the town square: hills -> real Alpine relief (1:12), coastline + sea floor, tunnel mountain"""
+    land = min(height_raw(x, min(y, 40.0)), 16.0)
+    land += real_weight(x, y) * max(-20.0, dem_game(x, y))
+    land = max(land, .6 * _ss(100, 160, math.hypot(x, y + 10)))     # valleys below the village level must not flood (sea is at -1.2 m)
+    cy = coast_y(x); sea = _ss(cy - 2, cy + 34, y)
+    floor = -3.0 - 26.0 * _ss(0, 420, y - cy)
+    z = land + (floor - land) * sea
+    # continuous with the town ground mesh at the edge of the 220 m square
+    b = _ss(110, 132, max(abs(x), abs(y)))
+    z = height_raw(x, y) + (z - height_raw(x, y)) * b
+    tb = tunnel_bump(x, y)                # after the blend: the portal sits 3 m outside the town square
+    if tb > -50: z = max(z, min(height_raw(x, min(y, 40.0)), 16.0) + tb)
     return z
 
-def mountains_real(step=6.0, ext=1100.0):
-    dem_load()
+_REST_Z = []
+def real_height(x, y):
+    z = real_height_raw(x, y)
+    d = math.hypot(x - REST[0], y - REST[1])
+    if d < 22:                                   # the Lamplighters' Rest: a levelled clearing on the slope
+        if not _REST_Z: _REST_Z.append(real_height_raw(*REST))
+        k = 1 - _ss(12, 22, d); z = z * (1 - k) + _REST_Z[0] * k
+    return river_carve(x, y, z)
+
+# ------------------------------------------------------------------ the stream (2026-10-23): from the mountains in the
+# north-east, down a gully east of the railway, past the east edge of the village and into the harbour.
+RIVER_SRC = (150.0, -232.0)                                         # a spring ~60 m up at the foot of the mountain north-east of the tunnel
+RIVER_TOWN = [(62, -72), (57, -35), (55, 5), (54, 30), (53, 50), (52, 68)]   # past the east edge of the village into the harbour
+def _river_path():
+    """follow the real valley downhill (terrain gradient, with a pull towards the village so it doesn't wander off), then
+    the fixed course past the village. Natural bends come from the relief itself."""
+    dem_load(); x, y = RIVER_SRC; pts = [(x, y)]; px, py = 0.0, 1.0; tx, ty = RIVER_TOWN[0]
+    for _ in range(400):
+        e = 2.0
+        gx = (real_height_raw(x + e, y) - real_height_raw(x - e, y)) / (2 * e); gy = (real_height_raw(x, y + e) - real_height_raw(x, y - e)) / (2 * e)
+        gl = math.hypot(gx, gy) or 1e-6; dx, dy = tx - x, ty - y; dl = math.hypot(dx, dy) or 1e-6
+        pull = .12 + .9 * _ss(120, 25, dl)
+        vx = -gx / gl + pull * dx / dl + .5 * px; vy = -gy / gl + pull * dy / dl + .5 * py
+        vl = math.hypot(vx, vy) or 1e-6; px, py = vx / vl, vy / vl
+        x += 3.0 * px; y += 3.0 * py
+        if len(pts) % 3 == 0: pts.append((round(x, 2), round(y, 2)))
+        if math.hypot(tx - x, ty - y) < 8: break
+    return pts + RIVER_TOWN
+RIVER = None
+_RIV = {}
+def _river_samples():
+    if _RIV: return _RIV
+    pts = []; RV = _river_path()
+    for (ax, ay), (bx, by) in zip(RV[:-1], RV[1:]):
+        L = math.hypot(bx - ax, by - ay); n = max(1, int(L / 2.0))
+        for k in range(n): pts.append((ax + (bx - ax) * k / n, ay + (by - ay) * k / n))
+    pts.append(RV[-1])
+    tot = [0.0]
+    for (ax, ay), (bx, by) in zip(pts[:-1], pts[1:]): tot.append(tot[-1] + math.hypot(bx - ax, by - ay))
+    T = tot[-1]; dem_load()
+    surf = []; run = 1e9
+    for k, (x, y) in enumerate(pts):
+        raw = height_raw(x, y) if (abs(x) < 110 and abs(y) < 110) else real_height_raw(x, y)
+        run = min(run, raw - .55 - .25 * (tot[k] / T)); surf.append(run)
+    for k in range(len(surf)):                     # meet the sea level smoothly in the last 40 m
+        t = _ss(T - 45, T - 5, tot[k]); surf[k] = surf[k] * (1 - t) + (-1.05) * t
+        surf[k] = max(surf[k], -1.05)
+    _RIV.update(pts=pts, s=[t / T for t in tot], surf=surf, T=T)
+    return _RIV
+
+def river_width(t): return 2.4 + 4.6 * t        # half of this is the water's half-width
+def river_query(x, y):
+    """(distance to the centre line, t 0..1 along, water surface z) — coarse segment search"""
+    R = _river_samples(); P = R['pts']; best = (1e9, 0, 0)
+    for k in range(0, len(P) - 1):
+        ax, ay = P[k]; bx, by = P[k + 1]
+        if abs(x - ax) > 40 and abs(x - bx) > 40: continue
+        dx, dy = bx - ax, by - ay; L2 = dx * dx + dy * dy or 1e-6
+        u = max(0, min(1, ((x - ax) * dx + (y - ay) * dy) / L2)); d = math.hypot(x - ax - dx * u, y - ay - dy * u)
+        if d < best[0]: best = (d, R['s'][k] + (R['s'][k + 1] - R['s'][k]) * u, R['surf'][k] + (R['surf'][k + 1] - R['surf'][k]) * u)
+    return best
+
+def river_carve(x, y, z):
+    if x < 30 or x > 235 or y < -500 or y > 90: return z
+    d, t, sz = river_query(x, y)
+    hw = river_width(t) / 2; bank = 3.0 + 4.0 * t
+    if d > hw + bank: return z
+    depth = .7 + .5 * t
+    if d <= hw: c = sz - depth * (1 - (d / hw) ** 2) - .05
+    else: c = sz + .25 + (z - sz - .25) * _ss(0, 1, (d - hw) / bank) if z > sz + .25 else z
+    return min(z, c)
+
+def river_mesh():
+    """the water ribbon: 2 m steps along the stream, width grows downstream; UV.x = metres along (the flow), UV.y across"""
+    R = _river_samples(); P = R['pts']; V = []; F = []; UV = []
+    for k, (x, y) in enumerate(P):
+        a = P[min(k + 1, len(P) - 1)]; b = P[max(k - 1, 0)]; tx, ty = a[0] - b[0], a[1] - b[1]; L = math.hypot(tx, ty) or 1
+        nx, ny = -ty / L, tx / L; hw = river_width(R['s'][k]) / 2 + .6
+        for side in (-1, 1): V.append((x + nx * hw * side, y + ny * hw * side, R['surf'][k])); UV.append((R['s'][k] * R['T'], (side + 1) / 2))
+    for k in range(len(P) - 1):
+        i = 2 * k; F.append((i, i + 1, i + 3, i + 2))
+    me = bpy.data.meshes.new('SM_River'); me.from_pydata(V, [], F); me.update()
+    uv = me.uv_layers.new(name='UV')
+    for poly in me.polygons:
+        for li in poly.loop_indices: uv.data[li].uv = UV[me.loops[li].vertex_index]
+    if sum(p.normal.z for p in me.polygons) < 0: me.flip_normals()
+    ob = bpy.data.objects.new('SM_River', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_River')
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_River.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
+    print('river', len(V), 'verts, length', round(R['T']), 'm, surface', round(R['surf'][0], 1), '->', round(R['surf'][-1], 1))
+
+def _axis(a, b, fine, coarse, f0, f1):
     import numpy as np
-    xs = np.arange(-ext, ext + .01, step); n = len(xs)
-    Z = np.zeros((n, n), np.float32); Wt = np.zeros((n, n), np.float32)
+    xs = list(np.arange(a, f0, coarse)) + list(np.arange(f0, f1, fine)) + list(np.arange(f1, b + .01, coarse))
+    return np.array(sorted(set(round(float(v), 3) for v in xs)))
+
+def mountains_real(ext=1400.0):
+    """ONE terrain from the edge of the town square out to 1.4 km: hills, real relief, coast, sea floor, stream bed, tunnel
+    mountain (replaces SM_GroundFar + the old separate mountains: no seam, no gap). Rectilinear grid, 4 m inside +-400 m,
+    10 m outside (crack-free: the same x / y lines everywhere). It slips 3 m under the town ground mesh."""
+    dem_load(); _river_samples()
+    import numpy as np
+    xs = _axis(-ext, ext, 4.0, 10.0, -400.0, 400.0); n = len(xs)
+    Z = np.zeros((n, n), np.float32)
     for j, y in enumerate(xs):
-        for i, x in enumerate(xs):
-            Z[j, i] = real_height(x, y); Wt[j, i] = max(real_weight(x, y), 1.0 if tunnel_bump(x, y) > -50 else 0.0)
+        for i, x in enumerate(xs): Z[j, i] = real_height(x, y)
+    inside = (np.abs(xs)[None, :] < 106.5) & (np.abs(xs)[:, None] < 106.5)
+    under = (np.abs(xs)[None, :] < 110.5) & (np.abs(xs)[:, None] < 110.5)     # sits 4 cm under the town ground where they overlap
     me = bpy.data.meshes.new('SM_Mountains'); V = []; F = []; idx = -np.ones((n, n), np.int64)
-    keep = Wt > .005
-    keep2 = keep.copy(); keep2[:-1, :] |= keep[1:, :]; keep2[1:, :] |= keep[:-1, :]; keep2[:, :-1] |= keep[:, 1:]; keep2[:, 1:] |= keep[:, :-1]
     for j in range(n):
-        for i in range(n):
-            if keep2[j, i]: idx[j, i] = len(V); V.append((float(xs[i]), float(xs[j]), float(Z[j, i])))
+        for i in range(n): idx[j, i] = len(V); V.append((float(xs[i]), float(xs[j]), float(Z[j, i]) - (.04 if under[j, i] else 0)))
     for j in range(n - 1):
         for i in range(n - 1):
-            q = (idx[j, i], idx[j, i + 1], idx[j + 1, i + 1], idx[j + 1, i])
-            if min(q) >= 0 and (keep[j, i] or keep[j, i + 1] or keep[j + 1, i] or keep[j + 1, i + 1]): F.append(q)   # counter-clockwise from above (verified in Unreal: the other order was culled from above, lit from below)
+            if inside[j, i] and inside[j + 1, i + 1] and inside[j + 1, i] and inside[j, i + 1]: continue
+            F.append((idx[j, i], idx[j, i + 1], idx[j + 1, i + 1], idx[j + 1, i]))   # counter-clockwise from above (verified in Unreal)
     me.from_pydata(V, [], F); me.update()
+    used = set(v for f in F for v in f)
     for p in me.polygons: p.use_smooth = True
     ob = bpy.data.objects.new('SM_Mountains', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_Mountain')
+    bm = bmesh.new(); bm.from_mesh(me); bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in used], context='VERTS'); bm.to_mesh(me); bm.free()
+    # vertex colour R = the Lamplighters' Path (worn dirt in the terrain material)
+    ca = me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')
+    for v in me.vertices:
+        x, y = v.co.x, v.co.y
+        m = 0.0
+        if -110 < x < -20 and -230 < y < -40:
+            m = max(1 - _ss(1.1, 2.6, trail_dist(x, y)), 1 - _ss(6.0, 11.0, math.hypot(x - REST[0], y - REST[1])))
+        ca.data[v.index].color = (m, 0.0, 0.0, 1.0)
     bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
     bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Mountains.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
-                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
-    print('real mountains', len(V), 'verts', len(F), 'faces, peak', float(Z.max()))
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
+    print('terrain', len(me.vertices), 'verts', len(F), 'faces, peak', float(Z.max()), 'deepest', float(Z.min()))
     return ob
+
+def water_plane():
+    """the sea: a flat grid (Unreal moves it with Gerstner waves in the material), 2 m cells over the harbour where the
+    camera is, 25 m cells out to 3 km (crack-free rectilinear grid). Origin at world 0; the plan places it at z = -1.2."""
+    import numpy as np
+    xs = _axis(-3000, 3000, 2.0, 25.0, -260.0, 260.0); ys = _axis(-200, 3400, 2.0, 25.0, 30.0, 330.0)
+    me = bpy.data.meshes.new('SM_Water'); V = [(float(x), float(y), 0.0) for y in ys for x in xs]; n = len(xs); F = []
+    for j in range(len(ys) - 1):
+        for i in range(n - 1):
+            a = j * n + i; F.append((a, a + 1, a + n + 1, a + n))
+    me.from_pydata(V, [], F); me.update()
+    uv = me.uv_layers.new(name='UV')
+    for poly in me.polygons:
+        for li in poly.loop_indices:
+            v = V[me.loops[li].vertex_index]; uv.data[li].uv = (v[0] / 10.0, v[1] / 10.0)
+    ob = bpy.data.objects.new('SM_Water', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_Water')
+    for p in me.polygons: p.use_smooth = True
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Water.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
+    print('sea', len(V), 'verts')
+
+# ------------------------------------------------------------------ the island across the bay (2026-10-23, phase 3):
+# ~300 x 220 m, 1.45 km south of the village; a cove with a jetty facing the village, a grassy hill, rocky shores and the
+# lighthouse on the north-eastern headland. Reached with the rowboat (C++ boat mode: APBXDirector::TickBoat).
+ISLAND = (240.0, 1450.0); ISLAND_JETTY = (232.0, 1338.0); LIGHTHOUSE = (305.0, 1392.0)
+def island_h(x, y):
+    u, v = (x - ISLAND[0]) / 150.0, (y - ISLAND[1]) / 110.0
+    rr = math.hypot(u, v) * (1 + .1 * math.sin(x * .045 + 1.1) + .07 * math.sin(y * .061 + .4) + .04 * math.sin((x + y) * .13))
+    z = -18.0 + 18.0 * _ss(1.45, .98, rr) + 2.2 * _ss(.98, .86, rr) + 24.0 * _ss(.86, .42, rr) ** 1.3
+    c = 1 - _ss(10, 42, math.hypot(x - ISLAND_JETTY[0], (y - ISLAND_JETTY[1]) * 1.3))      # the cove: a low beach at the jetty
+    if z > .6: z = z * (1 - c) + .7 * c
+    for (px_, py_, pr_) in ((LIGHTHOUSE[0], LIGHTHOUSE[1], 9.0), (LIGHTHOUSE[0] - 16.0, LIGHTHOUSE[1] + 2.0, 9.0)):   # levelled ground
+        k = 1 - _ss(pr_, pr_ + 7, math.hypot(x - px_, y - py_))
+        if k > 0: z = z * (1 - k) + _island_raw(px_, py_) * k
+    return z
+
+def _island_raw(x, y):
+    u, v = (x - ISLAND[0]) / 150.0, (y - ISLAND[1]) / 110.0
+    rr = math.hypot(u, v) * (1 + .1 * math.sin(x * .045 + 1.1) + .07 * math.sin(y * .061 + .4) + .04 * math.sin((x + y) * .13))
+    return -18.0 + 18.0 * _ss(1.45, .98, rr) + 2.2 * _ss(.98, .86, rr) + 24.0 * _ss(.86, .42, rr) ** 1.3
+
+def island_mesh():
+    import numpy as np
+    xs = np.arange(ISLAND[0] - 230, ISLAND[0] + 230.1, 2.5); ys = np.arange(ISLAND[1] - 180, ISLAND[1] + 180.1, 2.5)
+    V = [(float(x), float(y), island_h(x, y)) for y in ys for x in xs]; n = len(xs); F = []
+    for j in range(len(ys) - 1):
+        for i in range(n - 1):
+            a = j * n + i; F.append((a, a + 1, a + n + 1, a + n))
+    me = bpy.data.meshes.new('SM_Island'); me.from_pydata(V, [], F); me.update()
+    if sum(p.normal.z for p in me.polygons) < 0: me.flip_normals()
+    ca = me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')         # R = 0: no path dirt (the terrain material reads vertex colour)
+    for k in range(len(me.vertices)): ca.data[k].color = (0.0, 0.0, 0.0, 1.0)
+    for p in me.polygons: p.use_smooth = True
+    ob = bpy.data.objects.new('SM_Island', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_Mountain')
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Island.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
+    print('island', len(V), 'verts, top', max(v[2] for v in V))
+
+def _ring_tower(name, r0, r1, h, z0, m, seg=32):
+    bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=False, segments=seg, radius1=r0, radius2=r1, depth=h)
+    bmesh.ops.translate(bm, vec=Vector((0, 0, z0 + h / 2)), verts=bm.verts)
+    ob = mesh_obj(name, bm); set_mat(ob, m); return ob
+
+def lighthouse():
+    """a 21 m stone-and-plaster lighthouse: plinth, tapered tower in white with two red bands, iron gallery with railing,
+    glazed lantern room with the lamp, domed iron roof with a vent ball. Origin = ground at the centre."""
+    P = [cyl('lh_plinth', 4.2, 1.2, (0, 0, 0), 'M_Stone', seg=32)]
+    H = 17.0; r0, r1 = 3.2, 2.3
+    bands = [(0, 6.0, 'M_Plaster'), (6.0, 2.2, 'M_Red'), (8.2, 4.6, 'M_Plaster'), (12.8, 2.2, 'M_Red'), (15.0, 2.0, 'M_Plaster')]
+    for k, (z0, h, m) in enumerate(bands):
+        ra = r0 + (r1 - r0) * z0 / H; rb = r0 + (r1 - r0) * (z0 + h) / H
+        P.append(_ring_tower(f'lh_band{k}', ra, rb, h, 1.2 + z0, m))
+    top = 1.2 + H
+    P.append(cyl('lh_cap', r1 + .05, .2, (0, 0, top - .2), 'M_Plaster', seg=32))
+    P.append(cyl('lh_gallery', 3.3, .28, (0, 0, top), 'M_Iron', seg=36))
+    for k in range(24):
+        a = 2 * math.pi * k / 24; P.append(box(f'lh_post{k}', .06, .06, 1.05, (math.cos(a) * 3.15, math.sin(a) * 3.15, top + .28), 'M_Iron', bevel=0))
+    P.append(_ring_tower('lh_rail', 3.15, 3.15, .06, top + 1.3, 'M_Iron', seg=36))
+    P.append(cyl('lh_lanbase', 1.85, .9, (0, 0, top + .28), 'M_Iron', seg=24))
+    P.append(_ring_tower('lh_glass', 1.75, 1.75, 2.2, top + 1.18, 'M_Glass', seg=24))
+    for k in range(8):
+        a = 2 * math.pi * k / 8; P.append(box(f'lh_mull{k}', .08, .08, 2.2, (math.cos(a) * 1.76, math.sin(a) * 1.76, top + 1.18), 'M_Iron', bevel=0))
+    P.append(cyl('lh_lamp', .55, 1.1, (0, 0, top + 1.6), 'M_LampGlass', seg=16))
+    bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=2.0, radius2=.15, depth=1.5)
+    bmesh.ops.translate(bm, vec=Vector((0, 0, top + 3.38 + .75)), verts=bm.verts); ob = mesh_obj('lh_roof', bm); set_mat(ob, 'M_Iron'); P.append(ob)
+    bm = bmesh.new(); bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=.28)
+    bmesh.ops.translate(bm, vec=Vector((0, 0, top + 5.0)), verts=bm.verts); ob = mesh_obj('lh_ball', bm); set_mat(ob, 'M_Iron'); P.append(ob)
+    P.append(box('lh_door', 1.1, .25, 2.1, (0, -r0 - .02, 1.2), 'M_Door', bevel=.02))
+    for k, z in enumerate((5.0, 10.5, 14.5)):
+        P.append(box(f'lh_win{k}', .55, .2, .9, (0, -(r0 + (r1 - r0) * (z - 1.2) / H) - .02, z), 'M_Glass', bevel=.02))
+    return join(P, 'SM_Lighthouse')
 
 def sky_dome():
     """unit sphere seen from inside, equirectangular UVs (v = 1 at the zenith) for the baked stylized sky"""
@@ -810,12 +1149,24 @@ def gameplay_data():
     G['grass'] = [{'min': _ue(x0, y1, 0)[:2], 'max': _ue(x1, y0, 0)[:2]} for (x0, y0, x1, y1) in TALL_GRASS]   # (y flips sign)
     G['wild_spawns'] = [_ue(x, y, height(x, y)) for (x, y) in [(-40, -5), (-33, -2), (-37, 14), (-41, 15.5), (-34, 1)]]
     G['gate'] = {'pos': _ue(GATE[0], GATE[1], height(*GATE)), 'exit_x': round((GATE[0] - 3.0) * 100, 1), 'barrier_mesh': 'fence-gate'}
-    G['bounds'] = {'center': _ue(0, -8, 0)[:2], 'radius': 9000.0, 'water_z': -110.0, 'safe': spot(0, 10)}
+    G['bounds'] = {'center': _ue(0, -8, 0)[:2], 'radius': 9000.0, 'water_z': -110.0, 'safe': spot(0, 10),
+                   # walkable beyond the circle: the Lamplighters' Path (4 m each side) and the farm hamlet across the stream
+                   'paths': [{'pts': [_ue(x, y, 0)[:2] for (x, y) in TRAIL], 'w': 400.0},
+                             {'pts': [_ue(x, y, 0)[:2] for (x, y) in [(REST[0] - 6, REST[1]), (REST[0] + 6, REST[1])]], 'w': 1300.0},
+                             {'pts': [_ue(x, y, 0)[:2] for (x, y) in [(64, 29), (64, -26)]], 'w': 2400.0},
+                             {'pts': [_ue(ISLAND[0] - 60, ISLAND[1], 0)[:2], _ue(ISLAND[0] + 60, ISLAND[1], 0)[:2]], 'w': 9500.0}]}
+    # the rowboat (phase 3): where it starts, and the places you can step ashore (water spot for the boat, land spot for you)
+    G['boat'] = {'start': _ue(13.5, 54.0, -1.2), 'yaw': _yaw(0, 1), 'radius': 260000.0,
+                 'docks': [{'name': 'Lumen Harbor pier', 'water': _ue(13.5, 54.0, -1.2), 'land': spot(9.0, 44.5, None, (0, -1))},
+                           {'name': 'Lighthouse Island jetty', 'water': _ue(ISLAND_JETTY[0] + 3.5, ISLAND_JETTY[1] - 17.0, -1.2),
+                            'land': {'pos': _ue(ISLAND_JETTY[0], ISLAND_JETTY[1] + 6.0, island_h(ISLAND_JETTY[0], ISLAND_JETTY[1] + 6.0) + .1), 'yaw': _yaw(0, 1)}}]}
     G['map'] = 'L_Town'; G['title'] = 'LUMEN HARBOR'
     # walking out through the (re-opened) Route 1 gate loads the Route 1 level; min_step 7 = EPBXStep::Gate (licence signed)
     G['exits'] = [{'id': 'route1', 'pos': _ue(GATE[0] - 3.2, GATE[1], height(GATE[0] - 3.2, GATE[1])), 'radius': 260.0, 'to_map': 'L_Route1', 'to_spot': 'from_lumen',
                    'min_step': 7, 'label': 'Route 1'}]
-    G['signs'] = [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nwest to Mistvale'},
+    def gz(x, y): return height(x, y) if (abs(x) < 108 and abs(y) < 108) else real_height(x, y)
+    G['notes'] = [{'pos': _ue(x, y, gz(x, y) + 1.0), 'text': t} for ((x, y), t) in LORE_NOTES]
+    G['signs'] = [{'pos': _ue(x, y, gz(x, y) + 1.15), 'yaw': _yaw(fx, fy), 'text': t} for ((x, y), (fx, fy), t) in LORE_SIGNS] + [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nwest to Mistvale'},
                   {'pos': _ue(4, 9, height(4, 9) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN HARBOR'},
                   {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'POKEBOX LABS'},
                   {'pos': _ue(26.5, 9.2, height(26.5, 9.2) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN STATION\ntrains to Mistvale'}]
@@ -887,7 +1238,14 @@ def plan_town():
     P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2), (-24, 6, -52, 6, 3.0),
                    (24, 6, 34.4, 6, 3.0), (30, 6, 30, .8, 2.2),
                    (1.8, 15.5, 6.2, 15.5, 2.0), (1.8, 31, 5.8, 31, 2.2), (-1.8, 15.0, -6.2, 15.0, 2.0), (22, -15, 22, -13, 2.2), (22, -13, 1.8, -13, 2.2),
-                   (-11.1, -16.2, -1.8, -16.2, 2.0)],
+                   (-11.1, -16.2, -1.8, -16.2, 2.0),
+                   # phase 2: harbour lane, the road east over the railway end and the stream bridge to the farm hamlet, cottages
+                   (-1.8, 36.0, -36.0, 36.0, 2.6), (-14.0, 33.5, -14.0, 36.0, 1.8), (-30.0, 33.5, -30.0, 36.0, 1.8),
+                   (24.0, 6.0, 30.0, 14.0, 2.6), (30.0, 14.0, 32.0, 28.0, 2.6), (32.0, 28.0, 46.0, 29.0, 2.6), (46.0, 29.0, 64.0, 29.0, 2.6),
+                   (64.0, 29.0, 64.0, -26.0, 2.4), (64.0, 0.0, 68.0, 0.0, 1.8), (64.0, -22.0, 68.0, -22.0, 1.8), (64.0, 12.0, 82.0, 12.0, 2.0), (82.0, 12.0, 82.0, 14.0, 1.8),
+                   (-13.0, -46.0, -16.0, -42.0, 1.8), (-16.0, -42.0, -16.0, -24.0, 2.0), (-16.0, -24.0, -1.8, -24.0, 2.0),
+                   (14.0, -44.0, 14.0, -31.0, 2.0), (14.0, -31.0, 5.0, -31.0, 2.0), (5.0, -31.0, 5.0, -26.0, 2.0),
+                   (-36.0, -46.0, -48.0, -62.0, 1.8), (-48.0, -62.0, -62.0, -82.0, 1.8)],
          'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None):
         # snap = sits on the outdoor ground: Unreal re-measures the real ground under its footprint (no floating / sinking)
@@ -909,14 +1267,15 @@ def plan_town():
     for x in (12, 21, 29): add('SM_LampPost', x, 8.2)
     add('SM_Bench', 8, -18, 180); add('SM_Bin', 10, -18)
     # ---- more of a village (2026-10-22): five more Fantastic Village houses on the streets, doors onto paths (not enterable)
-    for (i_, dx_, dy_, face_) in NEW_HOUSES: house(i_, dx_, dy_, face_)
+    for (i_, dx_, dy_, face_) in NEW_HOUSES + NEW_HOUSES2: house(i_, dx_, dy_, face_)
+    for (wx_, wy_) in WINDMILLS: house(14, wx_, wy_)                         # windmills (door south)
     # ---- railway: station building, platform, track from the tunnel in the north to the buffer stop, the train at the platform
     house(9, 29.5, .55)   # the station building (no door interaction)
     house(14, -66, -26)   # windmill on the west hill
     x0, x1, y0, y1 = PLATFORM; add('SM_Platform', (x0 + x1) / 2, (y0 + y1) / 2, 0)
     add('SM_Track', TRACK_X, (TRACK_Y0 + TRACK_Y1) / 2, 0, z=0.0)
     add('SM_Tunnel', TRACK_X, TRACK_Y0, 0, z=0.0)
-    for (m, y) in (('SM_TrainLoco', -9.0), ('SM_TrainCar', 1.0), ('SM_TrainCar', 13.2)):
+    for (m, y) in (('SM_TrainLoco', -12.6), ('SM_TrainCar', 2.0), ('SM_TrainCar', 16.4)):   # 15 m loco + two 14 m coaches
         add(m, TRACK_X, y, 0, z=.40); P['objects'][-1]['tag'] = 'PBX_Train'
     def fence(x, y, rot):
         add(R.choice(FVP_FENCES), x, y, rot); P['objects'][-1].pop('h', None); P['objects'][-1]['w'] = 3.3
@@ -927,7 +1286,7 @@ def plan_town():
         for k in range(3): fence(cx - 7.4 * (1 if cx < 0 else -1), 1.4 - k * 3.3 - 1.6, 90)
     for k in range(6): fence(8.6 + k * 3.3, 22, 0)
     # ---- nature (Fab packs), kept off paths, houses, the railway and the beach
-    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (6, -34, 11), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8), (-66, -26, 10), (9.5, -16.5, 2.5)] + [(x_, y_, r_) for (x_, y_, r_) in NEW_HOUSE_BLOCKS]
+    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (6, -34, 11), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8), (-66, -26, 10), (9.5, -16.5, 2.5)] + [(x_, y_, r_) for (x_, y_, r_) in NEW_HOUSE_BLOCKS + NEW_HOUSE_BLOCKS2] + [(wx_, wy_ - 2.8, 10.0) for (wx_, wy_) in WINDMILLS]
     def in_grass(x, y, pad=0.0): return any(x0 - pad < x < x1 + pad and y0 - pad < y < y1 + pad for (x0, y0, x1, y1) in TALL_GRASS)
     def railway(x, y, pad=0.0): return (abs(x - TRACK_X) < 7 + pad and y < TRACK_Y1 + 3) or (PLATFORM[0] - 3 - pad < x < 46 and PLATFORM[2] - 3 < y < PLATFORM[3] + 3)
     def free(x, y, r=1.5, far=False):
@@ -935,6 +1294,10 @@ def plan_town():
         if in_grass(x, y, r + .5) or railway(x, y, r): return False
         if y > 38: return False
         if not far and (abs(x) > 104 or abs(y) > 104): return False
+        if trail_dist(x, y) < 2.6 + r or math.hypot(x - REST[0], y - REST[1]) < 13 + r: return False
+        if 30 < x < 235 and -500 < y < 90:          # keep the stream and its banks clear
+            d_, t_, _ = river_query(x, y)
+            if d_ < river_width(t_) / 2 + 3.0 + r: return False
         return all(math.hypot(x - bx, y - by) > br + r for bx, by, br in blocked)
     n = 0
     while n < 190:                       # forest ring around the village
@@ -949,16 +1312,18 @@ def plan_town():
     # mountain dressing (real relief, 1:12): conifer forest patches on the lower slopes up to the tree line (~1900 m real
     # = ~72 m in game), trees sized 1:12 too (4-6 m) so the mountains keep their scale. They snap onto the mountain mesh.
     dem_load(); n = 0; tries = 0
-    while n < 420 and tries < 20000:
+    while n < 1300 and tries < 60000:
         tries += 1
         a = R.random() * math.tau; d = 165 + R.random() * 420; x, y = math.cos(a) * d, math.sin(a) * d - 10
-        if y > 30 or real_weight(x, y) < .35 or railway(x, y, 8): continue
+        if y > coast_y(x) - 15 or real_weight(x, y) < .35 or railway(x, y, 8): continue
+        if 30 < x < 235 and -500 < y < 90 and river_query(x, y)[0] < 9: continue
+        if trail_dist(x, y) < 3.5 or math.hypot(x - REST[0], y - REST[1]) < 14: continue
         z = real_height(x, y); gx = real_height(x + 3, y) - real_height(x - 3, y); gy = real_height(x, y + 3) - real_height(x, y - 3)
         slope = math.hypot(gx, gy) / 6.0
         patch = math.sin(x * .021 + 1.7) * math.cos(y * .017 - .4) + .6 * math.sin(x * .053 - y * .041)
         if z > 72 + patch * 8 or slope > .85 or patch < -.2: continue
         add(R.choice([NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']), x, y, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(3.6, 6.2), 2); n += 1
-    for x, y in [(-27, -14), (-26, 4), (31, -12), (-11, -42), (11, -43), (-24, 19), (24, 18), (-31, 30), (32, 30), (-4, 36)]:
+    for x, y in [(-27, -14), (-26, 4), (31, -12), (-24, 19), (24, 18), (-40, 27), (27, 35), (-6, 40), (50, -10), (76, 24), (58, -40)]:
         add(R.choice(TREES_TOWN), x, y, R.random() * 360, .62 + R.random() * .12)      # big feature trees in the village
     n = 0
     while n < 150:                       # bushes
@@ -1019,9 +1384,58 @@ def plan_town():
                             (FVM + 'natural/SM_PROP_hay_02', -21.0, 24.0, 20, 1.2), (PH_STUMP, -19.6, 10.4, 0, None), (PH_CRATE, -19.8, 12.6, 80, None),
                             (FVM + 'deco/SM_PROP_firepit_woodpile', -21.4, -12.4, 0, 1.0), (PH_PLANTER, -10.4, -13.0, 0, None), (PH_BUCKET, -10.0, -19.6, 0, None),
                             (PH_BENCH, 16.5, -11.2, 0, None), (PH_PLANTER, 25.6, -12.4, 0, None), (FVM + 'deco/SM_PROP_clothesline_02', 31.4, -24.0, 90, 2.0),
-                            (PH_CRATE, 13.6, -27.5, 0, None), (PH_BARREL, 13.4, -29.2, 0, None), (FVM + 'container/SM_PROP_trough_01', 13.8, -20.0, 90, .6)]:
+                            (PH_CRATE, 11.5, -33.0, 0, None), (PH_BARREL, 12.2, -34.4, 0, None), (FVM + 'container/SM_PROP_trough_01', 13.8, -20.0, 90, .6)]:
         if h: kit(m, x, y, r, h=h)
         else: add(m, x, y, r, 1.0)
+    # ---- the Lamplighters' Path (2026-10-23): walled by pines so it is the only way up, the old Rest with the keepers'
+    # graves, notes and carved signs, the cairn on the ridge; beyond it the forest closes (and the bounds corridor ends)
+    def trail_z(x, y): return height(x, y) if (abs(x) < 108 and abs(y) < 108) else real_height(x, y)
+    PINES = [NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']
+    acc = 0.0
+    for (ax, ay), (bx, by) in zip(TRAIL[:-1], TRAIL[1:]):
+        L = math.hypot(bx - ax, by - ay); ux, uy = (bx - ax) / L, (by - ay) / L; nx, ny = -uy, ux; d = 0.0
+        while d < L:
+            x, y = ax + ux * d, ay + uy * d
+            if math.hypot(x - REST[0], y - REST[1]) > 15 and math.hypot(x - TRAIL[0][0], y - TRAIL[0][1]) > 9:
+                for side in (-1, 1):
+                    for row, off in enumerate((R.uniform(3.4, 4.4), R.uniform(6.0, 7.5))):
+                        tx, ty = x + nx * off * side + ux * R.uniform(-1, 1), y + ny * off * side + uy * R.uniform(-1, 1)
+                        if trail_dist(tx, ty) < 3.0: continue
+                        add(R.choice(PINES), tx, ty, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(8.0, 13.0), 2)
+                if int((acc + d) / 7.0) != int((acc + d - 3.2) / 7.0):
+                    side = R.choice((-1, 1)); add(R.choice(PH_ROCK_S), x + nx * 2.2 * side, y + ny * 2.2 * side, R.random() * 360, .5 + R.random() * .4)
+            d += 3.2
+        acc += L
+    # the Rest: a fenced little graveyard, the keepers' table with the ledger, a lantern, the cold fire pit
+    rx, ry = REST
+    for k, (gx_, gy_) in enumerate([(1.5, -5.5), (-1.5, -6.0), (4.5, -4.5), (-4.5, -5.0)]):
+        kit(GRV + str(k + 1), rx + gx_, ry + gy_, 180 + R.uniform(-8, 8), h=1.0 + R.random() * .4)
+    for k in range(8):
+        a_ = math.pi * (1.1 + .8 * k / 7); fence(rx + math.cos(a_) * 8.0, ry - 5.2 + math.sin(a_) * 3.0 + 3.0, math.degrees(a_) + 90)
+    kit(FVM + 'furniture/SM_PROP_table_01', rx - 3.5, ry + 3.5, 20, h=.85)
+    kit(FVM + 'deco/SM_PROP_paper_01', rx - 3.5, ry + 3.5, 35, w=.32, z=trail_z(rx - 3.5, ry + 3.5) + .86)
+    kit(FVM + 'deco/SM_PROP_scroll', rx - 3.1, ry + 3.8, 80, w=.35, z=trail_z(rx - 3.1, ry + 3.8) + .86)
+    add(PH_CRATE, rx - 6.5, ry + 1.0, 30, 1.0); kit(FVM + 'deco/SM_PROP_paper_03', rx - 6.5, ry + 1.0, -10, w=.3, z=trail_z(rx - 6.5, ry + 1.0) + .33)
+    add(PH_FIRE, rx + 2.5, ry + 4.5, 0, 1.0); add(PH_BENCH, rx + 5.0, ry + 4.5, 90, 1.0); add(PH_STUMP, rx + 1.0, ry + 7.0, 0, .8)
+    kit('/Game/PBX/PH/Lantern_01/Lantern_01_2k/StaticMeshes/Lantern_01', rx - 3.9, ry + 3.2, 0, h=.3, z=trail_z(rx - 3.9, ry + 3.2) + .86)
+    kit(FVM + 'deco/SM_PROP_hangingboard', rx + 6.5, ry + 1.0, -60, h=2.4)
+    # the cairn on the ridge (the end of the path) and the torn page under it
+    cx_, cy_ = TRAIL[-1]
+    for k, (dz_, sc_) in enumerate(((0.0, 1.0), (.55, .75), (1.0, .5))):
+        kit(PH_ROCK_S[k], cx_ + .3 * k, cy_ - .2 * k, R.random() * 360, h=.6 * sc_ + .2, z=trail_z(cx_, cy_) + dz_)
+    kit(FVM + 'deco/SM_PROP_paper_02', cx_ - 1.0, cy_ + 1.2, 15, w=.3)
+    # beyond the cairn the forest closes: three rows of pines and boulders in an arc around the end of the path
+    for k in range(34):
+        a_ = math.radians(-160 + 140 * (k % 17) / 16.0 + R.uniform(-3, 3)); rr = 4.5 + 2.6 * (k // 17) + R.uniform(0, .8)
+        tx, ty = cx_ + math.cos(a_) * rr, cy_ + math.sin(a_) * rr
+        add(R.choice(PINES), tx, ty, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(9.0, 14.0), 2)
+    for k in range(6):
+        a_ = math.radians(-150 + 120 * k / 5); add(R.choice(PH_ROCK_L), cx_ + math.cos(a_) * 3.6, cy_ + math.sin(a_) * 3.6, R.random() * 360, 1.1)
+    # carved signs on the path (the lettering is drawn by the game from G['signs'])
+    for ((sx_, sy_), (fx_, fy_), _t) in LORE_SIGNS:
+        kit(FVM + 'deco/SM_PROP_board_01', sx_, sy_, math.degrees(math.atan2(fy_, fx_)) - 90, w=1.9)
+    # stone bridge where the east road crosses the stream (deck at road level)
+    kit(FVM + 'construction/SM_PROP_bridge_stone_01', 54.4, 29.0, 90, w=10.0, z=-1.1)
     # station: luggage, benches on the forecourt
     for (m, x, y, r, h) in [('QProps/Crate_Wooden', 33.2, -6.2, 10, .6), ('QProps/Barrel', 33.6, -7.4, 0, .9), ('SM_Bench', 26.0, 1.6, 180, None)]:
         kit(m, x, y, r, h=h)
@@ -1034,7 +1448,25 @@ def plan_town():
         kit(DSC + R.choice(['Structures/SM_Wall_Ruin_01', 'Structures/SM_Wall_Ruin_02', 'Structures/SM_Wall_Ruin_03_Final']), -32 + dx, -38 + dy, r, h=1.1)
     # beach: wooden pier, row boats, campfire with log seats, rocks
     kit('KPirate/structure_platform_dock', 9.0, 47.8, 0, w=6.0, z=-.35); kit('KPirate/structure_platform_dock', 9.0, 53.6, 0, w=6.0, z=-.35)
-    kit('KPirate/boat_row_small', 13.5, 52.0, 25, w=3.2, z=-1.15); kit('KPirate/boat_row_large', -9.0, 46.2, -60, w=4.2)
+    kit('KPirate/boat_row_small', 13.5, 54.0, 180, w=3.2, z=-1.3); P['objects'][-1]['tag'] = 'PBX_Boat'      # the rowboat you can take
+    kit('KPirate/boat_row_large', -9.0, 46.2, -60, w=4.2)
+    # ---- the island with the lighthouse (phase 3)
+    lx_, ly_ = LIGHTHOUSE
+    P['objects'].append(dict(mesh='SM_Lighthouse', x=lx_, y=ly_, z=round(island_h(lx_, ly_) - .3, 3), rot=0.0, s=1.0, snap=False))
+    house(2, LIGHTHOUSE[0] - 16.0, LIGHTHOUSE[1] + 2.0, (1, 0))
+    P['objects'][-1]['z'] = round(island_h(LIGHTHOUSE[0] - 16.0, LIGHTHOUSE[1] + 2.0), 3)
+    jx_, jy_ = ISLAND_JETTY
+    for k in range(3): kit('KPirate/structure_platform_dock', jx_, jy_ - 2.0 - k * 5.8, 0, w=6.0, z=-.35)
+    for k in range(10):
+        a_ = R.random() * math.tau; d_ = R.uniform(25, 110); x_, y_ = ISLAND[0] + math.cos(a_) * d_ * 1.2, ISLAND[1] + math.sin(a_) * d_ * .8
+        if island_h(x_, y_) > 3 and math.hypot(x_ - lx_, y_ - ly_) > 14: add(R.choice(PH_ROCK_L), x_, y_, R.random() * 360, 1.0 + R.random())
+    for k in range(70):
+        a_ = R.random() * math.tau; d_ = R.uniform(10, 105); x_, y_ = ISLAND[0] + math.cos(a_) * d_ * 1.25, ISLAND[1] + math.sin(a_) * d_ * .85
+        if island_h(x_, y_) > 4 and math.hypot(x_ - lx_, y_ - ly_) > 18 and math.hypot(x_ - jx_, y_ - jy_) > 30:
+            add(R.choice([NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2'] + TREES_FOREST[:3]), x_, y_, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(6, 12), 2)
+    for k in range(160):
+        a_ = R.random() * math.tau; d_ = R.uniform(5, 100); x_, y_ = ISLAND[0] + math.cos(a_) * d_ * 1.25, ISLAND[1] + math.sin(a_) * d_ * .85
+        if island_h(x_, y_) > 1.5: add(R.choice(PH_GRASS + PH_FLOWERS), x_, y_, R.random() * 360, 1.6 + R.random())
     kit('KSurvival/campfire_pit', -15.0, 42.5, 0, w=1.4)
     for a in (0, 120, 240):
         kit('KSurvival/tree_log_small', -15.0 + 1.8 * math.cos(math.radians(a)), 42.5 + 1.8 * math.sin(math.radians(a)), a + 90, w=1.6)
@@ -1084,7 +1516,9 @@ def plan_town():
         furn('lab', m, lx, ly, rot, h, w, dz)
     P['rooms'] = [dict(c=_ue(r['c'][0], r['c'][1], INTERIOR_Z), W=r['W'] * 100, D=r['D'] * 100, H=r['H'] * 100) for r in ROOMS.values()]
     P['gameplay'] = gameplay_data()
-    P['water'] = dict(x=0, y=380, z=-1.2)
+    P['water'] = dict(x=0, y=0, z=-1.2)
+    P['terrain'] = ['SM_Ground', 'SM_Mountains', 'SM_Island']
+    P['objects'].append(dict(mesh='SM_River', x=0, y=0, z=0.0, rot=0.0, s=1.0, snap=False))
     P['player_start'] = dict(x=0, y=10, z=height(0, 10) + 1.0, rot=-90)
     return P
 
@@ -1094,9 +1528,9 @@ def run():
     export(house('SM_House_Player', 9.0, 7.0, 3.3, 'M_Roof_Red', 'M_Siding_White'), 'SM_House_Player'); reset()
     export(house('SM_House_Rival', 9.5, 7.2, 3.3, 'M_Roof_Red', 'M_Siding_Cream'), 'SM_House_Rival'); reset()
     export(house('SM_Lab', 18.0, 11.0, 6.4, 'M_Roof_Blue', 'M_Siding_White', porch=False, chimney=False, two_storey=True, lab=True), 'SM_Lab'); reset()
-    for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin, station_building, platform, track, tunnel_portal, loco, carriage):
+    for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin, station_building, platform, track, tunnel_portal, loco, carriage, lighthouse):
         ob = f(); export(ob, ob.name); reset()
-    ground_far(); reset(); mountains_real(); reset(); sky_dome(); reset()
+    mountains_real(); reset(); river_mesh(); reset(); island_mesh(); reset(); sky_dome(); reset()   # one terrain (no SM_GroundFar any more)
     water_plane(); reset()
     echo_card(); reset()
     for r in ROOMS.values():

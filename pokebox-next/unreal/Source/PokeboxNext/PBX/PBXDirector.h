@@ -55,7 +55,9 @@ private:
 	bool IsTown() const { return MapName == TEXT("L_Town"); }
 	FVector GatePos = FVector::ZeroVector; float GateExitX = 0.f; FVector2D BoundsCenter = FVector2D::ZeroVector; float BoundsRadius = 9000.f, WaterZ = -110.f; FPBXSpot SafeSpot;
 	FVector StarterTable = FVector::ZeroVector, BedPos = FVector::ZeroVector;
-	struct FSign { FVector Pos; FString Text; }; TArray<FSign> Signs;
+	struct FSign { FVector Pos; FString Text; bool bWorldText = true; }; TArray<FSign> Signs;   // bWorldText false = a note / grave (read with E, no 3D lettering)
+	TArray<TArray<FVector2D>> ExtraPaths; TArray<float> ExtraW;   // walkable corridors outside the bounds circle (the Lamplighters' Path)
+	bool InExtra(const FVector& Q) const;
 	// railway: the train at Lumen Station is the way out of town (chapter end)
 	FPBXSpot TrainBoard, TrainCam; FVector TrainDir = FVector(0, 1, 0); float TrainExitY = 0.f; bool bHasTrain = false;
 	bool bTrainGo = false; float TrainV = 0.f;
@@ -114,7 +116,13 @@ private:
 	bool Busy() const { return Queue.Num() > 0; }
 
 	// ---- interactions
-	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train, Item };
+	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train, Item, Boat, Dock };
+	// the rowboat (2026-10-23): board it at the pier, steer with the move keys, step ashore at a dock
+	struct FDock { FString Name; FVector Water = FVector::ZeroVector; FPBXSpot Land; };
+	TArray<FDock> Docks; UPROPERTY() TObjectPtr<AActor> Boat; FVector BoatStart = FVector::ZeroVector; float BoatRadius = 260000.f;
+	bool bBoating = false; FVector2D BoatXY = FVector2D::ZeroVector; float BoatYaw = 0.f, BoatSpeed = 0.f, BoatTurn = 0.f, BoatZOff = 0.f, BoatT = 0.f;
+	FVector2D BoatInput = FVector2D::ZeroVector; TArray<TObjectPtr<AActor>> BoatIgnore;
+	void BoardBoat(); void LeaveBoat(int32 Dock); void TickBoat(float Dt); float WaveZ(const FVector2D& XY, float T) const; float BoatGroundZ(const FVector2D& XY) const;
 	EKind NearKind = EKind::None; int32 NearIndex = -1; FName NearNPC;
 	void FindNearest();
 	void Interact();

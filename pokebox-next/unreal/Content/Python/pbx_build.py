@@ -483,7 +483,7 @@ def make_materials():
     G1 = master_ground('M_PBX_GroundR1', 46000.0, (-16000.0, 0.0))
     M['M_GroundR1'] = _mi('MI_GroundR1', G1, pbx_realism.GROUND_UV, {'GrassTint': pbx_realism.GRASS_TINT, 'SandTint': (1.1, 1.05, .95, 1)}, dict(pbx_realism.GROUND_REAL, Macro=GROUND_TEX['Macro'], Splat='T_R1Splat'))
     tw = unreal.load_asset('/Game/Shader_Water/MI_Water')          # Samples/TestWater stylized water
-    M['M_Water'] = _mi('MI_Water_Real', W, {'Roughness': .03}, {'Deep': (.012, .045, .06, 1), 'Shallow': (.03, .12, .13, 1)})   # realistic pass: deep alpine-lake green, not the cartoon shader
+    M['M_Water'] = pbx_realism.master_sea(); M['M_River'] = pbx_realism.master_river()   # 2026-10-23: Gerstner sea + flowing stream (Single Layer Water)
     V = master_vertex(); master_cloth(); SK = master_sky()
     import pbx_realism   # realistic pass (2026-10-22): real-relief mountains textured by slope / height (grass, rock, snow scans)
     M['M_Mountain'] = _mi('MI_Mountain', pbx_realism.master_mountain())
@@ -597,8 +597,38 @@ def _snap_z(world, sm, o, scale):
         if z is not None: zs.append(z)
     if not zs: return None
     z = min(zs) - 3.0
-    if mn.z > 0: z -= mn.z * scale
+    if mn.z > 0 or mn.z * scale < -20.0: z -= mn.z * scale     # bottom on the ground (also for meshes whose pivot is at the top, e.g. washing lines)
     return z
+
+def _terrain_z(world, x, y, ignore=None):
+    """height of the terrain only (actors labelled Ground / Mountains): anything else hit on the way down is ignored and
+    the trace repeated (a blocking trace stops at the first hit)"""
+    ign = list(ignore or [])
+    for _ in range(8):
+        h = unreal.SystemLibrary.line_trace_single(world, unreal.Vector(x, y, 60000.0), unreal.Vector(x, y, -60000.0), unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
+                                                   True, ign, unreal.DrawDebugTrace.NONE, True)
+        if not h: return None
+        t = h.to_tuple(); act = next((v for v in t if isinstance(v, unreal.Actor)), None)
+        if act is None or act.get_actor_label() in ('Ground', 'Mountains', 'Island'):
+            for v in t[4:7]:
+                if isinstance(v, unreal.Vector): return v.z
+            return None
+        ign.append(act)
+    return None
+
+def _seat_building(world, a):
+    """lower a building until its lowest footprint corner touches the terrain (on a slope the uphill side sinks into the
+    ground like a real foundation instead of the downhill side hanging in the air)"""
+    o, e = a.get_actor_bounds(False)
+    base = o.z - e.z; zs = []
+    for fx, fy in ((0, 0), (.8, .8), (-.8, .8), (.8, -.8), (-.8, -.8), (.8, 0), (-.8, 0), (0, .8), (0, -.8)):
+        z = _terrain_z(world, o.x + e.x * fx, o.y + e.y * fy, [a])
+        if z is not None and z > base - 400: zs.append(z)
+    if not zs: return
+    drop = base - (min(zs) - 8.0)
+    if drop > 2.0:
+        L = a.get_actor_location(); a.set_actor_location(unreal.Vector(L.x, L.y, L.z - drop), False, False)
+        log('seated', a.get_actor_label() or a.get_name(), 'down %.0f cm' % drop)
 
 def build_level(map_name='L_Town', plan_file='town_plan.json'):
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -649,7 +679,9 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
             a = EAS.spawn_actor_from_class(cls, unreal.Vector(x * 100, -y * 100, z * 100 if z_cm is None else z_cm), unreal.Rotator(0, 0, -rot))
             a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
             if label: a.set_actor_label(label)
-            a.set_folder_path('Town/Buildings'); return a
+            a.set_folder_path('Town/Buildings')
+            if z_cm is None and z * 100 > -3000: _seat_building(world, a)   # 2026-10-23: no corner may float above the ground
+            return a
         sm = _mesh(mesh)
         if not sm:
             if mesh not in missing: log('missing mesh', mesh); missing.add(mesh)

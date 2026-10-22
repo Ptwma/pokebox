@@ -105,7 +105,29 @@ bool APBXDirector::LoadData()
 	const FVector C = JVec(Bd, TEXT("center")); BoundsCenter = FVector2D(C.X, C.Y); BoundsRadius = Bd->GetNumberField(TEXT("radius")); WaterZ = Bd->GetNumberField(TEXT("water_z"));
 	SafeSpot = ReadSpot(Bd->GetObjectField(TEXT("safe")));
 	for (const TSharedPtr<FJsonValue>& V : Data->GetArrayField(TEXT("signs")))
-		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")) });
+		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")), true });
+	const TArray<TSharedPtr<FJsonValue>>* Notes = nullptr;
+	if (Data->TryGetArrayField(TEXT("notes"), Notes)) for (const TSharedPtr<FJsonValue>& V : *Notes)
+		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")), false });
+	Docks.Reset();
+	const TSharedPtr<FJsonObject>* BoatJ = nullptr;
+	if (Data->TryGetObjectField(TEXT("boat"), BoatJ))
+	{
+		BoatStart = JVec(*BoatJ, TEXT("start")); BoatRadius = (*BoatJ)->GetNumberField(TEXT("radius"));
+		for (const TSharedPtr<FJsonValue>& V : (*BoatJ)->GetArrayField(TEXT("docks")))
+		{
+			FDock Dk; Dk.Name = V->AsObject()->GetStringField(TEXT("name")); Dk.Water = JVec(V->AsObject(), TEXT("water"));
+			Dk.Land = ReadSpot(V->AsObject()->GetObjectField(TEXT("land"))); Docks.Add(Dk);
+		}
+	}
+	ExtraPaths.Reset(); ExtraW.Reset();
+	const TArray<TSharedPtr<FJsonValue>>* Ex = nullptr;
+	if (Bd->TryGetArrayField(TEXT("paths"), Ex)) for (const TSharedPtr<FJsonValue>& V : *Ex)
+	{
+		TArray<FVector2D> Pts;
+		for (const TSharedPtr<FJsonValue>& P : V->AsObject()->GetArrayField(TEXT("pts"))) { const TArray<TSharedPtr<FJsonValue>>& A = P->AsArray(); Pts.Add(FVector2D(A[0]->AsNumber(), A[1]->AsNumber())); }
+		ExtraPaths.Add(Pts); ExtraW.Add(V->AsObject()->GetNumberField(TEXT("w")));
+	}
 	const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
 	if (Data->TryGetArrayField(TEXT("exits"), Arr)) for (const TSharedPtr<FJsonValue>& V : *Arr)
 	{
@@ -188,6 +210,9 @@ void APBXDirector::SpawnWorld()
 	{
 		if (It->ActorHasTag(TEXT("PBX_GateBarrier"))) GateBarrier.Add(*It);
 		if (It->ActorHasTag(TEXT("PBX_Train"))) { Train.Add(*It); It->GetRootComponent()->SetMobility(EComponentMobility::Movable); }
+		if (It->ActorHasTag(TEXT("PBX_Boat"))) { Boat = *It; It->GetRootComponent()->SetMobility(EComponentMobility::Movable); }
+		if (const UStaticMeshComponent* SMC = It->FindComponentByClass<UStaticMeshComponent>())
+			if (SMC->GetStaticMesh() && (SMC->GetStaticMesh()->GetName() == TEXT("SM_Water") || SMC->GetStaticMesh()->GetName() == TEXT("SM_River"))) BoatIgnore.Add(*It);
 		for (FPBXItem& I : Items) if (It->ActorHasTag(FName(*(TEXT("PBX_Item_") + I.Id)))) { I.Actor = *It; It->GetRootComponent()->SetMobility(EComponentMobility::Movable); }
 	}
 	SpawnNPCs();
@@ -195,6 +220,7 @@ void APBXDirector::SpawnWorld()
 	for (int32 i = 0; i < Signs.Num(); i++)
 	{
 		const FSign& S = Signs[i];
+		if (!S.bWorldText) continue;
 		const float Yaw = Data->GetArrayField(TEXT("signs"))[i]->AsObject()->GetNumberField(TEXT("yaw"));
 		AActor* A = W->SpawnActor<AActor>(AActor::StaticClass(), FTransform(S.Pos));
 		if (!A) continue;
@@ -497,7 +523,8 @@ void APBXDirector::Tick(float Dt)
 
 	if (Player && Menu == EMenu::None && !Bt.bActive)
 	{
-		if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); StoryTick(Dt); UpdateWilds(Dt); }
+		if (bBoating) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) UI->Mode = EPBXUIMode::Explore; TickBoat(Busy() ? 0.f : Dt); UpdatePrompt(); }
+		else if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); StoryTick(Dt); UpdateWilds(Dt); }
 		UpdateObjective();
 	}
 	if (Game && Game->HasPartner())
@@ -515,6 +542,7 @@ bool APBXDirector::WantsCursor() const { return Menu != EMenu::None || UI->Mode 
 void APBXDirector::InMove(FVector2D V)
 {
 	if (!Player || Busy() || Menu != EMenu::None || Bt.bActive || UI->Mode == EPBXUIMode::Choice) return;
+	if (bBoating) { BoatInput = V; return; }
 	const FRotator R(0, Player->GetControlRotation().Yaw, 0);
 	Player->AddMovementInput(FRotationMatrix(R).GetUnitAxis(EAxis::X), V.Y);
 	Player->AddMovementInput(FRotationMatrix(R).GetUnitAxis(EAxis::Y), V.X);
@@ -524,7 +552,7 @@ void APBXDirector::InLook(FVector2D V)
 	if (!Player || Menu != EMenu::None || Bt.bActive) return;
 	Player->AddControllerYawInput(V.X); Player->AddControllerPitchInput(V.Y);
 }
-void APBXDirector::InJump() { if (Player && !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore) Player->Jump(); }
+void APBXDirector::InJump() { if (Player && !bBoating && !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore) Player->Jump(); }
 void APBXDirector::InRun(bool b) { bRunHeld = b; if (Player) Player->SetRunning(b); }
 void APBXDirector::InZoom(float D) { if (Player && Menu == EMenu::None && !Bt.bActive) Player->Zoom(D); }
 
@@ -591,6 +619,7 @@ void APBXDirector::FindNearest()
 	if (Step() == EPBXStep::Starter && !StarterTable.IsZero()) Try(StarterTable, 260.f, EKind::Table, 0, NAME_None);
 	for (int32 i = 0; i < Signs.Num(); i++) Try(Signs[i].Pos, 230.f, EKind::Sign, i, NAME_None);
 	if (bHasTrain && !bTrainGo) Try(TrainBoard.Pos, 320.f, EKind::Train, 0, NAME_None);
+	if (Boat && Docks.Num()) Try(Boat->GetActorLocation() + FVector(0, 0, 120), 420.f, EKind::Boat, 0, NAME_None);
 	for (int32 i = 0; i < Items.Num(); i++) if (!Game->State->Picked.Contains(FName(*Items[i].Id))) Try(Items[i].Pos, 210.f, EKind::Item, i, NAME_None);
 }
 
@@ -603,7 +632,9 @@ void APBXDirector::UpdatePrompt()
 	case EKind::Door: { const FPBXDoor& D = Doors[NearIndex / 2]; T = NearIndex % 2 ? TEXT("[E]  Go outside") : D.bLocked ? FString::Printf(TEXT("[E]  %s"), *D.Label) : FString::Printf(TEXT("[E]  Enter %s"), *D.Label); break; }
 	case EKind::Bed: T = TEXT("[E]  Rest (heal your team & save)"); break;
 	case EKind::Table: T = TEXT("[E]  Look at Dr. Vale's cards"); break;
-	case EKind::Sign: T = TEXT("[E]  Read the sign"); break;
+	case EKind::Sign: T = Signs[NearIndex].bWorldText ? TEXT("[E]  Read the sign") : TEXT("[E]  Read"); break;
+	case EKind::Boat: T = TEXT("[E]  Take the rowboat"); break;
+	case EKind::Dock: T = FString::Printf(TEXT("[E]  Step ashore — %s"), *Docks[NearIndex].Name); break;
 	case EKind::Train: T = TEXT("[E]  Look at the train"); break;
 	case EKind::Item: T = TEXT("[E]  Pick up the item"); break;
 	default: break;
@@ -625,6 +656,8 @@ void APBXDirector::Interact()
 		else QSay({ { TEXT("conductor"), TEXT("The 10:15 to Mistvale, love. Rangers ride free — once Dr. Vale signs your licence.") } });
 		break;
 	case EKind::Item: PickItem(NearIndex); break;
+	case EKind::Boat: BoardBoat(); break;
+	case EKind::Dock: LeaveBoat(NearIndex); break;
 	default: break;
 	}
 }
@@ -982,7 +1015,7 @@ void APBXDirector::StoryTick(float Dt)
 			}
 			return Best > CorridorW;
 		};
-		auto Bad = [&](const FVector& Q) { return Q.Z < WaterZ || FVector2D::Distance(FVector2D(Q.X, Q.Y), BoundsCenter) > BoundsRadius || Gate(Q) || OffRoute(Q); };
+		auto Bad = [&](const FVector& Q) { return Q.Z < WaterZ || (FVector2D::Distance(FVector2D(Q.X, Q.Y), BoundsCenter) > BoundsRadius && !InExtra(Q)) || Gate(Q) || OffRoute(Q); };
 		const bool bGateClosed = Gate(P);
 		if (Bad(P))
 		{
@@ -2031,7 +2064,31 @@ void APBXDirector::AutoTick(float Dt)
 			// the landslide is gone: walk up to the open Route 1 gate
 			const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.Id == TEXT("route1"); });
 			if (!E) { Fail(TEXT("no route1 exit")); break; }
+			if (Boat && Docks.Num() >= 2) { AutoStep = 150; AutoStepT = 0.f; break; }   // the rowboat to the lighthouse island first
 			TeleportPlayer(E->Pos + FVector(900, 0, 0), 180.f); AutoNext();
+		} break;
+	// ---- the rowboat (2026-10-23): board at the pier, row out, dock at the island, look at the lighthouse, come back
+	case 150: if (Idle() && AutoStepT > 1.f) { PlacePlayer(Docks[0].Land); BoardBoat(); AutoNext(); } break;
+	case 151: if (AutoStepT > 2.5f) { Shot(TEXT("34_boat_board")); AutoNext(); } break;
+	case 152: case 153:
+	{
+		if (!bBoating) { Fail(TEXT("not in the boat")); break; }
+		const FVector2D T(Docks[1].Water.X, Docks[1].Water.Y), D = T - BoatXY;
+		const float Want = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), Diff = FMath::FindDeltaAngleDegrees(BoatYaw, Want);
+		BoatInput = FVector2D(FMath::Clamp(Diff / 25.f, -1.f, 1.f), D.Size() > 1500.f ? 1.f : .45f);
+		if (AutoStep == 152 && AutoStepT > 9.f) { Shot(TEXT("35_boat_sea")); BoatXY = T - D.GetSafeNormal() * 9000.f; AutoNext(); }   // (skip most of the 1.4 km crossing)
+		else if (AutoStep == 153 && NearKind == EKind::Dock && NearIndex == 1 && D.Size() < 700.f) { Shot(TEXT("36_boat_island")); AutoNext(); }
+		break;
+	}
+	case 154: if (AutoStepT > 1.f) { LeaveBoat(1); AutoNext(); } break;
+	case 155: if (Idle() && AutoStepT > 3.f)
+		{
+			if (ShotFirst(TEXT("37_island_lighthouse"))) break;
+			PBXLOG("[PBXAUTO] boat ok: crossed to the island (player %s)", *PlayerLoc().ToCompactString());
+			Boat->SetActorLocation(Docks[0].Water + FVector(0, 0, BoatZOff)); BoatXY = FVector2D(Docks[0].Water.X, Docks[0].Water.Y);
+			const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.Id == TEXT("route1"); });
+			if (E) TeleportPlayer(E->Pos + FVector(900, 0, 0), 180.f);
+			AutoStep = 26; AutoStepT = 0.f;
 		} break;
 	case 26: if (!BeautyPass(Dt)) break;
 		if (AutoStepT > 2.f && Idle())
@@ -2214,4 +2271,104 @@ void APBXController::PlayerTick(float Dt)
 		if (bCursor) { FInputModeGameAndUI M; M.SetHideCursorDuringCapture(false); M.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock); SetInputMode(M); }
 		else SetInputMode(FInputModeGameOnly());
 	}
+}
+
+bool APBXDirector::InExtra(const FVector& Q) const
+{
+	const FVector2D Q2(Q.X, Q.Y);
+	for (int32 p = 0; p < ExtraPaths.Num(); p++)
+	{
+		const TArray<FVector2D>& Pts = ExtraPaths[p];
+		for (int32 i = 0; i + 1 < Pts.Num(); i++)
+		{
+			const FVector2D A = Pts[i], AB = Pts[i + 1] - A; const float L2 = FMath::Max(1.f, AB.SizeSquared());
+			const float T = FMath::Clamp(FVector2D::DotProduct(Q2 - A, AB) / L2, 0.f, 1.f);
+			if (FVector2D::Distance(Q2, A + AB * T) < ExtraW[p]) return true;
+		}
+	}
+	return false;
+}
+
+// =================================================================== the rowboat (2026-10-23)
+// WAVES must match pbx_realism.WAVES (the sea material): (direction deg, wavelength m, amplitude m). Heights in cm.
+namespace PBXWaves { struct W { float Deg, Lam, Amp; }; static const W List[4] = { { 84.f, 23.f, .20f }, { 101.f, 13.5f, .11f }, { 70.f, 7.8f, .055f }, { 115.f, 4.6f, .025f } }; }
+float APBXDirector::WaveZ(const FVector2D& XY, float T) const
+{
+	const FVector2D Q = XY / 100.f; float Z = 0.f;
+	for (const PBXWaves::W& W : PBXWaves::List)
+	{
+		const float K = 2.f * PI / W.Lam, C = FMath::Sqrt(9.81f / K), A = FMath::DegreesToRadians(W.Deg);
+		const FVector2D D(FMath::Cos(A), FMath::Sin(A));
+		Z += W.Amp * FMath::Sin(K * (FVector2D::DotProduct(D, Q) - C * T));
+	}
+	return -120.f + Z * 100.f;
+}
+float APBXDirector::BoatGroundZ(const FVector2D& XY) const
+{
+	FHitResult H; FCollisionQueryParams Q(TEXT("PBXBoat"), true);
+	for (AActor* A : BoatIgnore) if (A) Q.AddIgnoredActor(A);
+	if (Boat) Q.AddIgnoredActor(Boat); if (Player) Q.AddIgnoredActor(Player); if (Partner) Q.AddIgnoredActor(Partner);
+	if (GetWorld()->LineTraceSingleByChannel(H, FVector(XY.X, XY.Y, 20000.f), FVector(XY.X, XY.Y, -20000.f), ECC_Visibility, Q)) return H.ImpactPoint.Z;
+	return -100000.f;
+}
+void APBXDirector::BoardBoat()
+{
+	if (!Boat || !Player || bBoating) return;
+	bBoating = true; BoatSpeed = 0.f; BoatTurn = 0.f; BoatInput = FVector2D::ZeroVector;
+	const FVector L = Boat->GetActorLocation(); BoatXY = FVector2D(L.X, L.Y); BoatYaw = Boat->GetActorRotation().Yaw; BoatZOff = L.Z - WaveZ(BoatXY, GetWorld()->GetTimeSeconds());
+	const FBox B = Boat->GetComponentsBoundingBox(); const float Deck = B.Min.Z + (B.Max.Z - B.Min.Z) * .35f - L.Z;
+	Player->GetCharacterMovement()->SetMovementMode(MOVE_None); Player->GetCharacterMovement()->StopMovementImmediately();
+	Player->SetActorEnableCollision(false);
+	Player->AttachToActor(Boat, FAttachmentTransformRules::KeepWorldTransform);
+	Player->SetActorRelativeLocation(FVector(-30.f, 0.f, Deck + Player->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+	Player->SetActorRelativeRotation(FRotator(0, 0, 0));
+	if (Partner) Partner->SetActorHiddenInGame(true);
+	Sfx(TEXT("sfx_confirm"));
+	Toast(TEXT("W / S to row, A / D to steer. Steer to a jetty and press E to step ashore."));
+}
+void APBXDirector::LeaveBoat(int32 DockI)
+{
+	if (!bBoating || !Player || !Docks.IsValidIndex(DockI)) return;
+	const FDock& Dk = Docks[DockI];
+	bBoating = false; BoatSpeed = 0.f; NearKind = EKind::None;
+	BoatXY = FVector2D(Dk.Water.X, Dk.Water.Y);
+	Boat->SetActorLocation(FVector(BoatXY.X, BoatXY.Y, WaveZ(BoatXY, GetWorld()->GetTimeSeconds()) + BoatZOff));
+	Player->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	Player->SetActorEnableCollision(true);
+	Player->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	PlacePlayer(Dk.Land); LastSafe = Dk.Land.Pos + FVector(0, 0, 100);
+	if (Partner) { Partner->SetActorHiddenInGame(false); Partner->PlaceAt(Dk.Land.Pos - FRotator(0, Dk.Land.Yaw, 0).Vector() * 120.f); }
+	Sfx(TEXT("sfx_confirm"));
+}
+void APBXDirector::TickBoat(float Dt)
+{
+	if (!Boat || !Player) return;
+	BoatT = GetWorld()->GetTimeSeconds();
+	const FVector2D In = BoatInput; BoatInput = FVector2D::ZeroVector;
+	// row: forward up to 7.5 m/s, back 2.5 m/s, water drag; steering bites harder with speed
+	const float Throttle = FMath::Clamp(In.Y, -1.f, 1.f), Steer = FMath::Clamp(In.X, -1.f, 1.f);
+	BoatSpeed += Throttle * (Throttle > 0 ? 260.f : 180.f) * Dt;
+	BoatSpeed -= BoatSpeed * FMath::Min(1.f, (Throttle == 0.f ? .55f : .18f) * Dt);
+	BoatSpeed = FMath::Clamp(BoatSpeed, -250.f, 750.f);
+	BoatTurn = FMath::FInterpTo(BoatTurn, Steer * (22.f + 38.f * FMath::Min(1.f, FMath::Abs(BoatSpeed) / 400.f)), Dt, 3.f);
+	BoatYaw += BoatTurn * Dt * (BoatSpeed < 0 ? -1.f : 1.f);
+	const FVector2D Fwd(FMath::Cos(FMath::DegreesToRadians(BoatYaw)), FMath::Sin(FMath::DegreesToRadians(BoatYaw)));
+	FVector2D Next = BoatXY + Fwd * BoatSpeed * Dt;
+	// shallows / land ahead of the bow, or the far edge of the bay: stop with a soft bump
+	const FVector2D Probe = Next + Fwd * (BoatSpeed >= 0 ? 230.f : -230.f);
+	if (BoatGroundZ(Probe) > -170.f || FVector2D::Distance(Next, FVector2D(BoatStart.X, BoatStart.Y)) > BoatRadius)
+	{
+		if (FMath::Abs(BoatSpeed) > 150.f) { Toast(TEXT("Too shallow — steer away.")); UI->ShakeT = .25f; }
+		BoatSpeed *= -.25f; Next = BoatXY;
+	}
+	BoatXY = Next;
+	// ride the swell: heave from the wave height, pitch / roll from bow-stern and port-starboard differences
+	const FVector2D Right(-Fwd.Y, Fwd.X);
+	const float Zc = WaveZ(BoatXY, BoatT), Zb = WaveZ(BoatXY + Fwd * 150.f, BoatT), Zs = WaveZ(BoatXY - Fwd * 150.f, BoatT);
+	const float Zp = WaveZ(BoatXY - Right * 70.f, BoatT), Zr = WaveZ(BoatXY + Right * 70.f, BoatT);
+	const float Pitch = FMath::RadiansToDegrees(FMath::Atan2(Zb - Zs, 300.f)), Roll = FMath::RadiansToDegrees(FMath::Atan2(Zr - Zp, 140.f)) - BoatTurn * .08f;
+	Boat->SetActorLocationAndRotation(FVector(BoatXY.X, BoatXY.Y, (Zc + Zb + Zs) / 3.f + BoatZOff), FRotator(Pitch, BoatYaw, Roll));
+	// near a dock?
+	NearKind = EKind::None; NearIndex = -1; float Best = 900.f;
+	for (int32 i = 0; i < Docks.Num(); i++) { const float D = FVector2D::Distance(BoatXY, FVector2D(Docks[i].Water.X, Docks[i].Water.Y)); if (D < Best) { Best = D; NearKind = EKind::Dock; NearIndex = i; } }
 }

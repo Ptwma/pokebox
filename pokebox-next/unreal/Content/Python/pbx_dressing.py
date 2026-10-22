@@ -81,12 +81,10 @@ def town(save=True):
         # realistic pass (2026-10-22): Poly Haven photo-scanned cliffs / boulders instead of the painted Dreamscape ones
         MS = PH + 'mountainside/mountainside_2k/StaticMeshes/mountainside_2k'; NC = PH + 'namaqualand_cliff_02/namaqualand_cliff_02_2k/StaticMeshes/namaqualand_cliff_02_2k'
         R1 = PH + 'rock_moss_set_01/rock_moss_set_01_2k/StaticMeshes/rock_moss_set_01_rock0%d'; BO = PH + 'boulder_01/boulder_01_2k/StaticMeshes/boulder_01_2k'
-        L = [(MS, o.x - 1250, fy - 120, 180, ('h', 17.0), 250, gz), (MS, o.x + 1250, fy - 120, 0, ('h', 17.0), 250, gz),
-             (NC, o.x - 2300, fy - 40, 175, ('h', 19.0), 250, gz), (NC, o.x + 2300, fy - 40, 5, ('h', 19.0), 250, gz),
-             (NC, o.x, fy - 90, 180, ('h', 10.0), 0, gz + 800),            # above the arch: bottom at 8 m (arch top 7.4 m)
-             (MS, o.x - 1100, fy - 160, 200, ('h', 13.0), 0, gz + 760), (MS, o.x + 1100, fy - 160, -20, ('h', 13.0), 0, gz + 760),
-             (R1 % 1, o.x - 560, fy - 260, 30, ('h', 2.2), 30, None), (R1 % 4, o.x + 560, fy - 240, -50, ('h', 2.0), 30, None),
-             (BO, o.x - 860, fy - 420, 70, ('h', 1.3), 15, None), (R1 % 6, o.x + 800, fy - 380, 0, ('h', 1.2), 15, None)]
+        # 2026-10-23: the portal is now a stone headwall + wing walls backed by the tunnel mountain (terrain): only fallen
+        # rocks at the foot of the wing walls, nothing stacked on the headwall
+        L = [(R1 % 1, o.x - 1700, fy + 150, 30, ('h', 2.2), 30, None), (R1 % 4, o.x + 1750, fy + 120, -50, ('h', 2.0), 30, None),
+             (BO, o.x - 2100, fy - 200, 70, ('h', 1.3), 15, None), (R1 % 6, o.x + 2050, fy - 260, 0, ('h', 1.2), 15, None)]
         for i, (mesh, x, y, yaw, size, sink, z) in enumerate(L):
             if _put(i, mesh, x, y, yaw, size, sink, z): n += 1
         print('[drs] tunnel portal dressed', n)
