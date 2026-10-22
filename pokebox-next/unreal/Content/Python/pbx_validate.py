@@ -148,6 +148,7 @@ def run(map_name, fix=False):
                     else: fails.append('DOOR-LANE  %s sits in the walk-up lane of %s' % (lbl, pl))
             for (pl, x, y, z) in pts:
                 if gone or abs(z - o.z) > 400.0: continue        # interiors sit 60 m below; don't mix floors
+                if lbl.startswith('INT_') and not pl.startswith('door'): continue   # curated interior furniture (pbx_interiors): only door lanes/spots count
                 d = _dist2d_box(x, y, mn, mx)
                 if d < (NPC_R if pl.startswith('npc ') else CLEAR_R) and not _allowed(lbl, pl):
                     if fix and (tall < 250.0 or d < 60.0):   # big rocks too when they sit right ON the point
@@ -155,7 +156,7 @@ def run(map_name, fix=False):
                     else: fails.append('KEEP-CLEAR  %s is %.0f cm from %s' % (lbl, d, pl))
             if gone: continue
         # ---- floating / buried (single props only)
-        if not building and c is not None and tall > 10.0:
+        if not building and c is not None and tall > 10.0 and not lbl.startswith('INT_'):   # curated pieces sit on tables / hang on walls
             g = _ground_below(world, o.x, o.y, mx.z + 50.0, [a])   # from the top: a prop sunk into a slope must still see that slope
             if g is not None:
                 if mn.z - g > FLOAT_TOL:

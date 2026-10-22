@@ -710,6 +710,11 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
     les.save_current_level()
     log('level built', len(plan['objects']), 'objects', 'missing', sorted(missing))
     try:   # every rebuild repairs keep-clear / floating / plant-collision problems the generator left behind (council 2026-10-16)
+        if map_name == 'L_Town':   # interiors are furnished in Unreal (council S8): Quaternius / Fantastic Village / Dreamscape props
+            import pbx_interiors; pbx_interiors.run(save=False)
+        import pbx_dressing   # set dressing (S10): tunnel-portal cliffs + flagstone tiling in town, the closed road to Mistvale on Route 1
+        if map_name == 'L_Town': pbx_dressing.town(save=False)
+        if map_name == 'L_Route1': pbx_dressing.route1(save=False)
         import pbx_validate; pbx_validate.run(map_name, fix=True)
     except Exception as ex: log('validate fix', ex)
 

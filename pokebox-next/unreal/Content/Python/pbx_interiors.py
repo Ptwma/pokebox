@@ -46,6 +46,10 @@ LAB = [
     (QP + 'Crate_Wooden', 830, 3600, 10, ('h', .6)), (QP + 'Crate_Metal', 830, 3700, -90, ('h', .5)),
     (QP + 'Chandelier', -450, 3400, 0, ('h', .8), 330), (QP + 'Chandelier', 450, 3400, 0, ('h', .8), 330),
     (FVP + 'natural/SM_PROP_PLANT_pot_v1_02', -850, 2905, 0, ('h', .8)), (FVP + 'natural/SM_PROP_PLANT_pot_v3_01', 850, 2880, 0, ('h', .8)),
+    (QP + 'Workbench', 845, 3240, 0, ('h', .9, 'y')), (QP + 'Cage_Small', 850, 3200, 0, ('h', .45), 90), (QP + 'Potion_4', 845, 3290, 0, ('h', .22), 90),
+    (QP + 'Book_Stack_1', 120, 3725, 0, ('h', .15), 92), (QP + 'CandleStick', -110, 3725, 0, ('h', .3), 92),
+    (FVP + 'furniture/SM_PROP_bench_01', -520, 2910, 0, ('w', 1.8, 'x')), (FVP + 'furniture/SM_PROP_bench_01', 520, 2910, 0, ('w', 1.8, 'x')),
+    (QP + 'Lantern_Wall', -880, 2990, 90, ('h', .5), 190), (QP + 'Lantern_Wall', 880, 3800, -90, ('h', .5), 190),
 ]
 MOVE = {'Cauldron': (760, 3820)}     # existing Quaternius pieces that stay, but out of the middle of the room
 
@@ -62,8 +66,9 @@ def _place(spec, i):
     if not sm or not isinstance(sm, unreal.StaticMesh): print('[int] missing/not static', mesh); return None
     b = sm.get_bounding_box(); e = b.max - b.min
     s = size[1] * 100.0 / max(1e-3, e.z if size[0] == 'h' else max(e.x, e.y))
-    if len(size) > 2:   # turn it so its long side runs along the wanted world axis
-        long_x = e.x >= e.y; want_x = size[2] == 'x'
+    if len(size) > 2:   # turn it so its long side runs along the wanted world axis (taking the given yaw into account)
+        quarter = int(round(yaw / 90.0)) % 2 == 1
+        long_x = (e.x >= e.y) != quarter; want_x = size[2] == 'x'
         if long_x != want_x: yaw += 90
     z = FLOOR + dz - b.min.z * s
     a = EAS.spawn_actor_from_object(sm, unreal.Vector(x, y, z), unreal.Rotator(0, 0, yaw))
@@ -71,6 +76,7 @@ def _place(spec, i):
     a.set_folder_path('Interiors/Furniture')
     c = a.get_component_by_class(unreal.StaticMeshComponent)
     if any(mesh.split('/')[-1].startswith(k) for k in SMALL): c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+    if mesh.split('/')[-1] in ('Chandelier', 'CandleStick', 'Candle_1', 'CandleStick_Triple'): c.set_cast_shadow(False)   # they hang on the room lights
     return a
 
 def run(save=True):

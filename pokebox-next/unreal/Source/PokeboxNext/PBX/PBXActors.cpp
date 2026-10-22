@@ -269,7 +269,7 @@ bool APBXEcho::Setup(FName Card, float Height)
 		const FBox MB = M->GetBoundingBox(); const FVector E = MB.GetSize();
 		const float MeshH = E.Z, MeshW = FMath::Max(E.X, E.Y);
 		const float VisH = FMath::Max(.05f, float(B->W - B->Y)) * MeshH, VisW = FMath::Max(.05f, float(B->Z - B->X)) * MeshW;
-		S = .75f * Height / FMath::Max(VisH, .85f * VisW);   // .75 = a typical cut-out fills ~3/4 of its card: overall sizes stay as before
+		S = .9f * Height / FMath::Sqrt(VisH * VisW);   // same visible AREA for every Echo (wide Rattata grows, tall Kakuna shrinks); .9 ~ a typical cut-out, so average sizes stay
 		Lift = -(MB.Min.Z + (1.f - float(B->W)) * MeshH) * S;     // the lowest opaque pixel touches the ground
 	}
 	Paper->SetRelativeScale3D(FVector(S));
