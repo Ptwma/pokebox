@@ -89,7 +89,7 @@ def _check_materials(c):
 
 # intentional contacts: a stall belongs to its seller, a gate sign to its guard (label prefix -> gameplay point label)
 ALLOW = {('SM_PROP_market', 'npc merchant'), ('SM_PROP_market', 'npc trader'), ('SM_Sign', 'npc guard'), ('SM_Sign', 'npc merchant'),
-         ('SM_Fence', 'npc scout'), ('SM_PROP_walkway', 'npc fisher')}
+         ('SM_Fence', 'npc scout'), ('SM_PROP_walkway', 'npc fisher'), ('SM_S_Rock_78', 'exit route1')}   # the boulder framing the Route 1 gate (1.6 m off the exit)
 NO_DROP = ('SM_PROP_walkway', 'SM_PROP_lamp', 'SM_PROP_sign')   # piers stand over water, lamps hang: never 'drop' them
 
 def _allowed(lbl, pl): return any(lbl.startswith(a) and pl == b for (a, b) in ALLOW)
@@ -162,6 +162,7 @@ def run(map_name, fix=False):
                     if fix and not lbl.startswith(NO_DROP):
                         a.set_actor_location(a.get_actor_location() - unreal.Vector(0.0, 0.0, mn.z - g - 3.0), False, True)
                         fixed.append('DROPPED  %s %.0f cm onto the ground' % (lbl, mn.z - g))
+                    elif lbl.startswith(NO_DROP): warns.append('FLOATING-OK  %s %.0f cm up (pier/lamp, intended)' % (lbl, mn.z - g))
                     else: fails.append('FLOATING  %s bottom %.0f cm above ground' % (lbl, mn.z - g))
                 elif g - mn.z > .6 * tall and tall > 60.0: warns.append('BURIED  %s sunk %.0f of %.0f cm' % (lbl, g - mn.z, tall))
     out = os.path.join(SAVED, 'pbx_validate_%s.txt' % map_name)

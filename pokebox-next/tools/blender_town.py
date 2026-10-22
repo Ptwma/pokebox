@@ -761,6 +761,7 @@ SWAP = {
     'KSurvival/signpost': (FVM + 'deco/SM_PROP_signpost_01', {'h': 2.2}), 'KSurvival/campfire_pit': (FVM + 'light/SM_PROP_campfire', {'w': 1.5}),
     'KSurvival/tree_log_small': (FVM + 'natural/SM_PROP_treetrunk_02', {'w': 1.5}), 'KPirate/boat_row_small': (FVM + 'vehicles/SM_PROP_rowboat', {'w': 3.2}),
     'KPirate/boat_row_large': (FVM + 'vehicles/SM_PROP_rowboat', {'w': 3.8}), 'KPirate/structure_platform_dock': (FVM + 'construction/SM_PROP_walkway_wood', {'w': 6.0}),
+    'SM_Sign': (FVM + 'deco/SM_PROP_board_01', {'w': 1.9}),   # the procedural board rendered black (S7)
     'KTown/pillar-stone': (FVM + 'construction/SM_PROP_wall_wood_post_01', {'h': 3.4}), 'KTown/fence-gate': (FVM + 'construction/SM_PROP_fence_door_gate', {'w': 4.0}),
 }
 def swap(mesh):

@@ -62,8 +62,8 @@ ROLES = {
                        backpack=(.55, .4, .2)),
     'lass': dict(body='female', top=dict(col=(.96, .62, .72), sleeves='short'), legs=dict(col=(.18, .22, .45), kind='skirt', z=.32, flare=.5),
                  shoes=dict(col=(.15, .12, .12), z=.06), scarf=(.97, .97, .97)),
-    'healer': dict(body='female', top=dict(col=(.95, .55, .65), sleeves='long'), legs=dict(col=(.95, .95, .95), kind='long'),
-                   coat=dict(col=(.98, .98, .98), z=.30, flare=.2), shoes=dict(col=(.95, .95, .95), z=.06), hat=dict(kind='bucket', col=(.98, .98, .98), band=(.9, .3, .4))),
+    'healer': dict(body='female', top=dict(col=(.95, .55, .65), sleeves='long'), legs=dict(col=(.034, .05, .13), kind='long'),   # all-white read as a missing material (S7)
+                   coat=dict(col=(.6, .085, .12), z=.30, flare=.2), shoes=dict(col=(.6, .085, .12), z=.06), hat=dict(kind='bucket', col=(.6, .085, .12), band=(.9, .3, .4))),
     'trader': dict(body='male', top=dict(col=(.85, .8, .7), sleeves='long'), legs=dict(col=(.3, .25, .2), kind='long'),
                    coat=dict(col=(.45, .3, .18), z=.47, flare=.1, sleeves='short'), belt=(.12, .08, .05), shoes=dict(col=(.2, .12, .06), z=.2),
                    cap=dict(col=(.45, .3, .18), front=(.45, .3, .18))),

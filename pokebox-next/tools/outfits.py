@@ -55,7 +55,7 @@ OUTFITS = {   # body paint under the 3D clothes (clothes.py) — same palette, s
     'youngster': dict(body='male', top=(.97, .97, .97), stripes=(.2, .45, .85), sleeves='short', bottom=(.85, .55, .2), legs='shorts', shoes=(.85, .15, .12), boots_z=.17, skin=1.05),
     'bugcatcher': dict(body='male', top=(.36, .62, .3), sleeves='short', bottom=(.82, .74, .52), legs='shorts', shoes=(.35, .22, .12), boots_z=.2, skin=1.0),
     'lass': dict(body='female', top=(.96, .62, .72), sleeves='short', bottom=(.18, .22, .45), legs='skirt', skirt_z=.32, shoes=(.15, .12, .12), boots_z=.085, skin=1.1),
-    'healer': dict(body='female', top=(.98, .98, .98), sleeves='long', bottom=(.95, .95, .95), legs='long', coat_z=.30, shoes=(.95, .95, .95), boots_z=.085, skin=.95),
+    'healer': dict(body='female', top=(.84, .34, .40), sleeves='long', bottom=(.20, .25, .40), legs='long', coat_z=.30, shoes=(.36, .22, .12), boots_z=.085, skin=.95),   # was all-white: read as a missing material (council S7)
     'trader': dict(body='male', top=(.45, .3, .18), sleeves='long', bottom=(.3, .25, .2), legs='long', coat_z=.47, shoes=(.2, .12, .06), boots_z=.2, belt=(.12, .08, .05), skin=.9),
 }
 
@@ -110,7 +110,9 @@ if __name__ == '__main__':
     d, outd = sys.argv[1], sys.argv[2]; os.makedirs(outd, exist_ok=True)
     tex = {'male': 'T_Superhero_Male_Dark.png', 'female': 'T_Superhero_Female_Dark_BaseColor.png'}
     cache = {}
+    only = sys.argv[3].split(',') if len(sys.argv) > 3 else None
     for name, o in OUTFITS.items():
+        if only and name not in only: continue
         b = o['body']
         if b not in cache:
             P, L, M = raster(b, d); base = np.asarray(Image.open(os.path.join(d, tex[b])).convert('RGB').resize((S, S), Image.LANCZOS))
