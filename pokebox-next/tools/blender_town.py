@@ -288,12 +288,18 @@ TOWN = dict(size=220.0, res=176)
 TRACK_X = 40.0                       # railway along x = 40 (east edge of town), tunnel portal at the north end
 TRACK_Y0, TRACK_Y1 = -113.0, 27.0    # tunnel mouth .. buffer stop
 PLATFORM = (34.6, 38.4, -20.0, 24.0) # x0, x1, y0, y1 (top at +0.55 m)
+# new village houses (2026-10-22): (blueprint, door x, door y, facing) — doors open onto the new side paths
+NEW_HOUSES = [(12, 6.2, 15.5, (-1, 0)), (8, 5.8, 31.0, (-1, 0)), (11, -6.2, 15.0, (1, 0)), (7, 22.0, -15.0, (0, 1)), (1, -11.1, -16.2, (1, 0))]
+NEW_HOUSE_BLOCKS = [(11.2, 14.2, 9.5), (9.9, 30.8, 10.5), (-10.7, 15.7, 10.0), (21.9, -22.8, 11.0), (-15.3, -16.2, 6.5)]
+PADS = [(9.9, 30.8, 11.0)]          # ground levelled under the harbour inn (outside the flat village core)
+
 def height(x, y):
     """flat village plateau, soft hills inland, slope down to the beach on the south (+y)"""
     h = 0.0
     h += .35 * math.sin(x * .07) * math.cos(y * .05) + .25 * math.sin(x * .13 + 1.3) * math.sin(y * .11 + .4)
     d = math.hypot(x, y + 10)
     h *= min(1, max(0, (d - 30) / 25))              # village core stays flat
+    for (px_, py_, pr_) in PADS: h *= min(1, max(0, (math.hypot(x - px_, y - py_) - pr_) / 6))
     ring = max(0, d - 70); h += ring * ring * .004 * (1 - min(1, max(0, (y - 25) / 20)))  # hills around (forest edge), not on the sea side
     if y > 42: h -= (y - 42) * .32                  # beach slope
     if y > 52: h -= (y - 52) * .25                  # under the sea
@@ -586,6 +592,98 @@ def mountains():
     bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Mountains.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
                              axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', colors_type='LINEAR', add_leaf_bones=False, bake_anim=False)
 
+# ------------------------------------------------------------------ realistic mountains (2026-10-22): real elevation data
+# The skyline is the real Bernese Oberland around Grindelwald (Eiger / Mettenberg / Wetterhorn), from the public AWS Terrain
+# Tiles (Terrarium, zoom 12, ~38 m/px) fetched by tools/ph_download.py into PokeboxNext_src/polyhaven/dem. Rotated 180 deg so the
+# big north faces stand to the game's north (the sea is south), scaled 1:DEM_K in all three axes (true proportions:
+# Eiger ~245 m above the village, ~430 m away). Near the village the relief fades out into the existing hills; the
+# railway tunnel keeps a mountain over it. One smooth mesh, no UVs (Unreal textures it by world position, slope and height).
+DEM_DIR = os.path.join(OUT, 'polyhaven', 'dem')
+DEM_K = 12.0
+_DEM = {}
+def dem_load():
+    if _DEM: return _DEM
+    import numpy as np
+    meta = json.load(open(os.path.join(DEM_DIR, 'dem.json'))); z, cx, cy, r = meta['z'], meta['cx'], meta['cy'], meta['r']
+    n = 2 * r + 1; mos = np.zeros((n * 256, n * 256), np.float32)
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            im = bpy.data.images.load(os.path.join(DEM_DIR, '%d_%d_%d.png' % (z, cx + dx, cy + dy)), check_existing=False)
+            im.colorspace_settings.name = 'Non-Color'
+            px = np.empty(256 * 256 * 4, np.float32); im.pixels.foreach_get(px); bpy.data.images.remove(im)
+            a = np.round(px.reshape(256, 256, 4)[::-1] * 255.0)          # row 0 = north
+            e = a[..., 0] * 256 + a[..., 1] + a[..., 2] / 256 - 32768
+            mos[(dy + r) * 256:(dy + r + 1) * 256, (dx + r) * 256:(dx + r + 1) * 256] = e
+    _DEM.update(mos=mos, z=z, x0=cx - r, y0=cy - r, lat=meta['lat'], lon=meta['lon'])
+    _DEM['e0'] = dem_real(0.0, 0.0)
+    return _DEM
+
+def dem_real(dE, dN):
+    """real elevation (m) at dE / dN metres east / north of the village, bilinear"""
+    import numpy as np
+    d = _DEM; lat = d['lat'] + dN / 111320.0; lon = d['lon'] + dE / (111320.0 * math.cos(math.radians(d['lat'])))
+    n = 2 ** d['z']
+    fx = (lon + 180) / 360 * n; fy = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * n
+    px = (fx - d['x0']) * 256 - .5; py = (fy - d['y0']) * 256 - .5
+    m = d['mos']; H, W = m.shape
+    px = min(max(px, 0), W - 1.001); py = min(max(py, 0), H - 1.001); i, j = int(py), int(px); ty, tx = py - i, px - j
+    return float(m[i, j] * (1 - tx) * (1 - ty) + m[i, j + 1] * tx * (1 - ty) + m[i + 1, j] * (1 - tx) * ty + m[i + 1, j + 1] * tx * ty)
+
+def dem_game(x, y):
+    """relief (game metres above the village) at Blender (x, y): rotated 180 deg, 1:DEM_K"""
+    return (dem_real(-x * DEM_K, y * DEM_K) - _DEM['e0']) / DEM_K
+
+def real_weight(x, y):
+    """0 in the village / sea, 1 in the mountains"""
+    d = math.hypot(x, y + 10)
+    w = min(1, max(0, (d - 150) / 120)); w = w * w * (3 - 2 * w)
+    w *= 1 - min(1, max(0, (y - 20) / 60))                 # the south is the sea
+    return w
+
+def tunnel_bump(x, y):
+    """the railway mountain: a local ridge right behind the portal (y < TRACK_Y0) so the tunnel always runs into rock.
+    Local only (about 90 m wide, 200 m deep) — it hands over to the real relief behind it."""
+    dy = TRACK_Y0 - y
+    if dy < -2 or dy > 260: return -99.0
+    gx = math.exp(-((x - TRACK_X) / 45.0) ** 2)
+    rise = min(1, (dy + 2) / 10.0); fall = 1 - min(1, max(0, (dy - 110) / 150.0)); fall = fall * fall * (3 - 2 * fall)
+    k = gx * rise * fall
+    return (24.0 + 46.0 * min(1, dy / 70.0)) * k if k > .03 else -99.0
+
+def real_height(x, y):
+    base = far_height(x, y); base = min(base, 16.0) if y < 45 else min(base, -8.0)
+    w = real_weight(x, y); z = base + w * max(-20.0, dem_game(x, y)) - (1 - w) * 2.5
+    tb = tunnel_bump(x, y)
+    if tb > -50: z = max(z, base + tb)
+    return z
+
+def mountains_real(step=6.0, ext=1100.0):
+    dem_load()
+    import numpy as np
+    xs = np.arange(-ext, ext + .01, step); n = len(xs)
+    Z = np.zeros((n, n), np.float32); Wt = np.zeros((n, n), np.float32)
+    for j, y in enumerate(xs):
+        for i, x in enumerate(xs):
+            Z[j, i] = real_height(x, y); Wt[j, i] = max(real_weight(x, y), 1.0 if tunnel_bump(x, y) > -50 else 0.0)
+    me = bpy.data.meshes.new('SM_Mountains'); V = []; F = []; idx = -np.ones((n, n), np.int64)
+    keep = Wt > .005
+    keep2 = keep.copy(); keep2[:-1, :] |= keep[1:, :]; keep2[1:, :] |= keep[:-1, :]; keep2[:, :-1] |= keep[:, 1:]; keep2[:, 1:] |= keep[:, :-1]
+    for j in range(n):
+        for i in range(n):
+            if keep2[j, i]: idx[j, i] = len(V); V.append((float(xs[i]), float(xs[j]), float(Z[j, i])))
+    for j in range(n - 1):
+        for i in range(n - 1):
+            q = (idx[j, i], idx[j, i + 1], idx[j + 1, i + 1], idx[j + 1, i])
+            if min(q) >= 0 and (keep[j, i] or keep[j, i + 1] or keep[j + 1, i] or keep[j + 1, i + 1]): F.append(q)   # counter-clockwise from above (verified in Unreal: the other order was culled from above, lit from below)
+    me.from_pydata(V, [], F); me.update()
+    for p in me.polygons: p.use_smooth = True
+    ob = bpy.data.objects.new('SM_Mountains', me); bpy.context.collection.objects.link(ob); set_mat(ob, 'M_Mountain')
+    bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.export_scene.fbx(filepath=os.path.join(FBX, 'SM_Mountains.fbx'), use_selection=True, apply_scale_options='FBX_SCALE_ALL',
+                             axis_forward='-Z', axis_up='Y', mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False)
+    print('real mountains', len(V), 'verts', len(F), 'faces, peak', float(Z.max()))
+    return ob
+
 def sky_dome():
     """unit sphere seen from inside, equirectangular UVs (v = 1 at the zenith) for the baked stylized sky"""
     me = bpy.data.meshes.new('SM_SkyDome'); NU, NV = 64, 32; V = []; F = []; UV = []
@@ -741,13 +839,31 @@ ROCKS_S = [RCK + f'SM_R_Rock_0{i}' for i in range(1, 6)]
 ROCKS_L = [RCK + f'SM_S_Rock_{i:02d}' for i in (2, 4, 5, 6, 8, 9, 10)]
 CLIFFS = [DSC + f'Stones/Cliffs/SM_Cliff_0{i}' for i in range(1, 8)]
 FENCES = [DSC + f'Structures/SM_Fence_0{i}' for i in (1, 2, 3, 4)]
+# realistic pass (2026-10-22): Poly Haven photo-scanned plants / rocks / props replace the painted ones in and around the village
+PHM = '/Game/PBX/PH/'
+def _ph(asset, mesh): return PHM + f'{asset}/{asset}_2k/StaticMeshes/{mesh}'
+PH_GRASS = [_ph('grass_medium_01', f'grass_medium_01_{k}_LOD0') for k in ('large_a', 'large_b', 'large_c', 'mid_a', 'mid_b', 'tall_a', 'tall_b')] + \
+           [_ph('grass_medium_02', f'grass_medium_02_{k}') for k in ('c', 'd', 'e')]
+PH_TALL = [_ph('grass_medium_01', f'grass_medium_01_{k}_LOD0') for k in ('tall_a', 'tall_b', 'tall_c', 'large_a', 'large_b')] + [_ph('grass_medium_02', 'grass_medium_02_e')]
+PH_FLOWERS = [_ph('dandelion_01', f'dandelion_01_{k}_LOD0') for k in 'abc'] + [_ph('celandine_01', f'celandine_01_{k}_LOD0') for k in 'abcd']
+PH_FERN = [_ph('fern_02', f'fern_02_{k}') for k in 'abcd']
+PH_SHRUB = [_ph('shrub_02', f'shrub_02_{k}') for k in 'abcd']
+PH_ROCK_S = [_ph('rock_moss_set_02', f'rock_moss_set_02_rock{i:02d}') for i in range(7, 14)]
+PH_ROCK_L = [_ph('rock_moss_set_01', f'rock_moss_set_01_rock{i:02d}') for i in range(1, 7)] + [_ph('boulder_01', 'boulder_01_2k')]
+PH_BARREL = _ph('Barrel_01', 'Barrel_01_2k'); PH_CRATE = _ph('wooden_crate_01', 'wooden_crate_01'); PH_PLANTER = _ph('planter_box_01', 'planter_box_01_2k')
+PH_BENCH = _ph('painted_wooden_bench', 'painted_wooden_bench_2k'); PH_FIRE = _ph('stone_fire_pit', 'stone_fire_pit_2k'); PH_STUMP = _ph('tree_stump_01', 'tree_stump_01_2k')
+PH_BUCKET = _ph('wooden_bucket_01', 'wooden_bucket_01'); PH_TABLE = _ph('outdoor_table_chair_set_01', 'outdoor_table_chair_set_01_table')
+PH_CHAIRS = [_ph('outdoor_table_chair_set_01', 'outdoor_table_chair_set_01_chair_01'), _ph('outdoor_table_chair_set_01', 'outdoor_table_chair_set_01_chair_02')]
+FVP_FENCES = ['/Game/Fantastic_Village_Pack/meshes/props/construction/SM_PROP_fence_v02_0%d' % i for i in (1, 2, 3)]
+GRASS, FLOWERS, ROCKS_S, ROCKS_L, BUSHES = PH_GRASS, PH_FLOWERS, PH_ROCK_S, PH_ROCK_L, PH_SHRUB
 
 # ------------------------------------------------------------------ Fantastic Village Pack (Fab): stylized houses + props
 FVP = '/Game/Fantastic_Village_Pack/'
 FVM = FVP + 'meshes/props/'
 def FVP_HOUSE(i): return FVP + f'blueprints/buildings/BP_BLD_house_{i}'
 # ground-floor door of each house blueprint, in Blender local metres (Unreal (dx, dy) cm -> (dx/100, -dy/100)), measured in the editor
-FVP_DOORS = {1: (0.0, 2.79), 2: (0.0, -2.79), 5: (0.0, -5.63), 9: (-2.52, 0.0), 10: (-2.48, 0.0), 14: (-.03, 2.79)}
+FVP_DOORS = {1: (0.0, 2.79), 2: (0.0, -2.79), 5: (0.0, -5.63), 9: (-2.52, 0.0), 10: (-2.48, 0.0), 14: (-.03, 2.79),
+             4: (5.70, 0.0), 7: (0.10, 5.69), 8: (-6.53, 0.28), 11: (5.64, 0.0), 12: (-2.74, 0.02)}   # measured 2026-10-22 (ground-floor door meshes)
 # older kit props -> Fantastic Village Pack equivalents (one consistent hand-painted style). Value: (mesh, default size)
 SWAP = {
     'SM_LampPost': (FVM + 'light/SM_PROP_streetlamp_v01_01', {'h': 3.6}), 'SM_Bench': (FVM + 'furniture/SM_PROP_bench_01', {'w': 1.9}),
@@ -769,7 +885,9 @@ def swap(mesh):
 
 def plan_town():
     P = {'paths': [(0, -24, 0, 48, 3.6), (-24, 6, 24, 6, 3.0), (-15, 6, -15, 0, 2.2), (15, 6, 15, 0, 2.2), (-24, 6, -52, 6, 3.0),
-                   (24, 6, 34.4, 6, 3.0), (30, 6, 30, .8, 2.2)],
+                   (24, 6, 34.4, 6, 3.0), (30, 6, 30, .8, 2.2),
+                   (1.8, 15.5, 6.2, 15.5, 2.0), (1.8, 31, 5.8, 31, 2.2), (-1.8, 15.0, -6.2, 15.0, 2.0), (22, -15, 22, -13, 2.2), (22, -13, 1.8, -13, 2.2),
+                   (-11.1, -16.2, -1.8, -16.2, 2.0)],
          'objects': []}
     def add(mesh, x, y, rot=0.0, s=1.0, z=None):
         # snap = sits on the outdoor ground: Unreal re-measures the real ground under its footprint (no floating / sinking)
@@ -790,6 +908,8 @@ def plan_town():
         for y in (-12, 14, 30): add('SM_LampPost', x * .55, y)
     for x in (12, 21, 29): add('SM_LampPost', x, 8.2)
     add('SM_Bench', 8, -18, 180); add('SM_Bin', 10, -18)
+    # ---- more of a village (2026-10-22): five more Fantastic Village houses on the streets, doors onto paths (not enterable)
+    for (i_, dx_, dy_, face_) in NEW_HOUSES: house(i_, dx_, dy_, face_)
     # ---- railway: station building, platform, track from the tunnel in the north to the buffer stop, the train at the platform
     house(9, 29.5, .55)   # the station building (no door interaction)
     house(14, -66, -26)   # windmill on the west hill
@@ -798,14 +918,16 @@ def plan_town():
     add('SM_Tunnel', TRACK_X, TRACK_Y0, 0, z=0.0)
     for (m, y) in (('SM_TrainLoco', -9.0), ('SM_TrainCar', 1.0), ('SM_TrainCar', 13.2)):
         add(m, TRACK_X, y, 0, z=.40); P['objects'][-1]['tag'] = 'PBX_Train'
-    # ---- garden fences (Dreamscape fence panels, 3.3 m) around the two houses
+    def fence(x, y, rot):
+        add(R.choice(FVP_FENCES), x, y, rot); P['objects'][-1].pop('h', None); P['objects'][-1]['w'] = 3.3
+    # ---- garden fences (Fantastic Village fence, 3.3 m) around the two houses
     for cx in (-15, 15):
         for k in (-2, -1, 1, 2):
-            add(R.choice(FENCES), cx + k * 3.3 + (-.9 if k < 0 else .9), 3.0, 0, .98)
-        for k in range(3): add(R.choice(FENCES), cx - 7.4 * (1 if cx < 0 else -1), 1.4 - k * 3.3 - 1.6, 90, .98)
-    for k in range(6): add(R.choice(FENCES), 8.6 + k * 3.3, 22, 0); add(R.choice(FENCES), -8.6 - k * 3.3, 22, 0)
+            fence(cx + k * 3.3 + (-.9 if k < 0 else .9), 3.0, 0)
+        for k in range(3): fence(cx - 7.4 * (1 if cx < 0 else -1), 1.4 - k * 3.3 - 1.6, 90)
+    for k in range(6): fence(8.6 + k * 3.3, 22, 0)
     # ---- nature (Fab packs), kept off paths, houses, the railway and the beach
-    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (6, -34, 11), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8), (-66, -26, 10), (9.5, -16.5, 2.5)]
+    blocked = [(-15, -5, 8.5), (15, -5, 8.5), (0, -34, 13), (6, -34, 11), (-47, 6, 7), (29.5, -2.2, 7), (0, -20.5, 4.5), (-32, -38, 8), (-66, -26, 10), (9.5, -16.5, 2.5)] + [(x_, y_, r_) for (x_, y_, r_) in NEW_HOUSE_BLOCKS]
     def in_grass(x, y, pad=0.0): return any(x0 - pad < x < x1 + pad and y0 - pad < y < y1 + pad for (x0, y0, x1, y1) in TALL_GRASS)
     def railway(x, y, pad=0.0): return (abs(x - TRACK_X) < 7 + pad and y < TRACK_Y1 + 3) or (PLATFORM[0] - 3 - pad < x < 46 and PLATFORM[2] - 3 < y < PLATFORM[3] + 3)
     def free(x, y, r=1.5, far=False):
@@ -824,21 +946,19 @@ def plan_town():
         a = R.random() * math.tau; d = 108 + R.random() * 70; x, y = math.cos(a) * d, math.sin(a) * d - 10
         if y > 30 or not free(x, y, 4, far=True): continue
         add(R.choice(TREES_FOREST), x, y, R.random() * 360, 1.0 + R.random() * .5); n += 1
-    # mountain dressing: pines up the green lower slopes, boulders and cliffs higher up (they snap onto the mountain mesh)
-    for k_, (cx, cy, rad, hgt) in enumerate(mountain_peaks()):
-        if hgt < 45 and R.random() < .5: continue
-        for j in range(5 if hgt > 45 else 3):
-            a = R.random() * math.tau; x0 = R.random()
-            if math.hypot(cx + math.cos(a) * rad * .8, cy + math.sin(a) * rad * .8 + 10) < 112: continue
-            if x0 < .6:   # pines on the lower, green half of the slope
-                d = rad * R.uniform(.6, .92); x, y = cx + math.cos(a) * d, cy + math.sin(a) * d
-                if railway(x, y, 6): continue
-                add(R.choice([NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']), x, y, R.random() * 360, 1.6 + R.random())
-            else:         # boulders / cliffs only near the foot (never perched on a peak)
-                d = rad * R.uniform(.8, .97); x, y = cx + math.cos(a) * d, cy + math.sin(a) * d
-                if railway(x, y, 6): continue
-                add(R.choice(ROCKS_L + CLIFFS), x, y, R.random() * 360, 1.2 + R.random() * .8)
-    for x, y in [(-27, -14), (-26, 4), (27, -14), (-11, -42), (11, -43), (-22, 16), (23, 17), (-31, 30), (32, 30), (8, 30)]:
+    # mountain dressing (real relief, 1:12): conifer forest patches on the lower slopes up to the tree line (~1900 m real
+    # = ~72 m in game), trees sized 1:12 too (4-6 m) so the mountains keep their scale. They snap onto the mountain mesh.
+    dem_load(); n = 0; tries = 0
+    while n < 420 and tries < 20000:
+        tries += 1
+        a = R.random() * math.tau; d = 165 + R.random() * 420; x, y = math.cos(a) * d, math.sin(a) * d - 10
+        if y > 30 or real_weight(x, y) < .35 or railway(x, y, 8): continue
+        z = real_height(x, y); gx = real_height(x + 3, y) - real_height(x - 3, y); gy = real_height(x, y + 3) - real_height(x, y - 3)
+        slope = math.hypot(gx, gy) / 6.0
+        patch = math.sin(x * .021 + 1.7) * math.cos(y * .017 - .4) + .6 * math.sin(x * .053 - y * .041)
+        if z > 72 + patch * 8 or slope > .85 or patch < -.2: continue
+        add(R.choice([NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']), x, y, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(3.6, 6.2), 2); n += 1
+    for x, y in [(-27, -14), (-26, 4), (31, -12), (-11, -42), (11, -43), (-24, 19), (24, 18), (-31, 30), (32, 30), (-4, 36)]:
         add(R.choice(TREES_TOWN), x, y, R.random() * 360, .62 + R.random() * .12)      # big feature trees in the village
     n = 0
     while n < 150:                       # bushes
@@ -846,24 +966,24 @@ def plan_town():
         if not free(x, y, 1.2): continue
         add(R.choice(BUSHES), x, y, R.random() * 360, .65 + R.random() * .45); n += 1
     n = 0
-    while n < 420:                       # grass clumps + flowers carpet
+    while n < 950:                       # grass clumps + wild flowers (Poly Haven scans, life size)
         x, y = (R.random() - .5) * 110, (R.random() - .5) * 96 - 8
         if not free(x, y, .35): continue
         k = R.random()
-        if k < .62: add(R.choice(GRASS), x, y, R.random() * 360, .9 + R.random() * .6)
-        elif k < .9: add(R.choice(FLOWERS), x, y, R.random() * 360, .8 + R.random() * .5)
-        else: add(NAT + 'SM_Fern', x, y, R.random() * 360, .7 + R.random() * .4)
+        if k < .7: add(R.choice(GRASS), x, y, R.random() * 360, 1.4 + R.random() * 1.0)
+        elif k < .92: add(R.choice(FLOWERS), x, y, R.random() * 360, 1.4 + R.random() * .8)
+        else: add(R.choice(PH_FERN), x, y, R.random() * 360, 1.0 + R.random() * .6)
         n += 1
     for cx in (-15, 15):                 # flower beds in the front gardens
-        for k in range(18): add(R.choice(FLOWERS), cx + (R.random() - .5) * 12, 0.6 + R.random() * 1.6, R.random() * 360, .9)
+        for k in range(26): add(R.choice(FLOWERS), cx + (R.random() - .5) * 12, 0.6 + R.random() * 1.6, R.random() * 360, 1.8)
     for k in range(26):                  # small rocks along the paths and at the forest edge
         a = R.random() * math.tau; d = 34 + R.random() * 30; x, y = math.cos(a) * d, math.sin(a) * d - 10
         if not free(x, y, 1.0): continue
-        add(R.choice(ROCKS_S), x, y, R.random() * 360, .22 + R.random() * .2)
+        add(R.choice(ROCKS_S), x, y, R.random() * 360, .35 + R.random() * .35)
     for k in range(14):                  # cliffs and big rocks on the hill rim (north, west, east)
         a = math.radians(-180 + 180 * k / 13 + R.uniform(-4, 4)); d = 88 + R.random() * 14; x, y = math.cos(a) * d, math.sin(a) * d - 10
         if not free(x, y, 3): continue
-        add(R.choice(CLIFFS + ROCKS_L), x, y, R.random() * 360, .7 + R.random() * .5)
+        add(R.choice(ROCKS_L), x, y, R.random() * 360, 1.2 + R.random() * 1.0)
     # ---- kit props (Quaternius Fantasy Props = QProps/, Kenney kits = KTown/ KPirate/ KSurvival/). h / w = target
     # height / footprint in metres; Unreal scales each mesh from its bounds, so the kits' differing units don't matter.
     def kit(mesh, x, y, rot=0.0, h=None, w=None, z=None):
@@ -889,6 +1009,19 @@ def plan_town():
                             ('QProps/Crate_Wooden', 19.6, -1.5, 12, .7), ('QProps/Pot_1', 13.1, -.9, 0, .5), ('QProps/Pot_1', 16.9, -.9, 0, .5),
                             ('KSurvival/resource_wood', -21.0, -7.0, 90, .6), ('QProps/Workbench', 21.0, -8.0, -90, 1.0)]:
         kit(m, x, y, r, h=h)
+    # new houses: front gardens, wood piles, washing lines, a beer garden at the harbour inn
+    for (m, x, y, r, h) in [(PH_PLANTER, 3.6, 13.0, 90, None), (PH_PLANTER, 3.6, 18.0, 90, None), (PH_BARREL, 19.3, 9.0, 0, None), (PH_BUCKET, 19.2, 8.1, 0, None),
+                            (FVM + 'deco/SM_PROP_clothesline_01', 20.6, 14.0, 90, 2.0), (FVM + 'natural/SM_PROP_treetrunk_03', 20.4, 10.4, 90, 1.0),
+                            (PH_TABLE, 2.9, 25.0, 0, None), (PH_CHAIRS[0], 2.9, 24.2, 0, None), (PH_CHAIRS[1], 2.9, 25.8, 180, None),
+                            (PH_TABLE, 2.9, 36.0, 0, None), (PH_CHAIRS[0], 2.9, 35.2, 0, None), (PH_CHAIRS[1], 2.9, 36.8, 180, None),
+                            (PH_BARREL, 2.6, 27.6, 0, None), (PH_BARREL, 2.7, 28.4, 40, None), (FVM + 'deco/SM_PROP_sign_02', 2.6, 29.6, 90, 1.6),
+                            (PH_PLANTER, -2.3, 12.8, 90, None), (PH_PLANTER, -2.3, 17.4, 90, None), (PH_BENCH, -2.4, 20.6, 90, None),
+                            (FVM + 'natural/SM_PROP_hay_02', -21.0, 24.0, 20, 1.2), (PH_STUMP, -19.6, 10.4, 0, None), (PH_CRATE, -19.8, 12.6, 80, None),
+                            (FVM + 'deco/SM_PROP_firepit_woodpile', -21.4, -12.4, 0, 1.0), (PH_PLANTER, -10.4, -13.0, 0, None), (PH_BUCKET, -10.0, -19.6, 0, None),
+                            (PH_BENCH, 16.5, -11.2, 0, None), (PH_PLANTER, 25.6, -12.4, 0, None), (FVM + 'deco/SM_PROP_clothesline_02', 31.4, -24.0, 90, 2.0),
+                            (PH_CRATE, 13.6, -27.5, 0, None), (PH_BARREL, 13.4, -29.2, 0, None), (FVM + 'container/SM_PROP_trough_01', 13.8, -20.0, 90, .6)]:
+        if h: kit(m, x, y, r, h=h)
+        else: add(m, x, y, r, 1.0)
     # station: luggage, benches on the forecourt
     for (m, x, y, r, h) in [('QProps/Crate_Wooden', 33.2, -6.2, 10, .6), ('QProps/Barrel', 33.6, -7.4, 0, .9), ('SM_Bench', 26.0, 1.6, 180, None)]:
         kit(m, x, y, r, h=h)
@@ -905,19 +1038,19 @@ def plan_town():
     kit('KSurvival/campfire_pit', -15.0, 42.5, 0, w=1.4)
     for a in (0, 120, 240):
         kit('KSurvival/tree_log_small', -15.0 + 1.8 * math.cos(math.radians(a)), 42.5 + 1.8 * math.sin(math.radians(a)), a + 90, w=1.6)
-    for (m, x, y, sc) in [(ROCKS_L[0], -27, 47, .45), (ROCKS_S[2], 22, 45, .5), (ROCKS_L[3], 31, 50, .5), (ROCKS_S[0], -35, 44, .55), (ROCKS_L[5], 44, 47, .6), (ROCKS_L[1], -48, 46, .55)]:
+    for (m, x, y, sc) in [(ROCKS_L[0], -27, 47, .9), (ROCKS_S[2], 22, 45, 1.0), (ROCKS_L[3], 31, 50, .8), (ROCKS_S[0], -35, 44, 1.1), (ROCKS_L[5], 44, 47, .9), (ROCKS_L[1], -48, 46, .85)]:
         add(m, x, y, R.random() * 360, sc)
     # ---- west road: tall grass where the wild Echoes live, and the Route 1 gate (closed: landslide — the train is the way out)
     for (x0, y0, x1, y1) in TALL_GRASS:
         n = int((x1 - x0) * (y1 - y0) * .55)
         for k in range(n):
             x, y = x0 + R.random() * (x1 - x0), y0 + R.random() * (y1 - y0)
-            add(NAT + 'SM_Grass', x, y, R.random() * 360, .85 + R.random() * .4)
+            add(R.choice(PH_TALL), x, y, R.random() * 360, 2.2 + R.random() * .8)
     gx, gy = GATE
     for s_ in (-1, 1): kit('KTown/pillar-stone', gx, gy + s_ * 2.3, 0, h=3.2)
     kit('KTown/fence-gate', gx, gy, 90, w=4.0)                         # the barrier
     P['objects'][-1]['tag'] = 'PBX_GateBarrier'
-    for (dx, dy, sc) in [(-3.5, 0, .55), (-6, 2, .45)]:                 # the landslide behind the gate (cleared once the licence is signed)
+    for (dx, dy, sc) in [(-3.5, 0, 1.1), (-6, 2, .95)]:                 # the landslide behind the gate (cleared once the licence is signed)
         add(R.choice(ROCKS_L), gx + dx, gy + dy, R.random() * 360, sc); P['objects'][-1]['tag'] = 'PBX_GateBarrier'
     add('SM_Sign', gx + 2.5, gy + 3.6, 90)
     for k in range(6):                                                  # bushes either side of the gate so the road is the only way out
@@ -963,7 +1096,7 @@ def run():
     export(house('SM_Lab', 18.0, 11.0, 6.4, 'M_Roof_Blue', 'M_Siding_White', porch=False, chimney=False, two_storey=True, lab=True), 'SM_Lab'); reset()
     for f in (fence_segment, lamp_post, mailbox, signboard, bench, trash_bin, station_building, platform, track, tunnel_portal, loco, carriage):
         ob = f(); export(ob, ob.name); reset()
-    ground_far(); reset(); mountains(); reset(); sky_dome(); reset()
+    ground_far(); reset(); mountains_real(); reset(); sky_dome(); reset()
     water_plane(); reset()
     echo_card(); reset()
     for r in ROOMS.values():

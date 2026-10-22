@@ -16,7 +16,7 @@ DATA = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_d
 CLEAR_R = 200.0          # cm, keep-clear radius around doors, exits, items and named spots
 NPC_R = 120.0            # cm, around NPCs (they stand next to stalls and fences on purpose)
 LANE_LEN, LANE_HALF = 800.0, 150.0   # cm, the walk-up lane in front of every outside door
-SOFT = ('SM_Flower', 'SM_Grass', 'SM_Fol_', 'SM_Plant', 'SM_Fern', 'SM_Mushroom', 'SM_Clover')   # small plants: never 'block', but must not collide
+SOFT = ('SM_Flower', 'SM_Grass', 'SM_Fol_', 'SM_Plant', 'SM_Fern', 'SM_Mushroom', 'SM_Clover', 'grass_medium', 'dandelion', 'celandine', 'fern_0', 'shrub_0')   # small plants: never 'block', but must not collide
 FLOAT_TOL = 30.0         # cm
 SKIP_LABELS = ('Ground', 'GroundFar', 'Mountains', 'R1_Ground', 'R1_Mountains', 'SkyDome', 'Sea', 'PostProcess', 'PlayerStart',
                'RoomLight', 'WindowFill')

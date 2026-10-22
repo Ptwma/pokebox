@@ -477,20 +477,22 @@ def make_materials():
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
     M['M_LampGlass'] = _mi('MI_LampGlass', C, {'Roughness': .2, 'EmissiveMul': 4.0}, {'Color': (1, .9, .7, 1), 'Emissive': (1, .78, .45, 1)})
     # ground: stylized grass + dirt from the Stylized Nature pack (painted), Poly Haven sand + flagstones
-    M['M_Ground'] = _mi('MI_Ground', Gm, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.15, 1.15, 1.0, 1), 'SandTint': (1.12, 1.06, .95, 1)}, dict(GROUND_TEX, Splat='T_TownSplat'))
+    import pbx_realism
+    M['M_Ground'] = _mi('MI_Ground', Gm, pbx_realism.GROUND_UV, {'GrassTint': pbx_realism.GRASS_TINT, 'SandTint': (1.1, 1.05, .95, 1)}, dict(pbx_realism.GROUND_REAL, Macro=GROUND_TEX['Macro'], Splat='T_TownSplat'))
     # Route 1 (tools/blender_route1.py): same layers, its own splat (460 m square centred on Blender (-160, 0) = UE (-16000, 0))
     G1 = master_ground('M_PBX_GroundR1', 46000.0, (-16000.0, 0.0))
-    M['M_GroundR1'] = _mi('MI_GroundR1', G1, {'GrassUV': .35, 'DirtUV': .4, 'SandUV': .4, 'StoneUV': .5}, {'GrassTint': (1.15, 1.15, 1.0, 1), 'SandTint': (1.12, 1.06, .95, 1)}, dict(GROUND_TEX, Splat='T_R1Splat'))
+    M['M_GroundR1'] = _mi('MI_GroundR1', G1, pbx_realism.GROUND_UV, {'GrassTint': pbx_realism.GRASS_TINT, 'SandTint': (1.1, 1.05, .95, 1)}, dict(pbx_realism.GROUND_REAL, Macro=GROUND_TEX['Macro'], Splat='T_R1Splat'))
     tw = unreal.load_asset('/Game/Shader_Water/MI_Water')          # Samples/TestWater stylized water
-    M['M_Water'] = tw if tw else _mi('MI_Water', W)
+    M['M_Water'] = _mi('MI_Water_Real', W, {'Roughness': .03}, {'Deep': (.012, .045, .06, 1), 'Shallow': (.03, .12, .13, 1)})   # realistic pass: deep alpine-lake green, not the cartoon shader
     V = master_vertex(); master_cloth(); SK = master_sky()
-    M['M_Mountain'] = _mi('MI_Mountain', S, {'UVScale': 1.0, 'RoughMul': .95}, {}, {'BaseTex': 'T_Palette_Mountain'})
+    import pbx_realism   # realistic pass (2026-10-22): real-relief mountains textured by slope / height (grass, rock, snow scans)
+    M['M_Mountain'] = _mi('MI_Mountain', pbx_realism.master_mountain())
     M['M_Sky'] = _mi('MI_Sky', SK, {'Intensity': 1.0}, {}, {'SkyTex': 'T_Sky_Day'})
     for k, col, r, met in [('M_TrainRed', (.72, .1, .08, 1), .45, 0), ('M_TrainGreen', (.12, .36, .24, 1), .5, 0), ('M_TrainCream', (.93, .86, .7, 1), .55, 0),
                            ('M_Brass', (.85, .62, .25, 1), .35, .8), ('M_EdgeYellow', (.95, .78, .1, 1), .6, 0), ('M_Gravel', (.42, .4, .38, 1), .95, 0),
                            ('M_TunnelDark', (0, 0, 0, 1), 1.0, 0)]:
         M[k] = _mi('MI_' + k[2:], C, {'Roughness': r, 'Metallic': met}, {'Color': col})
-    M['M_CliffRock'] = _mi('MI_CliffRock', S, {'UVScale': .25, 'RoughMul': .9}, {'Tint': (1.15, 1.05, .95, 1)}, {'BaseTex': '/Game/Stylized_PBR_Nature/Rocks/Textures/T_S_Rocks_1-6_D'})
+    M['M_CliffRock'] = _mi('MI_CliffRock', S, {'UVScale': .12, 'RoughMul': .95}, {'Tint': (.92, .9, .88, 1)}, pbx_realism._ph('aerial_rocks_02'))   # tunnel-portal rock: photo scan
     M['M_Roof_Green'] = _mi('MI_Roof_Green', S, {'UVScale': 1.0, 'RoughMul': .7}, {'Tint': (.24, .48, .3, 1)}, {'BaseTex': 'T_Roof_diff'})
     # nature kit (Quaternius): slot names in the FBX → our instances
     M['Leaves_NormalTree'] = _mi('MI_Leaves_Tree', F, {}, {'Tint': (1.0, 1.08, .9, 1)}, {'Tex': 'Leaves_NormalTree_C'})
@@ -507,6 +509,7 @@ def make_materials():
     M['Rocks'] = _mi('MI_Rocks', S, {'RoughMul': .8}, {}, {'BaseTex': 'Rocks_Diffuse'})
     M['PathRocks'] = _mi('MI_PathRocks', S, {'RoughMul': .8}, {}, {'BaseTex': 'PathRocks_Diffuse'})
     M['Mushrooms'] = _mi('MI_Mushrooms', S, {'RoughMul': .7}, {}, {'BaseTex': 'Mushrooms'})
+    pbx_realism.fvp_materials(True)
     log('materials', len(M)); return M
 
 def assign_materials(M):
@@ -538,7 +541,8 @@ def assign_materials(M):
 # ------------------------------------------------------------------ level
 KIT_SCALE = {}
 # plant-like meshes: no collision, foliage stencil (soft ink). Matched against the mesh's base name.
-NO_COLLIDE = ('Grass', 'Flower', 'Clover', 'Fern', 'Plant', 'Petal', 'Pebble', 'Mushroom', 'SM_Fol_Grass', 'SM_Fol_Flower', 'SM_SmallFlower', 'SM_Bush', 'SM_Fol_Bush')
+NO_COLLIDE = ('Grass', 'Flower', 'Clover', 'Fern', 'Plant', 'Petal', 'Pebble', 'Mushroom', 'SM_Fol_Grass', 'SM_Fol_Flower', 'SM_SmallFlower', 'SM_Bush', 'SM_Fol_Bush',
+              'grass_medium', 'dandelion', 'celandine', 'fern_0', 'shrub_0')   # + Poly Haven scans
 FOLIAGE_INK = NO_COLLIDE + ('CommonTree', 'Pine', 'TwistedTree', 'DeadTree', 'Bush', 'SM_Tree', 'SM_Common_Tree', 'SM_Pine')
 TREES = ('SM_Tree', 'SM_Common_Tree', 'SM_Pine', 'CommonTree', 'Pine_')
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
@@ -715,6 +719,7 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
         import pbx_dressing   # set dressing (S10): tunnel-portal cliffs + flagstone tiling in town, the closed road to Mistvale on Route 1
         if map_name == 'L_Town': pbx_dressing.town(save=False)
         if map_name == 'L_Route1': pbx_dressing.route1(save=False)
+        import pbx_realism; pbx_realism.level(save=False)   # physical sky / clouds / grade (2026-10-22)
         import pbx_validate; pbx_validate.run(map_name, fix=True)
     except Exception as ex: log('validate fix', ex)
 

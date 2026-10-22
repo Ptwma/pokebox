@@ -8,6 +8,7 @@ import unreal, math
 
 EAL = unreal.EditorAssetLibrary; EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 FVP = '/Game/Fantastic_Village_Pack/meshes/props/'
+PH = '/Game/PBX/PH/'
 _paths = {}
 
 def _find(name):
@@ -52,9 +53,12 @@ def route1(save=True):
           (FVP + 'vehicles/SM_PROP_cart_03', X - 120, -650, 25, ('w', 3.0)),
           (FVP + 'container/SM_PROP_barrel_01', X + 90, -620, 0, ('h', .9)), (FVP + 'container/SM_PROP_barrel_03', X + 60, -520, 0, ('h', .9)),
           (FVP + 'light/SM_PROP_lantern_01', X + 120, 470, 0, ('h', .45), -0.0, None),
-          ('SM_RockLarge_01', X - 650, -250, 30, ('h', 3.2), 60), ('SM_RockLarge_02', X - 700, 380, -40, ('h', 3.6), 60),
-          ('SM_RockMedium_01', X - 380, 60, 10, ('h', 1.6), 20), ('SM_RockMedium_02', X - 420, -520, 80, ('h', 1.4), 20),
-          ('SM_Pebbles_Dense_Stone', X - 300, 0, 0, ('w', 6.0)), ('SM_Cliff_03', X - 1300, 0, 90, ('h', 9.0), 150)]
+          (PH + 'rock_moss_set_01/rock_moss_set_01_2k/StaticMeshes/rock_moss_set_01_rock01', X - 650, -250, 30, ('h', 3.2), 60),
+          (PH + 'rock_moss_set_01/rock_moss_set_01_2k/StaticMeshes/rock_moss_set_01_rock04', X - 700, 380, -40, ('h', 3.6), 60),
+          (PH + 'rock_moss_set_02/rock_moss_set_02_2k/StaticMeshes/rock_moss_set_02_rock11', X - 380, 60, 10, ('h', 1.6), 20),
+          (PH + 'boulder_01/boulder_01_2k/StaticMeshes/boulder_01_2k', X - 420, -520, 80, ('h', 1.4), 20),
+          (PH + 'rock_moss_set_02/rock_moss_set_02_2k/StaticMeshes/rock_moss_set_02_rock08', X - 300, 0, 0, ('h', .6), 10),
+          (PH + 'namaqualand_cliff_02/namaqualand_cliff_02_2k/StaticMeshes/namaqualand_cliff_02_2k', X - 1300, 0, 90, ('h', 9.0), 150)]   # landslide: Poly Haven scans
     n = 0
     for i, spec in enumerate(L):
         if _put(i, *spec): n += 1
@@ -71,28 +75,23 @@ def town(save=True):
         if m and 'Tunnel' in m.get_name(): portal = a; break
     n = 0
     if portal:
-        o, ext = portal.get_actor_bounds(False); yaw = portal.get_actor_rotation().yaw
-        fx, fy = math.cos(math.radians(yaw - 90)), math.sin(math.radians(yaw - 90))      # towards the town
-        rx, ry = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
-        front = 0.45 * max(ext.x, ext.y)
-        spots = [(-1, 0.55, 0), (1, 0.55, 0), (-1, 0.95, 0.2), (1, 0.95, 0.2), (0, 0.0, 1.0)]
-        for i, (side, out_k, up) in enumerate(spots):
-            if side == 0: x, y = o.x + fx * front * .3, o.y + fy * front * .3; h = 8.0
-            else: x, y = o.x + rx * side * (ext.x * out_k + 350) + fx * front * .2, o.y + ry * side * (ext.x * out_k + 350) + fy * front * .2; h = 14.0 + 4 * up
-            a = _put(i, 'SM_Cliff_0%d' % (i % 8 + 1), x, y, yaw + (0 if side <= 0 else 180) + 15 * i, ('h', h), 200, None if side else o.z + ext.z * .55)
-            if a: n += 1
-        for i, (dx, s_) in enumerate(((-900, 2.2), (950, 1.8), (-600, 1.2), (700, 1.4))):
-            if _put(10 + i, 'SM_RockLarge_0%d' % (1 + i % 2), o.x + rx * dx + fx * front, o.y + ry * dx + fy * front, 37 * i, ('h', s_), 30): n += 1
+        o, ext = portal.get_actor_bounds(False)
+        fy = o.y - ext.y              # the face towards the town (-Y); the arch (5.6 m wide, 7.4 m high) sits at x = o.x
+        gz = o.z - ext.z               # foot of the portal
+        # realistic pass (2026-10-22): Poly Haven photo-scanned cliffs / boulders instead of the painted Dreamscape ones
+        MS = PH + 'mountainside/mountainside_2k/StaticMeshes/mountainside_2k'; NC = PH + 'namaqualand_cliff_02/namaqualand_cliff_02_2k/StaticMeshes/namaqualand_cliff_02_2k'
+        R1 = PH + 'rock_moss_set_01/rock_moss_set_01_2k/StaticMeshes/rock_moss_set_01_rock0%d'; BO = PH + 'boulder_01/boulder_01_2k/StaticMeshes/boulder_01_2k'
+        L = [(MS, o.x - 1250, fy - 120, 180, ('h', 17.0), 250, gz), (MS, o.x + 1250, fy - 120, 0, ('h', 17.0), 250, gz),
+             (NC, o.x - 2300, fy - 40, 175, ('h', 19.0), 250, gz), (NC, o.x + 2300, fy - 40, 5, ('h', 19.0), 250, gz),
+             (NC, o.x, fy - 90, 180, ('h', 10.0), 0, gz + 800),            # above the arch: bottom at 8 m (arch top 7.4 m)
+             (MS, o.x - 1100, fy - 160, 200, ('h', 13.0), 0, gz + 760), (MS, o.x + 1100, fy - 160, -20, ('h', 13.0), 0, gz + 760),
+             (R1 % 1, o.x - 560, fy - 260, 30, ('h', 2.2), 30, None), (R1 % 4, o.x + 560, fy - 240, -50, ('h', 2.0), 30, None),
+             (BO, o.x - 860, fy - 420, 70, ('h', 1.3), 15, None), (R1 % 6, o.x + 800, fy - 380, 0, ('h', 1.2), 15, None)]
+        for i, (mesh, x, y, yaw, size, sink, z) in enumerate(L):
+            if _put(i, mesh, x, y, yaw, size, sink, z): n += 1
         print('[drs] tunnel portal dressed', n)
     else: print('[drs] tunnel portal not found')
-    # plaza flagstones: ~1.5 m flags read like giant tiles -> tile the stone layer 3x smaller on every ground instance
-    for p in EAL.list_assets('/Game/PBX/Materials', recursive=True):
-        mi = EAL.load_asset(p.split('.')[0])
-        if isinstance(mi, unreal.MaterialInstanceConstant) and mi.get_editor_property('parent') and 'Ground' in mi.get_editor_property('parent').get_name():
-            cur = unreal.MaterialEditingLibrary.get_material_instance_scalar_parameter_value(mi, 'StoneUV')
-            if cur and cur < 6.0:
-                unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(mi, 'StoneUV', cur * 3.0)
-                EAL.save_loaded_asset(mi); print('[drs] StoneUV', mi.get_name(), cur, '->', cur * 3.0)
+    # (the stylized-era flagstone re-tiling was removed in the realistic pass: pbx_realism.GROUND_UV owns the tiling now)
     if save: unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
 
 VIEWS_R1 = [('drs_mistvale', (-32200, 0, 260), (-33800, 0, 150))]
