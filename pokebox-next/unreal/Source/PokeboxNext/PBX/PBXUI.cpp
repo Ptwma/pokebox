@@ -219,8 +219,9 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			// letterbox bars: cinematic frame while the battle runs
 			+ SOverlay::Slot().VAlign(VAlign_Top)[SNew(SBox).HeightOverride(54)[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, .85f))]]
 			+ SOverlay::Slot().VAlign(VAlign_Bottom)[SNew(SBox).HeightOverride(54)[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, .85f))]]
-			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(48, 78)[MakePlate(1)]
-			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(48, 78)[MakePlate(0)]
+			// Gen 1-3 layout: each HP plate sits opposite its creature -> foe (upper right) plate top-left, yours (lower left) on the right above the moves
+			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(48, 78)[MakePlate(1)]
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(48, 0, 48, 400)[MakePlate(0)]
 			// battle log: slim dark strip under the top bar
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 66)
 			[

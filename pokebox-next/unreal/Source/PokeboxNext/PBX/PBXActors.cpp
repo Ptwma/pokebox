@@ -16,6 +16,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "AIController.h"
+#include "Dom/JsonObject.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 int32 GPBXMissingAssets = 0;
 
@@ -240,7 +245,35 @@ bool APBXEcho::Setup(FName Card, float Height)
 	if (!M || !Mat || !Tex) { GPBXMissingAssets++; UE_LOG(LogTemp, Error, TEXT("[PBX] echo assets missing for %s (mesh %d mat %d tex %d)"), *Card.ToString(), M != nullptr, Mat != nullptr, Tex != nullptr); }
 	if (M) Paper->SetStaticMesh(M);
 	if (Mat) { MID = UMaterialInstanceDynamic::Create(Mat, this); if (Tex) MID->SetTextureParameterValue(TEXT("Tex"), Tex); Paper->SetMaterial(0, MID); }
-	Paper->SetRelativeScale3D(FVector(Height / 100.f));
+	// visible-art normalisation (council S9): cut-outs have transparent margins of every size, so a wide Rattata read small
+	// and birds floated above their battle base. Content/PBX/Data/echo_bounds.json holds each cut-out's opaque box
+	// (u0, v0, u1, v1; v from the top) -> scale the art so its visible size matches Height and put its lowest pixel on the ground.
+	static TMap<FName, FVector4> Bounds; static bool bLoaded = false;
+	if (!bLoaded)
+	{
+		bLoaded = true; FString Txt;
+		if (FFileHelper::LoadFileToString(Txt, *(FPaths::ProjectContentDir() / TEXT("PBX/Data/echo_bounds.json"))))
+		{
+			TSharedPtr<FJsonObject> J; const TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(Txt);
+			if (FJsonSerializer::Deserialize(R, J) && J.IsValid())
+				for (const auto& KV : J->Values)
+				{
+					const TArray<TSharedPtr<FJsonValue>>* A = nullptr;
+					if (KV.Value->TryGetArray(A) && A->Num() == 4) Bounds.Add(FName(KV.Key), FVector4((*A)[0]->AsNumber(), (*A)[1]->AsNumber(), (*A)[2]->AsNumber(), (*A)[3]->AsNumber()));
+				}
+		}
+	}
+	float S = Height / 100.f; float Lift = 0.f;
+	if (const FVector4* B = Bounds.Find(Card); B && M)
+	{
+		const FBox MB = M->GetBoundingBox(); const FVector E = MB.GetSize();
+		const float MeshH = E.Z, MeshW = FMath::Max(E.X, E.Y);
+		const float VisH = FMath::Max(.05f, float(B->W - B->Y)) * MeshH, VisW = FMath::Max(.05f, float(B->Z - B->X)) * MeshW;
+		S = .75f * Height / FMath::Max(VisH, .85f * VisW);   // .75 = a typical cut-out fills ~3/4 of its card: overall sizes stay as before
+		Lift = -(MB.Min.Z + (1.f - float(B->W)) * MeshH) * S;     // the lowest opaque pixel touches the ground
+	}
+	Paper->SetRelativeScale3D(FVector(S));
+	Paper->SetRelativeLocation(FVector(0, 0, Lift));
 	return M && Mat && Tex;
 }
 
@@ -320,8 +353,14 @@ void APBXEcho::Tick(float Dt)
 	PopT = FMath::Min(1.f, PopT + Dt / .4f);
 	const float Pop = PopT >= 1.f ? 1.f : FMath::Sin(PopT * PI * .5f) * (1.f + .25f * FMath::Sin(PopT * PI));
 	FaintK = FMath::FInterpTo(FaintK, bFaint ? 1.f : 0.f, Dt, 5.f);
+	// paper reactions (council S9): a hit tips the card back like a flicked postcard; fainting drops it flat on its back;
+	// a send-out slides it in from the side with a quarter spin
+	float Tip = 0.f;
+	if (HurtT >= 0.f) Tip = -24.f * FMath::Sin(FMath::Clamp(HurtT / .35f, 0.f, 1.f) * PI);
+	const float Spin = PopT < 1.f ? (1.f - PopT) * 90.f : 0.f;
+	if (PopT < 1.f) Off += FRotator(0, CurYaw + 90.f, 0).Vector() * (1.f - PopT) * 140.f;
 	Pivot->SetRelativeLocation(Off);
-	Pivot->SetWorldRotation(FRotator(0, CurYaw, FaintK * 82.f));
+	Pivot->SetWorldRotation(FRotator(Tip - FaintK * 80.f, CurYaw + Spin, 0.f));
 	Pivot->SetRelativeScale3D(FVector(Pop, Pop, Pop * Breath * (1.f - .06f * Moving * FMath::Abs(FMath::Cos(HopT * 1.6f)))));
 	if (MID)
 	{

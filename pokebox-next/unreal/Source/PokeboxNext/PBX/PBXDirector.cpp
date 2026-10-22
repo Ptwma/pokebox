@@ -2084,7 +2084,7 @@ void APBXDirector::AutoTick(float Dt)
 			if (Best) { TeleportPlayer(Best->GetActorLocation() + FVector(60, 0, 0), 180.f); AutoNext(); }
 		} break;
 	case 113: if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("30_wild_meadow")); AutoNext(); } else if (AutoStepT > 6.f) { AutoStep = 112; AutoStepT = 0.f; } break;
-	case 114: if (!Bt.bActive && Idle() && AutoStepT > 1.f) { AutoNext(); } break;
+	case 114: if (!Bt.bActive && Idle() && AutoStepT > 1.f) { AutoStep = 130; AutoStepT = 0.f; } break;   // -> Wes and Mira, then the beauty pass
 	case 115: if (!BeautyPass(Dt)) break;
 		{ const FPBXExit* E = Exits.FindByPredicate([](const FPBXExit& X) { return X.ToMap.IsEmpty(); }); if (!E) { Fail(TEXT("no end exit")); break; }
 		if (Idle()) { TeleportPlayer(E->Pos + FVector(1200, 0, 0), 180.f); AutoNext(); } } break;
@@ -2103,6 +2103,30 @@ void APBXDirector::AutoTick(float Dt)
 		AutoNext(); break;
 	}
 	case 119: if (AutoStepT > 3.f) { Shot(TEXT("33_rest_stop_day")); AutoNext(); } break;
+	// ---------------- the other two Route 1 trainers (S9): walk into their sight line, fight, check they count as beaten
+	case 130: case 133:
+		{
+			static const TCHAR* Who[] = { TEXT("wes"), TEXT("mira") };
+			const int32 k = AutoStep == 130 ? 0 : 1;
+			if (!(Idle() && AutoStepT > 1.f)) break;
+			Game->HealAll(); if (Partner) Partner->SetFaint(false);
+			APBXNPC* N = NPCs.FindRef(FName(Who[k]));
+			if (!N) { Fail(*FString::Printf(TEXT("no trainer %s"), Who[k])); AutoStep = AutoStep == 130 ? 133 : 115; break; }
+			TeleportPlayer(N->Home + FRotator(0, N->HomeYaw, 0).Vector() * 520.f, N->HomeYaw + 180.f); AutoNext();
+		} break;
+	case 131: case 134:
+		if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(AutoStep == 131 ? TEXT("25c_trainer_wes") : TEXT("25d_trainer_mira")); AutoNext(); }
+		else if (AutoStepT > 20.f) { Fail(AutoStep == 131 ? TEXT("Wes never spotted the player") : TEXT("Mira never spotted the player")); AutoStep = AutoStep == 131 ? 133 : 115; AutoStepT = 0.f; }
+		break;
+	case 132: case 135:
+		if (!Bt.bActive && Idle() && AutoStepT > 1.f)
+		{
+			const TCHAR* W = AutoStep == 132 ? TEXT("wes") : TEXT("mira");
+			const bool bBeat = Game->State->Beaten.Contains(FName(W));
+			PBXLOG("[PBXAUTO] %s %s", W, bBeat ? TEXT("beaten") : TEXT("NOT beaten (lost)"));
+			if (!bBeat) Fail(*FString::Printf(TEXT("%s not beaten"), W));
+			AutoStep = AutoStep == 132 ? 133 : 115; AutoStepT = 0.f;
+		} break;
 	case 120: if (AutoStepT > 2.f) { PBXLOG("[PBXAUTO] %s — %d screenshots", bAutoFail ? TEXT("DONE WITH FAILURES") : TEXT("PASS"), AutoShots); AutoNext(); } break;
 	case 121: if (AutoStepT > 2.f) { FPlatformMisc::RequestExit(false); AutoNext(); } break;
 	default: break;
