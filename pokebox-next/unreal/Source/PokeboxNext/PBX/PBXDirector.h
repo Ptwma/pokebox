@@ -123,6 +123,15 @@ private:
 	bool bBoating = false; FVector2D BoatXY = FVector2D::ZeroVector; float BoatYaw = 0.f, BoatSpeed = 0.f, BoatTurn = 0.f, BoatZOff = 0.f, BoatT = 0.f;
 	FVector2D BoatInput = FVector2D::ZeroVector; TArray<TObjectPtr<AActor>> BoatIgnore;
 	void BoardBoat(); void LeaveBoat(int32 Dock); void TickBoat(float Dt); float WaveZ(const FVector2D& XY, float T) const; float BoatGroundZ(const FVector2D& XY) const;
+	// ---- the living harbour (2026-10-23 b): windmill sails turning in the wind, boats riding the swell (moored in the
+	// harbour / anchored out in the bay / one sailing a loop round the bay), their crews attached on board
+	struct FSail { TWeakObjectPtr<USceneComponent> C; float Rate = 25.f; };
+	TArray<FSail> Sails;
+	struct FSeaBoat { TWeakObjectPtr<AActor> A; int32 Mode = 0; FVector2D XY = FVector2D::ZeroVector, C = FVector2D::ZeroVector; float Yaw = 0.f, Z0 = 0.f, Phase = 0.f, Rx = 0.f, Ry = 0.f, Period = 300.f, Len = 400.f, Beam = 150.f; };
+	TArray<FSeaBoat> SeaBoats;
+	void SetupLife(); void TickLife(float Dt);
+	/** the bay is calmer near the shore (the same factor scales the sea material's swell) */
+	static float ShoreDamp(const FVector2D& XY);
 	EKind NearKind = EKind::None; int32 NearIndex = -1; FName NearNPC;
 	void FindNearest();
 	void Interact();

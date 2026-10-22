@@ -630,6 +630,14 @@ def _seat_building(world, a):
         L = a.get_actor_location(); a.set_actor_location(unreal.Vector(L.x, L.y, L.z - drop), False, False)
         log('seated', a.get_actor_label() or a.get_name(), 'down %.0f cm' % drop)
 
+def _put_pier(world, o):
+    """a Poly Haven pier section (authored in place: the plan already shifted it so the copies chain), turned with yaw_ue"""
+    sm = _mesh(o['mesh'])
+    if not sm: log('missing pier mesh', o['mesh']); return None
+    a = EAS.spawn_actor_from_object(sm, unreal.Vector(o['x'] * 100, -o['y'] * 100, o['z'] * 100), unreal.Rotator(0, 0, o.get('yaw_ue', 0.0)))
+    a.set_folder_path('Town/Harbour')
+    return a
+
 def build_level(map_name='L_Town', plan_file='town_plan.json'):
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     path = G + '/Maps/' + map_name
@@ -690,7 +698,12 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
             b = sm.get_bounding_box(); e = b.max - b.min
             size = e.z if h else max(e.x, e.y)
             scale = ((h or w) * 100.0) / max(size, 1e-3)
-        a = EAS.spawn_actor_from_object(sm, unreal.Vector(x * 100, -y * 100, z * 100 if z_cm is None else z_cm), unreal.Rotator(0, 0, -rot))
+        px, py = x * 100, -y * 100
+        if '/PBX/PH/' in mesh:      # Poly Haven sets share one pivot for all their pieces: put the piece's own footprint on the spot
+            b = sm.get_bounding_box(); cx, cy = (b.min.x + b.max.x) / 2 * scale, (b.min.y + b.max.y) / 2 * scale
+            if math.hypot(cx, cy) > 30:
+                r = math.radians(-rot); px -= cx * math.cos(r) - cy * math.sin(r); py -= cx * math.sin(r) + cy * math.cos(r)
+        a = EAS.spawn_actor_from_object(sm, unreal.Vector(px, py, z * 100 if z_cm is None else z_cm), unreal.Rotator(0, 0, -rot))
         a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
         if label: a.set_actor_label(label)
         classify(a, mesh)
@@ -709,7 +722,7 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
         sp(c, cast_shadow=False)
     snaps = {}; n_snap = 0
     for i, o in enumerate(plan['objects']):
-        if not o.get('snap') or '/blueprints/' in o['mesh']: continue
+        if not o.get('snap') or o.get('inst') or '/blueprints/' in o['mesh']: continue
         sm = _mesh(o['mesh'])
         if not sm: continue
         z = _snap_z(world, sm, o, obj_scale(o, sm))
@@ -717,9 +730,31 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
     log('snapped to terrain', n_snap)
     w = plan.get('water')
     if w: put('SM_Water', w['x'], w['y'], w['z'], label='Sea')
+    inst = {}
     for i, o in enumerate(plan['objects']):
+        if o.get('inst'):          # forests / meadow grass: hierarchical instances (2026-10-23 b), one component per mesh
+            sm = _mesh(o['mesh'])
+            if not sm:
+                if o['mesh'] not in missing: log('missing mesh', o['mesh']); missing.add(o['mesh'])
+                continue
+            sc = obj_scale(o, sm); b = sm.get_bounding_box()
+            cx, cy = (b.min.x + b.max.x) / 2 * sc, (b.min.y + b.max.y) / 2 * sc; r = math.radians(-o['rot'])
+            ox, oy = cx * math.cos(r) - cy * math.sin(r), cx * math.sin(r) + cy * math.cos(r)     # pivot -> footprint centre, base on the ground
+            inst.setdefault(o['mesh'], (sm, []))[1].append(unreal.Transform(unreal.Vector(o['x'] * 100 - ox, -o['y'] * 100 - oy, o['z'] * 100 - b.min.z * sc),
+                                                                            unreal.Rotator(0, 0, -o['rot']), unreal.Vector(sc, sc, sc)))
+            continue
+        if o.get('pier'):
+            a = _put_pier(world, o)
+            continue
         a = put(o['mesh'], o['x'], o['y'], o['z'], o['rot'], o['s'] * KIT_SCALE.get(o['mesh'], 1.0), h=o.get('h'), w=o.get('w'), z_cm=snaps.get(i))
         if a and o.get('tag'): a.tags = [unreal.Name(o['tag'])]
+    if inst:
+        host = _spawn_cls(unreal.Actor, (0, 0, 0), label='Instances'); host.set_folder_path('Town/Nature')
+        n_i = 0
+        for mesh, (sm, xf) in inst.items():
+            grass = any(k in mesh.lower() for k in ('grass', 'flower', 'dandelion', 'celandine', 'shrub', 'fern', 'moss'))
+            n_i += unreal.PBXEditorLib.add_instances(host, sm, xf, 4500.0 if grass else 170000.0, 6500.0 if grass else 190000.0, False, not grass)
+        log('instances', n_i, 'in', len(inst), 'meshes')
     # interiors: warm ceiling lights + a cool 'window daylight' fill
     for r in plan.get('rooms', []):
         cx, cy, cz = r['c']; W, D, H = r['W'], r['D'], r['H']

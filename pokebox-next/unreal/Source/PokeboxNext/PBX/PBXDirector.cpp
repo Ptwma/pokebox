@@ -215,6 +215,7 @@ void APBXDirector::SpawnWorld()
 			if (SMC->GetStaticMesh() && (SMC->GetStaticMesh()->GetName() == TEXT("SM_Water") || SMC->GetStaticMesh()->GetName() == TEXT("SM_River"))) BoatIgnore.Add(*It);
 		for (FPBXItem& I : Items) if (It->ActorHasTag(FName(*(TEXT("PBX_Item_") + I.Id)))) { I.Actor = *It; It->GetRootComponent()->SetMobility(EComponentMobility::Movable); }
 	}
+	SetupLife();
 	SpawnNPCs();
 	// readable signs (comic lettering on both faces of the board)
 	for (int32 i = 0; i < Signs.Num(); i++)
@@ -274,6 +275,20 @@ void APBXDirector::SpawnNPCs()
 		N->ApplyLook(O->GetStringField(TEXT("body")), O->GetStringField(TEXT("hair")), Scale, Outfit, HairC);
 		N->IdleAnim = O->GetStringField(TEXT("anim")); N->Home = N->GetActorLocation(); N->HomeYaw = Yaw;
 		N->ReturnToIdle();
+		FString BoatTag;
+		if (O->TryGetStringField(TEXT("boat"), BoatTag))     // crew: rides along on its boat
+		{
+			AActor* B = nullptr;
+			for (TActorIterator<AActor> It(W); It && !B; ++It) if (It->ActorHasTag(FName(*BoatTag))) B = *It;
+			if (B)
+			{
+				double SY = 0.0; O->TryGetNumberField(TEXT("seat_yaw"), SY);
+				N->GetCharacterMovement()->StopMovementImmediately(); N->GetCharacterMovement()->SetMovementMode(MOVE_None);
+				N->SetActorEnableCollision(false); N->StopTurning();
+				N->AttachToActor(B, FAttachmentTransformRules::KeepWorldTransform);
+				N->SetActorRelativeLocation(JVec(O, TEXT("seat"))); N->SetActorRelativeRotation(FRotator(0, SY, 0));
+			}
+		}
 		NPCs.Add(N->Id, N);
 		const TSharedPtr<FJsonObject>* TO = nullptr;
 		if (O->TryGetObjectField(TEXT("trainer"), TO))
@@ -464,6 +479,7 @@ void APBXDirector::Tick(float Dt)
 	Super::Tick(Dt);
 	if (!UI.IsValid()) return;
 	TickTrain(Dt);
+	TickLife(Dt);
 	MusicHold = FMath::Max(0.f, MusicHold - Dt);
 	// indoors: a shorter, higher camera so the boom never presses the lens against the small rooms' walls (council S4)
 	if (Player && Player->Boom)
@@ -2292,6 +2308,12 @@ bool APBXDirector::InExtra(const FVector& Q) const
 // =================================================================== the rowboat (2026-10-23)
 // WAVES must match pbx_realism.WAVES (the sea material): (direction deg, wavelength m, amplitude m). Heights in cm.
 namespace PBXWaves { struct W { float Deg, Lam, Amp; }; static const W List[4] = { { 84.f, 23.f, .20f }, { 101.f, 13.5f, .11f }, { 70.f, 7.8f, .055f }, { 115.f, 4.6f, .025f } }; }
+float APBXDirector::ShoreDamp(const FVector2D& XY)
+{
+	const float Bx = XY.X / 100.f, By = -XY.Y / 100.f;            // Blender metres (south = +)
+	const float Dc = By - (45.f + FMath::Max(0.f, FMath::Abs(Bx) - 110.f) * .55f);
+	return FMath::Lerp(.25f, 1.f, FMath::SmoothStep(5.f, 150.f, Dc));
+}
 float APBXDirector::WaveZ(const FVector2D& XY, float T) const
 {
 	const FVector2D Q = XY / 100.f; float Z = 0.f;
@@ -2301,7 +2323,7 @@ float APBXDirector::WaveZ(const FVector2D& XY, float T) const
 		const FVector2D D(FMath::Cos(A), FMath::Sin(A));
 		Z += W.Amp * FMath::Sin(K * (FVector2D::DotProduct(D, Q) - C * T));
 	}
-	return -120.f + Z * 100.f;
+	return -120.f + Z * 100.f * ShoreDamp(XY);
 }
 float APBXDirector::BoatGroundZ(const FVector2D& XY) const
 {
@@ -2371,4 +2393,79 @@ void APBXDirector::TickBoat(float Dt)
 	// near a dock?
 	NearKind = EKind::None; NearIndex = -1; float Best = 900.f;
 	for (int32 i = 0; i < Docks.Num(); i++) { const float D = FVector2D::Distance(BoatXY, FVector2D(Docks[i].Water.X, Docks[i].Water.Y)); if (D < Best) { Best = D; NearKind = EKind::Dock; NearIndex = i; } }
+}
+
+// =================================================================== the living harbour (2026-10-23 b)
+void APBXDirector::SetupLife()
+{
+	Sails.Reset(); SeaBoats.Reset();
+	UWorld* W = GetWorld();
+	// windmill sails (Fantastic Village windmill: SM_BLD_windmill_sail, hub at its origin, turning about its local Y)
+	for (TActorIterator<AActor> It(W); It; ++It)
+	{
+		TArray<UStaticMeshComponent*> Cs; It->GetComponents<UStaticMeshComponent>(Cs);
+		for (UStaticMeshComponent* C : Cs)
+			if (C && C->GetStaticMesh() && C->GetStaticMesh()->GetName() == TEXT("SM_BLD_windmill_sail"))
+			{
+				C->SetMobility(EComponentMobility::Movable);
+				FSail S; S.C = C; S.Rate = FMath::FRandRange(22.f, 34.f); Sails.Add(S);
+			}
+	}
+	// boats on the water: the plan tags them; the map data says how each one moves
+	const TArray<TSharedPtr<FJsonValue>>* SB = nullptr;
+	if (!Data.IsValid() || !Data->TryGetArrayField(TEXT("sea_boats"), SB)) return;
+	for (const TSharedPtr<FJsonValue>& V : *SB)
+	{
+		const TSharedPtr<FJsonObject> O = V->AsObject(); const FName Tag(*O->GetStringField(TEXT("tag")));
+		AActor* A = nullptr;
+		for (TActorIterator<AActor> It(W); It && !A; ++It) if (It->ActorHasTag(Tag)) A = *It;
+		if (!A) { PBXLOG("[PBX] sea boat %s not in the level", *Tag.ToString()); continue; }
+		A->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+		FSeaBoat B; B.A = A; const FString M = O->GetStringField(TEXT("mode"));
+		B.Mode = M == TEXT("sail") ? 2 : (M == TEXT("anchored") ? 1 : 0);
+		const FVector L = A->GetActorLocation(); B.XY = FVector2D(L.X, L.Y); B.Yaw = A->GetActorRotation().Yaw; B.Z0 = L.Z + 120.f;
+		B.Phase = FMath::FRandRange(0.f, 6.28f);
+		const FBox Bx = A->GetComponentsBoundingBox(); B.Len = FMath::Max(200.f, (Bx.Max - Bx.Min).GetMax() * .8f); B.Beam = B.Len * .3f;
+		if (B.Mode == 2)
+		{
+			const FVector Cc = JVec(O, TEXT("center")); B.C = FVector2D(Cc.X, Cc.Y);
+			B.Rx = O->GetNumberField(TEXT("rx")); B.Ry = O->GetNumberField(TEXT("ry")); B.Period = O->GetNumberField(TEXT("period"));
+		}
+		if (A == Boat) { BoatXY = B.XY; BoatYaw = B.Yaw; }
+		SeaBoats.Add(B);
+	}
+	PBXLOG("[PBX] life: %d windmill sails, %d boats", Sails.Num(), SeaBoats.Num());
+}
+
+void APBXDirector::TickLife(float Dt)
+{
+	const float T = GetWorld()->GetTimeSeconds();
+	// gusty wind: all mills share it, each at its own speed
+	const float Gust = 1.f + .18f * FMath::Sin(T * .21f) + .08f * FMath::Sin(T * .77f + 1.3f);
+	for (FSail& S : Sails) if (USceneComponent* C = S.C.Get())
+		C->AddLocalRotation(FQuat(FVector::YAxisVector, FMath::DegreesToRadians(S.Rate * Gust * Dt)));
+	for (FSeaBoat& B : SeaBoats)
+	{
+		AActor* A = B.A.Get(); if (!A || (bBoating && A == Boat)) continue;
+		FVector2D P = B.XY; float Yaw = B.Yaw, Heel = 0.f;
+		if (A == Boat) { P = BoatXY; Yaw = BoatYaw; }                                             // your rowboat: wherever you left it
+		if (B.Mode == 0) Yaw += 1.6f * FMath::Sin(T * .23f + B.Phase);                          // moored: tugging at its lines
+		else if (B.Mode == 1)                                                                      // at anchor: swinging round slowly
+		{
+			Yaw += 9.f * FMath::Sin(T * .05f + B.Phase);
+			P += FVector2D(FMath::Cos(T * .05f + B.Phase), FMath::Sin(T * .037f + B.Phase)) * 60.f;
+		}
+		else                                                                                       // sailing a loop round the bay
+		{
+			const float Wv = 2.f * PI / FMath::Max(30.f, B.Period), Ang = T * Wv + B.Phase;
+			P = B.C + FVector2D(B.Rx * FMath::Cos(Ang), B.Ry * FMath::Sin(Ang));
+			const FVector2D Vel(-B.Rx * FMath::Sin(Ang), B.Ry * FMath::Cos(Ang));
+			Yaw = FMath::RadiansToDegrees(FMath::Atan2(Vel.Y, Vel.X)); Heel = 9.f + 3.f * FMath::Sin(T * .4f);
+		}
+		const FVector2D F(FMath::Cos(FMath::DegreesToRadians(Yaw)), FMath::Sin(FMath::DegreesToRadians(Yaw))), Rt(-F.Y, F.X);
+		const float H = B.Len * .45f, Wd = B.Beam * .5f;
+		const float Zb = WaveZ(P + F * H, T), Zs = WaveZ(P - F * H, T), Zp = WaveZ(P - Rt * Wd, T), Zr = WaveZ(P + Rt * Wd, T), Zc = WaveZ(P, T);
+		const float Pitch = FMath::RadiansToDegrees(FMath::Atan2(Zb - Zs, 2.f * H)), Roll = FMath::RadiansToDegrees(FMath::Atan2(Zr - Zp, 2.f * Wd)) + Heel;
+		A->SetActorLocationAndRotation(FVector(P.X, P.Y, (Zb + Zs + Zc) / 3.f + B.Z0), FRotator(Pitch, Yaw, Roll));
+	}
 }

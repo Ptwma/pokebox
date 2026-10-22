@@ -62,7 +62,7 @@ def import_models(names=None):
                 try:
                     ns = a.get_editor_property('nanite_settings'); ns.set_editor_property('enabled', True); a.set_editor_property('nanite_settings', ns)
                 except Exception as ex: log('nanite', name, ex)
-                plant = any(k in a.get_name() for k in ('grass', 'dandelion', 'celandine', 'fern', 'shrub'))
+                plant = any(k in a.get_name() for k in ('grass', 'dandelion', 'celandine', 'fern', 'shrub', 'fir_', 'pine_', 'sapling', 'moss', 'tree'))
                 bs = a.get_editor_property('body_setup')
                 if bs: bs.set_editor_property('collision_trace_flag', unreal.CollisionTraceFlag.CTF_USE_DEFAULT if plant else unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
                 EAL.save_loaded_asset(a)
@@ -104,7 +104,7 @@ float rockW = smoothstep(RockA, RockB, slope + (m2 - 0.5) * 0.18);
 float alpine = smoothstep(AlpineZ - 12.0, AlpineZ + 12.0, p.z + nz);
 float snowW = smoothstep(SnowZ, SnowZ + 14.0, p.z + nz) * (1.0 - smoothstep(0.72, 0.93, slope + (m2 - 0.5) * 0.25));
 // near the village the meadow uses the same leafy-grass scan + tint as the town ground (no seam where they meet)
-float nearW = 1.0 - smoothstep(170.0, 430.0, length(p.xy - float2(0.0, 10.0)));
+float nearW = max(1.0 - smoothstep(170.0, 430.0, length(p.xy - float2(0.0, 10.0))), VC.g);   // VC.g: meadow (the island)
 float3 gn = Texture2DSample(Near, NearSampler, p.xy / 25.0).rgb * NearTint;
 g = lerp(g * GrassTint, gn, nearW);
 float3 col = lerp(g, r * RockTint, saturate(max(rockW, alpine * 0.85)));
@@ -168,6 +168,9 @@ WAVES = [(84.0, 23.0, .20), (101.0, 13.5, .11), (70.0, 7.8, .055), (115.0, 4.6, 
 GERSTNER = r"""
 float3 o = 0; float2 sl = 0;
 float2 q = WP.xy / 100.0;
+// calmer water near the shore (APBXDirector::ShoreDamp must match)
+float dcst = -q.y - (45.0 + max(0.0, abs(q.x) - 110.0) * 0.55);
+Amp *= lerp(0.25, 1.0, smoothstep(5.0, 150.0, dcst));
 WAVEBODY
 return Mode > 0.5 ? normalize(float3(-sl.x, -sl.y, 1.0)) : o * 100.0;
 """
@@ -271,7 +274,7 @@ float3 n = normalize(VN);
 float3 t = normalize(cross(float3(0, 0, 1), n) + float3(0.0001, 0, 0)); float3 bt = cross(n, t);
 float3 N = normalize(t * (a.y + b.y) * 0.5 + bt * (a.x + b.x) * 0.5 + n);
 float depth = max(0.0, SD - PD);
-float foam = saturate(steep * (0.45 + 0.4 * a.x) + (1.0 - smoothstep(2.0, 10.0, depth)) * 0.12);
+float foam = saturate(steep * (0.4 + 0.35 * a.x));    // white water only on the rapids (no bank outline)
 return Mode > 0.5 ? float3(foam, 0, 0) : N;
 """
     cn = []
@@ -293,6 +296,19 @@ return Mode > 0.5 ? float3(foam, 0, 0) : N;
     log('river instr', MEL.get_statistics(m).num_pixel_shader_instructions)
     return m
 
+# harbour craft from tools/blender_town.py (2026-10-23 b) and their Poly Haven surfaces (painted / weathered planks, rubble)
+CRAFT = ['SM_Rowboat', 'SM_RowboatB', 'SM_FishingBoat', 'SM_Sailboat', 'SM_BreakwaterW', 'SM_BreakwaterE', 'SM_StreamBridge']
+BOAT_MATS = {'MI_BoatWhite': ('distressed_painted_planks', .5, (1, 1, 1)), 'MI_BoatBlue': ('blue_painted_planks', .5, (1, 1, 1)),
+             'MI_BoatGreen': ('green_rough_planks', .5, (1, 1, 1)), 'MI_BoatWood': ('weathered_planks', .5, (1, 1, 1)),
+             'MI_BoatPeel': ('wood_peeling_paint_weathered', .5, (1, 1, 1)), 'MI_BoatRed': ('distressed_painted_planks', .5, (.85, .22, .18)),
+             'MI_HarbourStone': ('rubble', .35, (1, 1, 1)), 'MI_Quay': ('concrete_moss', .4, (1, 1, 1))}
+def boat_materials():
+    parent = unreal.load_asset(G + '/Materials/M_PBX_Surface')
+    if not parent: log('no M_PBX_Surface'); return
+    for name, (tex, uv, tint) in BOAT_MATS.items():
+        if not unreal.load_asset(f'{TEX}/PH_{tex}_diff'): log('boat texture missing', tex); continue
+        B._mi(name, parent, {'UVScale': uv}, {'Tint': (*tint, 1)}, {k: f'{TEX}/PH_{tex}{suf}' for k, suf in (('BaseTex', '_diff'), ('NormalTex', '_nor'), ('ArmTex', '_arm'))})
+
 def water_inputs():
     """the ripple normal map (tools/water_normal.py) + the sea / river meshes"""
     B._import([os.path.join(SRC, 'tex', 'T_WaterNormal.png')], G + '/Tex')
@@ -300,7 +316,7 @@ def water_inputs():
     if t:
         t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_NORMALMAP); t.set_editor_property('srgb', False)
         t.set_editor_property('flip_green_channel', True); EAL.save_loaded_asset(t)
-    B.import_meshes(only=['SM_Water', 'SM_River', 'SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'])
+    B.import_meshes(only=['SM_Water', 'SM_River', 'SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'] + CRAFT)
 
 def water_materials():
     sea = master_sea(); riv = master_river()
@@ -315,7 +331,8 @@ def water_materials():
         if bs: bs.set_editor_property('collision_trace_flag', unreal.CollisionTraceFlag.CTF_USE_DEFAULT)
         EAL.save_loaded_asset(sm)
     # meshes re-imported on their own (tunnel): each slot named M_X gets /Game/PBX/Materials/Inst/MI_X
-    for mesh in ('SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'):
+    boat_materials()
+    for mesh in ['SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'] + CRAFT:
         sm = unreal.load_asset(f'{G}/Meshes/{mesh}')
         if not sm: continue
         for i, sl in enumerate(sm.get_editor_property('static_materials')):

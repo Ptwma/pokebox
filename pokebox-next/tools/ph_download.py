@@ -8,9 +8,14 @@ ROOT = r"E:\GAME-APP-DEV\POKEMON\PokeboxNext_src\polyhaven"
 MODELS = ['rock_moss_set_01', 'rock_moss_set_02', 'boulder_01', 'mountainside', 'namaqualand_cliff_02', 'shrub_01', 'shrub_02',
           'shrub_04', 'grass_medium_01', 'grass_medium_02', 'fern_02', 'dandelion_01', 'celandine_01', 'tree_stump_01', 'stone_fire_pit',
           'Barrel_01', 'planter_box_01', 'painted_wooden_bench', 'outdoor_table_chair_set_01', 'wooden_crate_01', 'Lantern_01',
-          'wooden_bucket_01']
+          'wooden_bucket_01',
+          # 2026-10-23 b (approved): harbour, realistic forest, island shore
+          'modular_wooden_pier', 'fir_tree_01', 'fir_sapling_medium', 'coast_rocks_05', 'coast_land_rocks_04', 'lifebuoy', 'ocean_buoy',
+          'lateral_sea_marker', 'old_tyre', 'wooden_barrels_01', 'wooden_crate_02', 'grass_bermuda_01', 'moss_01', 'street_lamp_01']
 TEX = ['aerial_rocks_02', 'aerial_grass_rock', 'rock_face_03', 'snow_02', 'forest_ground_04', 'leafy_grass', 'stony_dirt_path',
-       'cobblestone_floor_01', 'plastered_wall_02', 'clay_roof_tiles_02', 'brown_planks_05', 'stacked_stone_wall', 'mossy_rock', 'cliff_side']
+       'cobblestone_floor_01', 'plastered_wall_02', 'clay_roof_tiles_02', 'brown_planks_05', 'stacked_stone_wall', 'mossy_rock', 'cliff_side',
+       # boats (painted / weathered planks), harbour arms
+       'blue_painted_planks', 'distressed_painted_planks', 'wood_peeling_paint_weathered', 'weathered_planks', 'green_rough_planks', 'rubble', 'concrete_moss']
 # Grindelwald (46.624 N, 8.034 E) — Eiger/Mönch/Wetterhorn ring. Terrarium tiles, zoom 12 (~38 m/px), 5x5 around the village.
 DEM_LAT, DEM_LON, DEM_Z, DEM_R = 46.624, 8.034, 12, 2
 UA = {'User-Agent': 'pokebox-dev (personal project)'}

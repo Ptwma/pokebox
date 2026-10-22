@@ -43,6 +43,7 @@ public:
 	void FaceTowards(const FVector& P, bool bInstant = false);
 	virtual void Tick(float Dt) override;
 	bool bMaleLook = true;
+	void StopTurning() { bTurning = false; }
 protected:
 	float TurnYaw = 0.f; bool bTurning = false;
 };
