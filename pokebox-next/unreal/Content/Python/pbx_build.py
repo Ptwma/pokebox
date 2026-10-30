@@ -551,7 +551,14 @@ def _base(name): return name.split('/')[-1]
 
 def _mesh(name):
     if name.startswith('/Game/'):   # Fab pack asset, full path
-        return unreal.load_asset(name) if EAL.does_asset_exist(name) else None
+        if EAL.does_asset_exist(name): return unreal.load_asset(name)
+        if '/PBX/PH/' in name:      # Poly Haven: Unreal may name a single-mesh model <asset>_2k or <node>_<part> -> best prefix match
+            folder, base = name.rsplit('/', 1)
+            cands = sorted(p.split('.')[0] for p in EAL.list_assets(folder, recursive=False) if p.split('/')[-1].split('.')[0].startswith(base))
+            for c in cands:
+                a = unreal.load_asset(c)
+                if isinstance(a, unreal.StaticMesh): return a
+        return None
     if '/' in name:   # kit mesh; Kenney keeps the hyphens of its file names, the plan uses underscores
         for cand in (name, name.split('/')[0] + '/' + name.split('/')[1].replace('_', '-')):
             p = f'{G}/Kits/{cand}'
@@ -737,11 +744,11 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
             if not sm:
                 if o['mesh'] not in missing: log('missing mesh', o['mesh']); missing.add(o['mesh'])
                 continue
-            sc = obj_scale(o, sm); b = sm.get_bounding_box()
-            cx, cy = (b.min.x + b.max.x) / 2 * sc, (b.min.y + b.max.y) / 2 * sc; r = math.radians(-o['rot'])
+            k_ = obj_scale(o, sm); b = sm.get_bounding_box()
+            cx, cy = (b.min.x + b.max.x) / 2 * k_, (b.min.y + b.max.y) / 2 * k_; r = math.radians(-o['rot'])
             ox, oy = cx * math.cos(r) - cy * math.sin(r), cx * math.sin(r) + cy * math.cos(r)     # pivot -> footprint centre, base on the ground
-            inst.setdefault(o['mesh'], (sm, []))[1].append(unreal.Transform(unreal.Vector(o['x'] * 100 - ox, -o['y'] * 100 - oy, o['z'] * 100 - b.min.z * sc),
-                                                                            unreal.Rotator(0, 0, -o['rot']), unreal.Vector(sc, sc, sc)))
+            inst.setdefault(o['mesh'], (sm, []))[1].append(unreal.Transform(unreal.Vector(o['x'] * 100 - ox, -o['y'] * 100 - oy, o['z'] * 100 - b.min.z * k_),
+                                                                            unreal.Rotator(0, 0, -o['rot']), unreal.Vector(k_, k_, k_)))
             continue
         if o.get('pier'):
             a = _put_pier(world, o)

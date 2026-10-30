@@ -804,6 +804,12 @@ def real_height_raw(x, y):
     z = height_raw(x, y) + (z - height_raw(x, y)) * b
     tb = tunnel_bump(x, y)                # after the blend: the portal sits 3 m outside the town square
     if tb > -50: z = max(z, min(height_raw(x, min(y, 40.0)), 16.0) + tb)
+    # right behind the headwall the hillside never climbs above its coping (11 m): the near-vertical face over the bore
+    # stays hidden inside the wall, and the slope rises gently from the wall's back (2026-10-30: it showed as a slot)
+    dy = TRACK_Y0 - y; a = abs(x - TRACK_X)
+    if a < 10.5 and -.05 < dy < 14.0:
+        cap = 11.0 + max(0.0, dy - 1.6) * 1.1 + max(0.0, a - 9.0) * 4.0
+        z = min(z, cap)
     return z
 
 _REST_Z = []
@@ -996,8 +1002,10 @@ def island_h(x, y):
     z = -18.0 + 18.0 * _ss(1.45, .98, rr) + 2.2 * _ss(.98, .86, rr) + 15.0 * _ss(.86, .42, rr) ** 1.3
     c = 1 - _ss(10, 42, math.hypot(x - ISLAND_JETTY[0], (y - ISLAND_JETTY[1]) * 1.3))      # the cove: a low beach at the jetty
     if z > .6: z = z * (1 - c) + .7 * c
-    if abs(x - ISLAND_PIER[0]) < 14 and ISLAND_PIER[1] - ISLAND_PIER[2] - 8 < y < ISLAND_PIER[1]:       # sandy shallows under the jetty
-        z = max(z, -2.9 + 2.9 * _ss(ISLAND_PIER[1] - ISLAND_PIER[2] + 2, ISLAND_PIER[1], y) * 0)
+    dxp = abs(x - ISLAND_PIER[0])                    # a dredged 2.8 m channel along the jetty and its approach (the cove is a shallow
+    if dxp < 16 and 1288 < y < 1344:                  # sand shelf: the rowboat ran aground 19 m short of the jetty)
+        k = _ss(16, 9, dxp) * _ss(1344, 1333, y)
+        z = z + (min(z, -2.8) - z) * k
     for (px_, py_, pr_) in ((LIGHTHOUSE[0], LIGHTHOUSE[1], 6.5), (COTTAGE_C[0], COTTAGE_C[1], 8.5)):   # levelled ground
         k = 1 - _ss(pr_, pr_ + 7, math.hypot(x - px_, y - py_))
         if k > 0: z = z * (1 - k) + _island_raw(px_, py_) * k
@@ -1456,13 +1464,16 @@ def gameplay_data():
                    'paths': [{'pts': [_ue(x, y, 0)[:2] for (x, y) in TRAIL], 'w': 400.0},
                              {'pts': [_ue(x, y, 0)[:2] for (x, y) in [(REST[0] - 6, REST[1]), (REST[0] + 6, REST[1])]], 'w': 1300.0},
                              {'pts': [_ue(x, y, 0)[:2] for (x, y) in [(64, 29), (64, -26)]], 'w': 2400.0},
-                             {'pts': [_ue(ISLAND[0] - 60, ISLAND[1], 0)[:2], _ue(ISLAND[0] + 60, ISLAND[1], 0)[:2]], 'w': 9500.0}]}
+                             {'pts': [_ue(ISLAND[0] - 60, ISLAND[1], 0)[:2], _ue(ISLAND[0] + 60, ISLAND[1], 0)[:2]], 'w': 9500.0},
+                             # the jetty, the path, the keeper's cottage and the lighthouse point (2026-10-30: you were sent home on landing)
+                             {'pts': [_ue(x, y, 0)[:2] for (x, y) in [(ISLAND_PIER[0], ISLAND_PIER[1] - ISLAND_PIER[2] - 1.0)] + ISLAND_PATH[1:]], 'w': 1600.0},
+                             {'pts': [_ue(COTTAGE_C[0] - 4, COTTAGE_C[1], 0)[:2], _ue(LIGHTHOUSE[0] + 4, LIGHTHOUSE[1], 0)[:2]], 'w': 1400.0}]}
     # the rowboat (phase 3): where it starts, and the places you can step ashore (water spot for the boat, land spot for you)
     jx, jy, jl = ISLAND_PIER
     G['boat'] = {'start': _ue(11.7, 52.0, -1.2), 'yaw': _yaw(0, 1), 'radius': 260000.0,
                  'docks': [{'name': 'Lumen Harbor pier', 'water': _ue(11.7, 52.0, -1.2), 'land': spot(9.0, 49.0, .3, (0, -1))},
-                           {'name': 'Lighthouse Island jetty', 'water': _ue(jx + 2.8, jy - jl + 4.0, -1.2),
-                            'land': {'pos': _ue(jx, jy - jl + 6.0, 1.1), 'yaw': _yaw(0, 1)}}]}
+                           {'name': 'Lighthouse Island jetty', 'water': _ue(jx, jy - jl - 3.5, -1.2),        # off the jetty's tip
+                            'land': {'pos': _ue(jx, jy - jl + 2.0, .75), 'yaw': _yaw(0, 1)}}]}
     G['map'] = 'L_Town'; G['title'] = 'LUMEN HARBOR'
     # walking out through the (re-opened) Route 1 gate loads the Route 1 level; min_step 7 = EPBXStep::Gate (licence signed)
     G['exits'] = [{'id': 'route1', 'pos': _ue(GATE[0] - 3.2, GATE[1], height(GATE[0] - 3.2, GATE[1])), 'radius': 260.0, 'to_map': 'L_Route1', 'to_spot': 'from_lumen',
@@ -1604,9 +1615,9 @@ def mountain_forest(add, railway):
             dens *= 1.0 - _ss(tl - 10, tl + 3, z)                               # thinning to the tree line
             dens *= _ss(-.75, -.3, _fbm(x, y, 1.0))                             # meadows / clearings (~15 % of the slopes)
             dens *= 1.0 - .85 * _ss(.45, .6, slope) * _ss(.55, .8, math.sin(x * .09 + _fbm(x, y, 7.0) * 3.0))  # avalanche tracks
-            dens *= .25 + .75 * _ss(.35, .75, real_weight(x, y))               # pastures near the village
+            dens *= .5 + .5 * _ss(.3, .7, real_weight(x, y))                   # pastures near the village (lighter)
             if sy < 0: dens = min(1.0, dens * 1.15)                             # shaded north-facing slopes are lusher
-            if Rf.random() > min(1.0, dens * 1.1): continue
+            if Rf.random() > min(1.0, dens * 1.45): continue
             scale = 1.0 - .55 * _ss(220, 620, d)                                # life size near the village -> ~1:2.2 far away
             krumm = 1.0 - .45 * _ss(tl - 18, tl, z)
             h = Rf.uniform(14.0, 26.0) * scale * krumm
@@ -1633,7 +1644,7 @@ def pier_line(x, y, dx, dy, length, deck_z):
     L = math.hypot(dx, dy); ux, uy = dx / L, dy / L; n = max(2, int(round(length / 2.92)))
     # the sections are authored in place along the asset's -Y (Unreal), 2.92 m apart, deck top 2.67 m above the pivot:
     # each copy is shifted back by its own authored offset so they chain
-    seq = [0] + [1 if k % 2 == 0 else 2 for k in range(n - 2)] + [3]
+    seq = [0] + [1 if k % 2 == 0 else 2 for k in range(n - 1)]      # (section_04 ends in a ramp down into the water: not used)
     yaw = round(math.degrees(math.atan2(ux, uy)), 2)
     out = []
     for i, j in enumerate(seq):
@@ -1711,7 +1722,7 @@ def harbour(P, add, kit, house):
     O.append(dict(mesh='SM_Lighthouse', x=lx_, y=ly_, z=round(island_h(lx_, ly_) - .3, 3), rot=0.0, s=1.0, snap=False))
     house(2, COTTAGE_DOOR[0], COTTAGE_DOOR[1], COTTAGE_FACE); O[-1]['z'] = round(island_h(*COTTAGE_DOOR), 3)
     jx, jy, jl = ISLAND_PIER
-    O.extend(pier_line(jx, jy, 0, -1, jl, 1.05))
+    O.extend(pier_line(jx, jy, 0, -1, jl, .65))
     cx_, cy_ = COTTAGE_C
     # the keeper's yard: low fence round a vegetable plot and a washing line, wood pile, bench facing the sea at the lighthouse
     for k in range(7):
@@ -1746,14 +1757,15 @@ def harbour(P, add, kit, house):
             elif saps: m = ph_path('fir_sapling_medium', Ri.choice(saps)[0]); h_ = Ri.uniform(2.5, 5)
             else: m = NAT + 'SM_Pine_Tree_1'; h_ = Ri.uniform(6, 10)
             add(m, x_, y_, Ri.random() * 360, 1.0, z_ - .3); O[-1]['h'] = round(h_, 2); O[-1]['inst'] = True; O[-1]['snap'] = False
-    gr = [ph_path('grass_bermuda_01', m[0]) for m in ph_meshes('grass_bermuda_01')] + PH_GRASS
-    for k in range(5200):
+    gr = PH_GRASS + PH_TALL                                   # life-size meadow grass (the Bermuda pieces are only 5-15 cm)
+    for k in range(24000):                                   # ~1 clump per 1.5 m2 of island meadow
         u_, v_ = Ri.uniform(-1, 1), Ri.uniform(-1, 1)
         x_, y_ = ISLAND[0] + u_ * 160, ISLAND[1] + v_ * 120; z_ = island_h(x_, y_)
         if z_ < 1.0 or island_path_dist(x_, y_) < 1.3 or math.hypot(x_ - cx_, y_ - cy_) < 7.5 or math.hypot(x_ - lx_, y_ - ly_) < 5: continue
         r_ = Ri.random()
         m = Ri.choice(gr) if r_ < .82 else (Ri.choice(PH_FLOWERS) if r_ < .94 else Ri.choice(PH_SHRUB))
-        add(m, x_, y_, Ri.random() * 360, 1.4 + Ri.random() * .8 if r_ < .94 else 1.0, z_ - .05); O[-1]['inst'] = True; O[-1]['snap'] = False
+        add(m, x_, y_, Ri.random() * 360, 1.0, z_ - .05); O[-1]['inst'] = True; O[-1]['snap'] = False
+        O[-1].pop('w', None); O[-1]['h'] = round(Ri.uniform(.35, .75) if r_ < .82 else (Ri.uniform(.3, .5) if r_ < .94 else Ri.uniform(.6, 1.1)), 2)
 
 
 def plan_town():
@@ -1826,7 +1838,12 @@ def plan_town():
     while n < 190:                       # forest ring around the village
         a = R.random() * math.tau; d = 46 + R.random() * 55; x, y = math.cos(a) * d, math.sin(a) * d - 10
         if y > 34 or not free(x, y, 2.5): continue
-        add(R.choice(TREES_FOREST), x, y, R.random() * 360, .8 + R.random() * .35); n += 1
+        firs_ = [m for m in ph_meshes('fir_tree_01') if m[1][2] > 3.0]      # 2026-10-30: the same photo-scanned firs as the mountains
+        if firs_:
+            add(ph_path('fir_tree_01', R.choice(firs_)[0]), x, y, R.random() * 360, 1.0, height(x, y) - .3)
+            P['objects'][-1].update(h=round(R.uniform(9.0, 17.0), 2), inst=True, snap=False)
+        else: add(R.choice(TREES_FOREST), x, y, R.random() * 360, .8 + R.random() * .35)
+        n += 1
     mountain_forest(add, railway)
     for x, y in [(-27, -14), (-26, 4), (31, -12), (-24, 19), (24, 18), (-40, 27), (27, 35), (-6, 40), (50, -10), (76, 24), (58, -40)]:
         add(R.choice(TREES_TOWN), x, y, R.random() * 360, .62 + R.random() * .12)      # big feature trees in the village
@@ -1895,7 +1912,8 @@ def plan_town():
     # ---- the Lamplighters' Path (2026-10-23): walled by pines so it is the only way up, the old Rest with the keepers'
     # graves, notes and carved signs, the cairn on the ridge; beyond it the forest closes (and the bounds corridor ends)
     def trail_z(x, y): return height(x, y) if (abs(x) < 108 and abs(y) < 108) else real_height(x, y)
-    PINES = [NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']
+    _f = [ph_path('fir_tree_01', m[0]) for m in ph_meshes('fir_tree_01') if m[1][2] > 3.0]
+    PINES = _f or [NAT + 'SM_Pine_Tree_1', NAT + 'SM_Pine_Tree_2']
     acc = 0.0
     for (ax, ay), (bx, by) in zip(TRAIL[:-1], TRAIL[1:]):
         L = math.hypot(bx - ax, by - ay); ux, uy = (bx - ax) / L, (by - ay) / L; nx, ny = -uy, ux; d = 0.0
@@ -1906,7 +1924,7 @@ def plan_town():
                     for row, off in enumerate((R.uniform(3.4, 4.4), R.uniform(6.0, 7.5))):
                         tx, ty = x + nx * off * side + ux * R.uniform(-1, 1), y + ny * off * side + uy * R.uniform(-1, 1)
                         if trail_dist(tx, ty) < 3.0: continue
-                        add(R.choice(PINES), tx, ty, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(8.0, 13.0), 2)
+                        add(R.choice(PINES), tx, ty, R.random() * 360, 1.0, trail_z(tx, ty) - .3); P['objects'][-1].update(h=round(R.uniform(10.0, 18.0), 2), inst=True, snap=False)
                 if int((acc + d) / 7.0) != int((acc + d - 3.2) / 7.0):
                     side = R.choice((-1, 1)); add(R.choice(PH_ROCK_S), x + nx * 2.2 * side, y + ny * 2.2 * side, R.random() * 360, .5 + R.random() * .4)
             d += 3.2
@@ -1933,7 +1951,7 @@ def plan_town():
     for k in range(34):
         a_ = math.radians(-160 + 140 * (k % 17) / 16.0 + R.uniform(-3, 3)); rr = 4.5 + 2.6 * (k // 17) + R.uniform(0, .8)
         tx, ty = cx_ + math.cos(a_) * rr, cy_ + math.sin(a_) * rr
-        add(R.choice(PINES), tx, ty, R.random() * 360, 1.0); P['objects'][-1]['h'] = round(R.uniform(9.0, 14.0), 2)
+        add(R.choice(PINES), tx, ty, R.random() * 360, 1.0, trail_z(tx, ty) - .3); P['objects'][-1].update(h=round(R.uniform(11.0, 19.0), 2), inst=True, snap=False)
     for k in range(6):
         a_ = math.radians(-150 + 120 * k / 5); add(R.choice(PH_ROCK_L), cx_ + math.cos(a_) * 3.6, cy_ + math.sin(a_) * 3.6, R.random() * 360, 1.1)
     # carved signs on the path (the lettering is drawn by the game from G['signs'])

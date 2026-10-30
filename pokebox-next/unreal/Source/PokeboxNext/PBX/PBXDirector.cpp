@@ -2085,15 +2085,43 @@ void APBXDirector::AutoTick(float Dt)
 		} break;
 	// ---- the rowboat (2026-10-23): board at the pier, row out, dock at the island, look at the lighthouse, come back
 	case 150: if (Idle() && AutoStepT > 1.f) { PlacePlayer(Docks[0].Land); BoardBoat(); AutoNext(); } break;
-	case 151: if (AutoStepT > 2.5f) { Shot(TEXT("34_boat_board")); AutoNext(); } break;
+	case 151:   // the boarding shot, then the harbour life: a crew at work on a moored boat, the crew at anchor, the sailboat
+	{
+		APlayerController* PC = GetWorld()->GetFirstPlayerController(); const float T1 = AutoStepT, T0 = AutoStepT - Dt;
+		auto Look = [&](const TCHAR* Tag, const FVector& Off)
+		{
+			for (const FSeaBoat& B : SeaBoats) if (AActor* A = B.A.Get()) if (A->ActorHasTag(FName(Tag)) && Cam && PC)
+			{
+				const FVector L = A->GetActorLocation() + FVector(0, 0, 120), C = L + A->GetActorRotation().RotateVector(Off);
+				Cam->SetActorLocationAndRotation(C, FRotationMatrix::MakeFromX(L - C).Rotator()); PC->SetViewTarget(Cam);
+			}
+		};
+		auto At = [&](float S) { return T0 < S && T1 >= S; };
+		if (At(2.5f)) Shot(TEXT("34_boat_board"));
+		if (At(3.0f)) Look(TEXT("PBX_Bob_1"), FVector(250, -700, 250));
+		if (At(5.0f)) Shot(TEXT("34b_crew_harbour"));
+		if (At(5.5f)) Look(TEXT("PBX_Bob_4"), FVector(-300, 900, 300));
+		if (At(7.5f)) Shot(TEXT("34c_crew_bay"));
+		if (At(8.0f)) Look(TEXT("PBX_Sail_1"), FVector(-200, 1400, 350));
+		if (At(10.0f)) Shot(TEXT("34d_sailboat"));
+		if (T1 > 10.5f) { if (PC && Player) PC->SetViewTarget(Player); AutoNext(); }
+		break;
+	}
 	case 152: case 153:
 	{
 		if (!bBoating) { Fail(TEXT("not in the boat")); break; }
-		const FVector2D T(Docks[1].Water.X, Docks[1].Water.Y), D = T - BoatXY;
+		// out through the harbour entrance first (the arms are solid), then across to the island jetty
+		const FVector2D Clear(1250.f, -7400.f), Gate(-200.f, -11400.f);   // straight out past the pier head, then the gap between the arms
+		const FVector2D T = BoatXY.Y > -7000.f ? Clear : (BoatXY.Y > -10900.f ? Gate : FVector2D(Docks[1].Water.X, Docks[1].Water.Y)), D = T - BoatXY;
 		const float Want = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), Diff = FMath::FindDeltaAngleDegrees(BoatYaw, Want);
-		BoatInput = FVector2D(FMath::Clamp(Diff / 25.f, -1.f, 1.f), D.Size() > 1500.f ? 1.f : .45f);
-		if (AutoStep == 152 && AutoStepT > 9.f) { Shot(TEXT("35_boat_sea")); BoatXY = T - D.GetSafeNormal() * 9000.f; AutoNext(); }   // (skip most of the 1.4 km crossing)
-		else if (AutoStep == 153 && NearKind == EKind::Dock && NearIndex == 1 && D.Size() < 700.f) { Shot(TEXT("36_boat_island")); AutoNext(); }
+		BoatInput = FVector2D(FMath::Clamp(Diff / 25.f, -1.f, 1.f), FMath::Abs(Diff) > 50.f ? .25f : (D.Size() > 1500.f || AutoStep == 152 ? 1.f : .45f));
+		if (AutoStep == 152 && BoatXY.Y <= -10900.f && AutoStepT > 4.f)
+		{
+			Shot(TEXT("35_boat_sea"));
+			const FVector2D Dk(Docks[1].Water.X, Docks[1].Water.Y); BoatXY = Dk - (Dk - BoatXY).GetSafeNormal() * 9000.f; AutoNext();   // (skip most of the 1.4 km crossing)
+		}
+		else if (AutoStep == 152 && AutoStepT > 60.f) Fail(TEXT("could not leave the harbour"));   // (skip most of the 1.4 km crossing)
+		else if (AutoStep == 153 && NearKind == EKind::Dock && NearIndex == 1 && D.Size() < 900.f) { Shot(TEXT("36_boat_island")); AutoNext(); }
 		break;
 	}
 	case 154: if (AutoStepT > 1.f) { LeaveBoat(1); AutoNext(); } break;

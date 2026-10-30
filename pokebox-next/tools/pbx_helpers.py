@@ -72,7 +72,8 @@ def PBXAUTOLOG(n=6):
     return [l[30:200] for l in s if '[PBXAUTO]' in l][-n:]
 
 def PBXRESTORE():
-    sd = os.path.join(PRJ, 'Saved', 'SaveGames'); b = os.path.join(sd, 'PokeboxNext_Slot1.sav.pre_r1_autotest.bak')
+    # 2026-10-30: the user played after the pre_r1 backup -> the current backup is pre_r58 (taken from the live slot)
+    sd = os.path.join(PRJ, 'Saved', 'SaveGames'); b = os.path.join(sd, 'PokeboxNext_Slot1.sav.pre_r58_autotest.bak')
     if os.path.exists(b): shutil.copy2(b, os.path.join(sd, 'PokeboxNext_Slot1.sav')); return True
     return False
 

@@ -20,6 +20,10 @@ SOFT = ('SM_Flower', 'SM_Grass', 'SM_Fol_', 'SM_Plant', 'SM_Fern', 'SM_Mushroom'
 FLOAT_TOL = 30.0         # cm
 SKIP_LABELS = ('Ground', 'GroundFar', 'Mountains', 'R1_Ground', 'R1_Mountains', 'SkyDome', 'Sea', 'PostProcess', 'PlayerStart',
                'RoomLight', 'WindowFill')
+# surfaces people stand on / things that float on the sea (crews ride on the boats, Gus stands on the pier): never
+# keep-clear, never 'floating' (2026-10-23 b — the first harbour build had its crewed boats deleted)
+STAND_ON = ('SM_Rowboat', 'SM_FishingBoat', 'SM_Sailboat', 'modular_wooden_pier', 'SM_Breakwater', 'SM_StreamBridge', 'SM_Lighthouse',
+            'coast_rocks', 'coast_land_rocks', 'ocean_buoy', 'lateral_sea_marker', 'lifebuoy')
 SKIP_MESH = ('SM_Room_', 'SM_Ground', 'SM_R1_Ground', 'SM_Mountains', 'SM_R1_Mountains', 'SM_SkyDome', 'SM_Water', 'SM_GroundFar')
 BAD_MAT = ('WorldGridMaterial', 'DefaultMaterial', 'DefaultDeferredDecalMaterial')
 BAD_TEX = ('/Engine/EngineResources/DefaultTexture', '/Engine/EngineResources/Black', '/Engine/EngineResources/WhiteSquareTexture',
@@ -36,7 +40,8 @@ def _points(G):
     for d in G.get('doors', []):
         add('door %s outside' % d['id'], (d.get('outside') or {}).get('pos'))
         add('door %s inside' % d['id'], (d.get('inside') or {}).get('pos'))
-    for n in G.get('npcs', []): add('npc %s' % n['id'], n.get('pos'))   # radius NPC_R (label starts with 'npc ')
+    for n in G.get('npcs', []):
+        if not n.get('boat'): add('npc %s' % n['id'], n.get('pos'))   # radius NPC_R (label starts with 'npc '); crews ride on boats
     for k, s in (G.get('spots') or {}).items():
         if k.endswith('_hint') or k in ('starter_table', 'bed'): continue
         add('spot %s' % k, s.get('pos') if isinstance(s, dict) else s)
@@ -111,6 +116,7 @@ def run(map_name, fix=False):
         path, c = _mesh_path(a)
         is_bp = c is None or not isinstance(a, unreal.StaticMeshActor)
         if path and any(s in path for s in SKIP_MESH): continue
+        if path and any(s in path for s in STAND_ON): continue
         o, ext = a.get_actor_bounds(False)
         mn, mx = o - ext, o + ext
         tall = ext.z * 2.0

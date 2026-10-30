@@ -197,8 +197,8 @@ def _water_common(m, flow_uv=False):
         try: m.set_editor_property(k, False)
         except Exception: pass
     out = E(m, unreal.MaterialExpressionSingleLayerWaterMaterialOutput, 400, 600)
-    MEL.connect_material_expressions(B._vec(m, 'Scattering', (.012, .035, .038, 1), 100, 500), '', out, 'ScatteringCoefficients')
-    MEL.connect_material_expressions(B._vec(m, 'Absorption', (.42, .09, .06, 1), 100, 650), '', out, 'AbsorptionCoefficients')
+    MEL.connect_material_expressions(B._vec(m, 'Scattering', (.03, .075, .072, 1), 100, 500), '', out, 'ScatteringCoefficients')   # alpine lake / fjord teal, not ink
+    MEL.connect_material_expressions(B._vec(m, 'Absorption', (.38, .075, .055, 1), 100, 650), '', out, 'AbsorptionCoefficients')
     MEL.connect_material_expressions(B._scalar(m, 'PhaseG', .1, 100, 800), '', out, 'PhaseG')
     return out
 
@@ -237,7 +237,7 @@ return Mode > 0.5 ? float3(foam, depth, 0) : N;
     for mode, y in ((0, 800), (1, 1200)):
         cu = _custom(m, code, ['WP', 'T', 'Rip', 'RipStr', 'Swell', 'SD', 'PD', 'Mode'], -700, y)
         MEL.connect_material_expressions(wp, '', cu, 'WP'); MEL.connect_material_expressions(tm, '', cu, 'T'); MEL.connect_material_expressions(o, '', cu, 'Rip')
-        MEL.connect_material_expressions(B._scalar(m, 'RippleStrength', .55, -1000, y + 200), '', cu, 'RipStr')
+        MEL.connect_material_expressions(B._scalar(m, 'RippleStrength', .32, -1000, y + 200), '', cu, 'RipStr')
         MEL.connect_material_expressions(nodes[1], '', cu, 'Swell'); MEL.connect_material_expressions(sd, '', cu, 'SD'); MEL.connect_material_expressions(pd, '', cu, 'PD')
         c = E(m, unreal.MaterialExpressionConstant, -900, y + 300); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
         cn.append(cu)
@@ -247,7 +247,7 @@ return Mode > 0.5 ? float3(foam, depth, 0) : N;
     MEL.connect_material_expressions(B._vec(m, 'WaterColor', (.0, .0, .0, 1), -300, 900), '', base, 'A')
     MEL.connect_material_expressions(B._vec(m, 'FoamColor', (.85, .88, .88, 1), -300, 1000), '', base, 'B'); MEL.connect_material_expressions(fm, '', base, 'Alpha')
     MEL.connect_material_property(base, '', unreal.MaterialProperty.MP_BASE_COLOR)
-    rough = E(m, unreal.MaterialExpressionLinearInterpolate, -100, 1100); rough.set_editor_property('const_a', .035); rough.set_editor_property('const_b', .6)
+    rough = E(m, unreal.MaterialExpressionLinearInterpolate, -100, 1100); rough.set_editor_property('const_a', .07); rough.set_editor_property('const_b', .6)
     MEL.connect_material_expressions(fm, '', rough, 'Alpha'); MEL.connect_material_property(rough, '', unreal.MaterialProperty.MP_ROUGHNESS)
     MEL.recompile_material(m); EAL.save_loaded_asset(m)
     log('sea instr', MEL.get_statistics(m).num_pixel_shader_instructions)
