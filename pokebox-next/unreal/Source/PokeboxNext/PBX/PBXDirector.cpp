@@ -480,6 +480,15 @@ void APBXDirector::Tick(float Dt)
 	if (!UI.IsValid()) return;
 	TickTrain(Dt);
 	TickLife(Dt);
+	if (bAuto)   // frame-time log every 8 s: average fps, worst frame, where (the laptop's RTX 2060 is the target)
+	{
+		const float Raw = FApp::GetDeltaTime(); PerfT += Raw; PerfAcc += Raw; PerfN++; PerfWorst = FMath::Max(PerfWorst, Raw);
+		if (PerfT > 8.f && PerfN > 0)
+		{
+			PBXLOG("[PBXAUTO] perf %s fps %.1f worst %.1f ms at %s", *MapName, PerfN / FMath::Max(1e-3f, PerfAcc), PerfWorst * 1000.f, *PlayerLoc().ToCompactString());
+			PerfT = PerfAcc = PerfWorst = 0.f; PerfN = 0;
+		}
+	}
 	MusicHold = FMath::Max(0.f, MusicHold - Dt);
 	// indoors: a shorter, higher camera so the boom never presses the lens against the small rooms' walls (council S4)
 	if (Player && Player->Boom)

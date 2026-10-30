@@ -291,7 +291,7 @@ PLATFORM = (34.6, 38.4, -20.0, 24.0) # x0, x1, y0, y1 (top at +0.55 m)
 # new village houses (2026-10-22): (blueprint, door x, door y, facing) — doors open onto the new side paths
 NEW_HOUSES = [(12, 6.2, 15.5, (-1, 0)), (8, 5.8, 31.0, (-1, 0)), (11, -6.2, 15.0, (1, 0)), (7, 22.0, -15.0, (0, 1)), (1, -11.1, -16.2, (1, 0))]
 NEW_HOUSE_BLOCKS = [(11.2, 14.2, 9.5), (9.9, 30.8, 10.5), (-10.7, 15.7, 10.0), (21.9, -22.8, 11.0), (-15.3, -16.2, 6.5)]
-PADS = [(9.9, 30.8, 11.0), (-85.0, -80.8, 7.0), (95.0, -72.8, 7.0), (92.0, -30.8, 7.0)]   # levelled ground: harbour inn, the windmills
+PADS = [(9.9, 30.8, 11.0), (-85.0, -80.8, 8.0), (95.0, -72.8, 8.0), (92.0, -30.8, 8.0), (-66.0, -28.8, 8.0)]   # levelled ground: harbour inn, the windmills
 # 2026-10-23 (phase 2): seven more houses — a harbour lane in the south-west, a farm hamlet across the stream in the east
 # (reached over a stone bridge), two cottages behind the lab — and three more windmills, two of them at the mountains' foot
 NEW_HOUSES2 = [(2, -14.0, 33.5, (0, 1)), (10, -30.0, 33.5, (0, 1)), (4, 68.0, 0.0, (-1, 0)), (12, 68.0, -22.0, (-1, 0)),
@@ -322,13 +322,12 @@ LORE_NOTES = [((-93.5, -161.5), "Ledger of the Lamplighters' Rest. Oil: 12 casks
               ((-61.0, -206.0), "A torn page wedged under the cairn: '...his Echo card was never found. Fishers say a small light still moves between the pines on stormy nights...'")]
 
 
-def height_raw(x, y):
+def height_raw(x, y, pads=True):
     """flat village plateau, soft hills inland, slope down to the beach on the south (+y)"""
     h = 0.0
     h += .35 * math.sin(x * .07) * math.cos(y * .05) + .25 * math.sin(x * .13 + 1.3) * math.sin(y * .11 + .4)
     d = math.hypot(x, y + 10)
     h *= min(1, max(0, (d - 30) / 25))              # village core stays flat
-    for (px_, py_, pr_) in PADS: h *= min(1, max(0, (math.hypot(x - px_, y - py_) - pr_) / 6))
     ring = max(0, d - 70); h += ring * ring * .004 * (1 - min(1, max(0, (y - 25) / 20)))  # hills around (forest edge), not on the sea side
     if y > 42: h -= (y - 42) * .32                  # beach slope
     if y > 52: h -= (y - 52) * .25                  # under the sea
@@ -338,6 +337,13 @@ def height_raw(x, y):
     if TRACK_Y0 - 1.0 < y < 30:                     # (2026-10-23: only up to the portal — it used to cut a trench through the whole mountain)
         k = min(1, max(0, (abs(x - TRACK_X) - 4.0) / 7.0)); k = k * k * (3 - 2 * k)
         h = h * k
+    # levelled pads (inn, windmills): the WHOLE ground (hills included) blends to the pad's own height — 2026-10-30, the
+    # windmills on the hill slopes used to sink 1.3-1.7 m on their uphill side
+    if pads:
+        for (px_, py_, pr_) in PADS:
+            dd = math.hypot(x - px_, y - py_)
+            if dd < pr_ + 7:
+                k = 1 - _ss(pr_, pr_ + 7, dd); h = h + (height_raw(px_, py_, False) - h) * k
     return h
 
 def height(x, y):
@@ -425,10 +431,19 @@ def platform():
 def track():
     """two rails on sleepers on a gravel bed, from the tunnel mouth to the buffer stop (local x = 0 is the track centre)"""
     L = TRACK_Y1 - TRACK_Y0; cy = (TRACK_Y0 + TRACK_Y1) / 2
-    P = [box('tr_bed', 3.6, L, .22, (0, 0, -.05), 'M_Gravel', bevel=.0)]
-    n = int(L / .65)
-    for i in range(n): P.append(box(f'tr_sl{i}', 2.5, .24, .12, (0, -L / 2 + .3 + i * .65, .14), 'M_WoodDark', bevel=.0))
-    for s_ in (-1, 1): P.append(box(f'tr_rail{s_}', .09, L, .14, (s_ * .72, 0, .26), 'M_Metal', bevel=.0))
+    # ballast shoulder (sloped sides, photo-scanned rubble), weathered timber sleepers, rails with head / web / foot
+    import bmesh as _bm
+    bm = _bm.new(); prof = [(-2.2, -.12), (-1.55, .2), (1.55, .2), (2.2, -.12)]
+    a_ = [bm.verts.new((x, -L / 2, z)) for (x, z) in prof]; b_ = [bm.verts.new((x, L / 2, z)) for (x, z) in prof]
+    for k in range(3): bm.faces.new((a_[k], a_[k + 1], b_[k + 1], b_[k]))
+    bm.faces.new(a_[::-1]); bm.faces.new(b_); bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = mesh_obj('tr_bed', bm); set_mat(ob, 'M_HarbourStone'); P = [ob]
+    n = int(L / .62)
+    for i in range(n): P.append(box(f'tr_sl{i}', 2.5, .25, .14, (0, -L / 2 + .3 + i * .62, .11), 'M_BoatWood', bevel=.01))
+    for s_ in (-1, 1):
+        P.append(box(f'tr_railf{s_}', .14, L, .03, (s_ * .72, 0, .25), 'M_Metal', bevel=.0))
+        P.append(box(f'tr_railw{s_}', .03, L, .08, (s_ * .72, 0, .28), 'M_Metal', bevel=.0))
+        P.append(box(f'tr_railh{s_}', .07, L, .04, (s_ * .72, 0, .36), 'M_Metal', bevel=.0))   # rail top at .40 (the train's wheels)
     # buffer stop at the south end
     y = L / 2 - .4
     P += [box('tr_bufbeam', 2.4, .35, .4, (0, y, .55), 'M_Red', bevel=.03), box('tr_bufpost0', .25, .6, .9, (-.9, y + .2, .1), 'M_Iron'),
@@ -527,12 +542,14 @@ def _body_shell(name, L, W, H, z0, m, nose=0.0, seg=10):
 
 def _bogie(P, tag, y, z0, wheel_r=.5, base=2.6):
     """two axles; the wheels stand ON the rail top (local z = 0)"""
-    P.append(box(f'{tag}_frame', 2.2, base + 1.2, .4, (0, y, wheel_r + .05), 'M_Iron', bevel=.04))
+    P.append(box(f'{tag}_frame', 2.2, base + 1.2, .3, (0, y, wheel_r + .12), 'M_TrainGrey', bevel=.04))
     for s_ in (-1, 1):
-        P.append(box(f'{tag}_side{s_}', .18, base + 1.6, .55, (s_ * 1.0, y, wheel_r - .3), 'M_Iron', bevel=.03))
+        P.append(box(f'{tag}_side{s_}', .16, base + 1.5, .32, (s_ * 1.02, y, wheel_r + .02), 'M_TrainGrey', bevel=.03))   # wheels show below
+        for a in (-base / 2, base / 2):
+            P.append(box(f'{tag}_brk{s_}{a}', .1, .22, .5, (s_ * .74, y + a + (.62 if a > 0 else -.62) * (wheel_r / .62), wheel_r - .25), 'M_TrainGrey', bevel=0))
         for a in (-base / 2, base / 2):
             P.append(cyl(f'{tag}_w{s_}{a}', wheel_r, .14, (s_ * .74, y + a, wheel_r), 'M_Metal', rot=(0, math.pi / 2, 0), seg=20))
-            P.append(cyl(f'{tag}_ab{s_}{a}', .17, .3, (s_ * 1.12, y + a, wheel_r), 'M_Iron', rot=(0, math.pi / 2, 0), seg=10))
+            P.append(cyl(f'{tag}_ab{s_}{a}', .15, .26, (s_ * 1.13, y + a, wheel_r), 'M_TrainGrey', rot=(0, math.pi / 2, 0), seg=10))
             P.append(cyl(f'{tag}_sp{s_}{a}', .13, .35, (s_ * 1.0, y + a, wheel_r + .2), 'M_Metal', seg=8))
 
 def loco():
@@ -541,16 +558,22 @@ def loco():
     headlights. Front towards local -Y (north). Origin: rail top, centre."""
     P = []; L, W, H, zf = 14.8, 2.95, 2.75, 1.25
     P.append(_body_shell('lo_body', L, W, H, zf, 'M_TrainRed', nose=1.6))
-    P.append(box('lo_under', 2.6, L - 1.2, .55, (0, 0, zf - .55), 'M_Iron', bevel=.03))
-    for k, yy in enumerate((-3.8, -1.3, 1.3, 3.8)): P.append(box(f'lo_tank{k}', 2.1, 1.6, .45, (0, yy, zf - .95), 'M_Iron', bevel=.06))
+    P.append(box('lo_under', 2.6, L - 1.2, .45, (0, 0, zf - .45), 'M_TrainGrey', bevel=.03))
+    P.append(box('lo_skirtL', .05, L - 7.6, .38, (-1.42, 0, zf - .42), 'M_TrainRed', bevel=0)); P.append(box('lo_skirtR', .05, L - 7.6, .38, (1.42, 0, zf - .42), 'M_TrainRed', bevel=0))
+    for k, yy in enumerate((-1.6, 1.6)): P.append(box(f'lo_tank{k}', 2.0, 1.8, .42, (0, yy, zf - .85), 'M_TrainGrey', bevel=.06))
     for yb in (-L / 2 + 3.3, L / 2 - 3.3): _bogie(P, f'lo_b{yb}', yb, .32, wheel_r=.62, base=2.6)
     for e in (-1, 1):                       # cab ends: windscreens, lights, buffers, coupler, handrails
         ye = e * (L / 2 - .05)
-        for s_ in (-1, 1): P.append(box(f'lo_ws{e}{s_}', 1.15, .06, .95, (s_ * .62, ye + e * .02, zf + 1.45), 'M_Glass', rot=(math.radians(-12 * e), 0, math.radians(8 * s_ * e)), bevel=0))
-        P.append(box(f'lo_ws_mid{e}', .08, .08, .95, (0, ye + e * .05, zf + 1.45), 'M_Iron', bevel=0))
-        for s_ in (-1, 1): P.append(cyl(f'lo_hl{e}{s_}', .13, .08, (s_ * .95, ye + e * .05, zf + .45), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
-        P.append(cyl(f'lo_hlt{e}', .12, .08, (0, ye + e * .03, zf + 2.55), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
-        P.append(box(f'lo_beam{e}', 2.8, .3, .55, (0, ye + e * .12, zf - .55), 'M_Iron', bevel=.03))
+        # flush two-pane windscreen in a black rubber surround (the end face is the body's flat end cap, 2.3 m wide)
+        P.append(box(f'lo_wsf{e}', 2.05, .03, 1.05, (0, ye + e * .055, zf + 1.38), 'M_Iron', bevel=.02))
+        for s_ in (-1, 1): P.append(box(f'lo_ws{e}{s_}', .95, .03, .9, (s_ * .5, ye + e * .075, zf + 1.455), 'M_Glass', bevel=0))
+        P.append(box(f'lo_wiper{e}', .03, .02, .6, (-.35, ye + e * .095, zf + 1.5), 'M_Iron', rot=(0, math.radians(35), 0), bevel=0))
+        for s_ in (-1, 1):
+            P.append(cyl(f'lo_hlr{e}{s_}', .12, .05, (s_ * .78, ye + e * .06, zf + .5), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=14))
+            P.append(cyl(f'lo_hl{e}{s_}', .085, .05, (s_ * .78, ye + e * .085, zf + .5), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=14))
+        P.append(cyl(f'lo_hlt{e}', .08, .05, (0, ye + e * .06, zf + 2.35), 'M_LampGlass', rot=(math.pi / 2, 0, 0), seg=12))
+        P.append(box(f'lo_num{e}', .5, .02, .16, (0, ye + e * .06, zf + .78), 'M_TrainCream', bevel=0))
+        P.append(box(f'lo_beam{e}', 2.8, .3, .55, (0, ye + e * .12, zf - .55), 'M_TrainRed', bevel=.03))
         for s_ in (-1, 1):
             P.append(cyl(f'lo_bufs{e}{s_}', .09, .45, (s_ * .875, ye + e * .45, zf - .3), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=10))
             P.append(cyl(f'lo_bufh{e}{s_}', .22, .06, (s_ * .875, ye + e * .7, zf - .3), 'M_Metal', rot=(math.pi / 2, 0, 0), seg=16))
@@ -562,7 +585,7 @@ def loco():
             P.append(box(f'lo_door{s_}{e}', .05, .75, 1.9, (s_ * (W / 2 + .005), e * (L / 2 - 1.9), zf + .25), 'M_TrainRed', bevel=.01))
             P.append(box(f'lo_dwin{s_}{e}', .05, .5, .55, (s_ * (W / 2 + .02), e * (L / 2 - 1.9), zf + 1.45), 'M_Glass', bevel=0))
         for k in range(5):
-            P.append(box(f'lo_louv{s_}{k}', .05, 1.25, .7, (s_ * (W / 2 + .01), -3.4 + k * 1.7, zf + 1.3), 'M_Iron', bevel=0))
+            P.append(box(f'lo_louv{s_}{k}', .05, 1.25, .7, (s_ * (W / 2 + .01), -3.4 + k * 1.7, zf + 1.3), 'M_TrainGrey', bevel=0))
         P.append(box(f'lo_line{s_}', .03, L - 3.0, .08, (s_ * (W / 2 + .015), 0, zf + .7), 'M_TrainCream', bevel=0))
     for k, yy in enumerate((-3.6, 3.6)):     # pantographs (lowered-diamond frame) + insulators + roof conduit
         P.append(box(f'lo_pbase{k}', 1.6, 1.2, .12, (0, yy, zf + H + .02), 'M_Metal', bevel=0))
@@ -577,7 +600,7 @@ def carriage():
     a side, sliding doors at both ends, roof vents, two bogies, gangway bellows, buffers. Origin: rail top, centre."""
     P = []; L, W, H, zf = 14.0, 2.85, 2.7, 1.12
     P.append(_body_shell('ca_body', L, W, H, zf, 'M_TrainGreen'))
-    P.append(box('ca_under', 2.5, L - 1.0, .45, (0, 0, zf - .45), 'M_Iron', bevel=.03))
+    P.append(box('ca_under', 2.5, L - 1.0, .4, (0, 0, zf - .4), 'M_TrainGrey', bevel=.03))
     for yb in (-L / 2 + 2.6, L / 2 - 2.6): _bogie(P, f'ca_b{yb}', yb, .32, wheel_r=.46, base=2.5)
     for s_ in (-1, 1):
         x = s_ * (W / 2 + .012)
@@ -1448,7 +1471,7 @@ def gameplay_data():
         {'id': 'guard', 'outfit': 'guard', 'hair_color': [0.06, 0.05, 0.05], 'name': 'Gate Warden Bo', 'body': 'm', 'hair': 'Hair_SimpleParted', 'anim': 'Idle_FoldArms_Loop', **spot(-44.6, 9.4, None, (1, 0))}]
     for (cid, nm, tag, body, hair, hcol, anim, (sx, sy, sz), syaw, sc) in BOAT_CREW:
         bx, by = next((b[2], b[3]) for b in SEA_BOATS if b[0] == tag)
-        G['npcs'].append({'id': cid, 'outfit': 'fisher', 'hair_color': hcol, 'name': nm, 'body': body, 'hair': hair, 'anim': anim, 'scale': sc,
+        G['npcs'].append({'id': cid, 'outfit': CREW_OUTFIT.get(cid, 'fisher'), 'hair_color': hcol, 'name': nm, 'body': body, 'hair': hair, 'anim': anim, 'scale': sc,
                           'pos': _ue(bx, by, 0.0), 'yaw': 0.0, 'boat': tag, 'seat': _ue(sx, sy, sz + .92 * sc), 'seat_yaw': syaw})
     G['sea_boats'] = [dict(tag=t, mode=m) for (t, _, _, _, _, m) in SEA_BOATS if m != 'sail'] + \
                      [dict(tag=t, mode='sail', center=_ue(*SAIL_LOOP['center'], -1.2), rx=SAIL_LOOP['rx'] * 100, ry=SAIL_LOOP['ry'] * 100, period=SAIL_LOOP['period'])
@@ -1662,6 +1685,7 @@ SEA_BOATS = [  # (tag, mesh, x, y, facing (dx, dy), mode)
     ('PBX_Bob_4', 'SM_FishingBoat', -135.0, 245.0, (.8, .6), 'anchored'),     # out in the bay, nets over the side
     ('PBX_Bob_5', 'SM_Rowboat', 118.0, 196.0, (-.7, .7), 'anchored'),          # an old man fishing from his rowboat
     ('PBX_Sail_1', 'SM_Sailboat', 240.0, 430.0, (0, 1), 'sail')]
+CREW_OUTFIT = {'crew_jon': 'fisher', 'crew_ada': 'gardener', 'crew_ben': 'guard', 'crew_old': 'fisher', 'crew_sail': 'merchant', 'crew_kid': 'kid'}
 SAIL_LOOP = dict(center=(0.0, 430.0), rx=240.0, ry=115.0, period=260.0)
 # crews: (id, name, boat tag, body, hair, hair colour, anim, local seat (x fwd, y left, z) m, seat yaw deg, scale)
 BOAT_CREW = [
@@ -1758,7 +1782,7 @@ def harbour(P, add, kit, house):
             else: m = NAT + 'SM_Pine_Tree_1'; h_ = Ri.uniform(6, 10)
             add(m, x_, y_, Ri.random() * 360, 1.0, z_ - .3); O[-1]['h'] = round(h_, 2); O[-1]['inst'] = True; O[-1]['snap'] = False
     gr = PH_GRASS + PH_TALL                                   # life-size meadow grass (the Bermuda pieces are only 5-15 cm)
-    for k in range(24000):                                   # ~1 clump per 1.5 m2 of island meadow
+    for k in range(42000):                                   # ~1 clump per m2 of island meadow
         u_, v_ = Ri.uniform(-1, 1), Ri.uniform(-1, 1)
         x_, y_ = ISLAND[0] + u_ * 160, ISLAND[1] + v_ * 120; z_ = island_h(x_, y_)
         if z_ < 1.0 or island_path_dist(x_, y_) < 1.3 or math.hypot(x_ - cx_, y_ - cy_) < 7.5 or math.hypot(x_ - lx_, y_ - ly_) < 5: continue
@@ -1959,6 +1983,21 @@ def plan_town():
         kit(FVM + 'deco/SM_PROP_board_01', sx_, sy_, math.degrees(math.atan2(fy_, fx_)) - 90, w=1.9)
     # timber trestle bridge where the east road crosses the stream (deck flush with the road)
     P['objects'].append(dict(mesh='SM_StreamBridge', x=54.4, y=29.0, z=round(max(height_raw(46.5, 29.0), height_raw(62.5, 29.0)) + .1, 3), rot=0.0, s=1.0, snap=False))
+    # stream banks through the village: scanned stones at the waterline, tall grass / reeds on the banks (2026-10-30: it read as a canal)
+    Rb = random.Random(31); RS = _river_samples(); PTS = RS['pts']
+    for k in range(0, len(PTS) - 1, 2):
+        x0, y0 = PTS[k]
+        if y0 < -95 or y0 > coast_y(x0) - 2 or (abs(x0 - 54.4) < 9 and abs(y0 - 29) < 9): continue
+        x1, y1 = PTS[k + 1]; L = math.hypot(x1 - x0, y1 - y0) or 1; nx, ny = -(y1 - y0) / L, (x1 - x0) / L
+        hw = river_width(RS['s'][k]) / 2
+        for side in (-1, 1):
+            if Rb.random() < .55:
+                o = hw + Rb.uniform(-.4, .3); add(Rb.choice(PH_ROCK_S), x0 + nx * o * side, y0 + ny * o * side, Rb.random() * 360, .5 + Rb.random() * .7)
+            for j in range(3):
+                o = hw + Rb.uniform(.6, 2.8); xx, yy = x0 + nx * o * side + Rb.uniform(-.8, .8), y0 + ny * o * side + Rb.uniform(-.8, .8)
+                if path_mask(xx, yy, P) > .05 or railway(xx, yy): continue
+                add(Rb.choice(PH_TALL), xx, yy, Rb.random() * 360, 1.0, height(xx, yy) - .05)
+                P['objects'][-1].update(h=round(Rb.uniform(.6, 1.15), 2), inst=True, snap=False); P['objects'][-1].pop('w', None)
     # station: luggage, benches on the forecourt
     for (m, x, y, r, h) in [('QProps/Crate_Wooden', 33.2, -6.2, 10, .6), ('QProps/Barrel', 33.6, -7.4, 0, .9), ('SM_Bench', 26.0, 1.6, 180, None)]:
         kit(m, x, y, r, h=h)

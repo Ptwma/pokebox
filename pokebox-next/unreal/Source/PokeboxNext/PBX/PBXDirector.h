@@ -130,6 +130,7 @@ private:
 	struct FSeaBoat { TWeakObjectPtr<AActor> A; int32 Mode = 0; FVector2D XY = FVector2D::ZeroVector, C = FVector2D::ZeroVector; float Yaw = 0.f, Z0 = 0.f, Phase = 0.f, Rx = 0.f, Ry = 0.f, Period = 300.f, Len = 400.f, Beam = 150.f; };
 	TArray<FSeaBoat> SeaBoats;
 	void SetupLife(); void TickLife(float Dt);
+	float PerfT = 0.f, PerfAcc = 0.f, PerfWorst = 0.f; int32 PerfN = 0;   // autotest frame-time log (RTX 2060 budget)
 	/** the bay is calmer near the shore (the same factor scales the sea material's swell) */
 	static float ShoreDamp(const FVector2D& XY);
 	EKind NearKind = EKind::None; int32 NearIndex = -1; FName NearNPC;

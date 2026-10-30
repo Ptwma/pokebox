@@ -747,7 +747,8 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
             k_ = obj_scale(o, sm); b = sm.get_bounding_box()
             cx, cy = (b.min.x + b.max.x) / 2 * k_, (b.min.y + b.max.y) / 2 * k_; r = math.radians(-o['rot'])
             ox, oy = cx * math.cos(r) - cy * math.sin(r), cx * math.sin(r) + cy * math.cos(r)     # pivot -> footprint centre, base on the ground
-            inst.setdefault(o['mesh'], (sm, []))[1].append(unreal.Transform(unreal.Vector(o['x'] * 100 - ox, -o['y'] * 100 - oy, o['z'] * 100 - b.min.z * k_),
+            far = math.hypot(o['x'], o['y'] + 10) > 320.0     # far forest: no dynamic shadows (RTX 2060 budget, 2026-10-30)
+            inst.setdefault((o['mesh'], far), (sm, []))[1].append(unreal.Transform(unreal.Vector(o['x'] * 100 - ox, -o['y'] * 100 - oy, o['z'] * 100 - b.min.z * k_),
                                                                             unreal.Rotator(0, 0, -o['rot']), unreal.Vector(k_, k_, k_)))
             continue
         if o.get('pier'):
@@ -758,9 +759,9 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
     if inst:
         host = _spawn_cls(unreal.Actor, (0, 0, 0), label='Instances'); host.set_folder_path('Town/Nature')
         n_i = 0
-        for mesh, (sm, xf) in inst.items():
+        for (mesh, far), (sm, xf) in inst.items():
             grass = any(k in mesh.lower() for k in ('grass', 'flower', 'dandelion', 'celandine', 'shrub', 'fern', 'moss'))
-            n_i += unreal.PBXEditorLib.add_instances(host, sm, xf, 4500.0 if grass else 170000.0, 6500.0 if grass else 190000.0, False, not grass)
+            n_i += unreal.PBXEditorLib.add_instances(host, sm, xf, 4500.0 if grass else 170000.0, 6500.0 if grass else 190000.0, False, not grass and not far)
         log('instances', n_i, 'in', len(inst), 'meshes')
     # interiors: warm ceiling lights + a cool 'window daylight' fill
     for r in plan.get('rooms', []):

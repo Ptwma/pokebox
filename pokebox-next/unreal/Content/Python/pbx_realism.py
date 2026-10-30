@@ -297,7 +297,7 @@ return Mode > 0.5 ? float3(foam, 0, 0) : N;
     return m
 
 # harbour craft from tools/blender_town.py (2026-10-23 b) and their Poly Haven surfaces (painted / weathered planks, rubble)
-CRAFT = ['SM_Rowboat', 'SM_RowboatB', 'SM_FishingBoat', 'SM_Sailboat', 'SM_BreakwaterW', 'SM_BreakwaterE', 'SM_StreamBridge']
+CRAFT = ['SM_Rowboat', 'SM_RowboatB', 'SM_FishingBoat', 'SM_Sailboat', 'SM_BreakwaterW', 'SM_BreakwaterE', 'SM_StreamBridge', 'SM_Track']
 BOAT_MATS = {'MI_BoatWhite': ('distressed_painted_planks', .5, (1, 1, 1)), 'MI_BoatBlue': ('blue_painted_planks', .5, (1, 1, 1)),
              'MI_BoatGreen': ('green_rough_planks', .5, (1, 1, 1)), 'MI_BoatWood': ('weathered_planks', .5, (1, 1, 1)),
              'MI_BoatPeel': ('wood_peeling_paint_weathered', .5, (1, 1, 1)), 'MI_BoatRed': ('distressed_painted_planks', .5, (.85, .22, .18)),
@@ -332,6 +332,12 @@ def water_materials():
         EAL.save_loaded_asset(sm)
     # meshes re-imported on their own (tunnel): each slot named M_X gets /Game/PBX/Materials/Inst/MI_X
     boat_materials()
+    col = unreal.load_asset(G + '/Materials/M_PBX_Color')
+    if col and not unreal.load_asset(G + '/Materials/Inst/MI_TrainGrey'):     # train underframes / bogies: dark grey, not black iron
+        B._mi('MI_TrainGrey', col, {'Roughness': .62, 'Metallic': .25}, {'Color': (.075, .078, .082, 1)})
+    for n_, r_ in (('MI_TrainRed', .32), ('MI_TrainGreen', .35), ('MI_TrainCream', .4)):      # glossy painted steel
+        mi_ = unreal.load_asset(f'{G}/Materials/Inst/{n_}')
+        if mi_: MEL.set_material_instance_scalar_parameter_value(mi_, 'Roughness', r_); MEL.update_material_instance(mi_); EAL.save_loaded_asset(mi_)
     for mesh in ['SM_Tunnel', 'SM_Island', 'SM_Lighthouse', 'SM_TrainLoco', 'SM_TrainCar'] + CRAFT:
         sm = unreal.load_asset(f'{G}/Meshes/{mesh}')
         if not sm: continue
