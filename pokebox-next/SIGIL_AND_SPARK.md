@@ -5,7 +5,8 @@
 > are original. The *feeling* borrows from Black Clover (an underdog with a strange magic book), Pokémon (bond, collect,
 > evolve) and Digimon (evolution inside the fight) — nothing is copied.
 > User decisions (2026-10-31): story **C — Sigil & Spark**, battle **Pact Battle** (semi-real-time), intro **live in-engine**,
-> narration **offline TTS (Piper)**.
+> narration **offline TTS** — final: **Kokoro-82M `am_onyx`** (Apache-2.0, local), slow, short heavy statements with long silences
+> (the user asked for the *cadence* of a calm, solemn speaker, not anyone's voice). Tool: `tools/pbx_kokoro.py`; ~93 s of narration.
 
 ---
 
