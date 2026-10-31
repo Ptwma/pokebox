@@ -23,6 +23,23 @@ LINES = {
     'intro_14': "Some books are blank... because they haven't been written yet.",
     # dark tone (user 2026-11-01: "adventure with darkness, blood, alone")
     'intro_15': "By morning, half of Lumen Harbor had forgotten its own name. Only you were left... unwritten.",
+    # v3 saga intro (intro/SAGA_SCRIPT.md) — user 2026-11-01: told like a tale, more words
+    'saga_01': 'Before the sea had a name... before the first ship cut the first wave... there was the Script.',
+    'saga_02': 'It was not a language anyone spoke. It was the language the world itself was written in. Every wave was a word. Every stone, a sentence. Every living thing, a story that was still being told.',
+    'saga_03': 'And some words carried so much meaning, so much weight... that one day, they opened their eyes.',
+    'saga_04': 'Our ancestors called them Sparks. Living words. Wild, and proud, and older than any kingdom.',
+    'saga_05': 'The first scribes did not try to tame them. They wrote beside them. They bound their names into books of leather and gold. Books that remember. We call them... the Codex.',
+    'saga_06': 'When a Spark chooses to trust you, the Codex writes a new page by itself. A page is a promise. And a Codex... is a life.',
+    'saga_07': 'For a thousand years, the islands lived by that promise.',
+    'saga_08': 'Until the night of the Surge. Thirty years ago, the Script beneath the town of Hollowmere began to burn. Hundreds of Sparks woke at once, screaming words no one could read.',
+    'saga_09': 'By dawn, Hollowmere was gone. Swallowed by the very sea it had been written beside.',
+    'saga_10': 'Only one soul walked out of the water. And from that day, she believed she understood. Every word is a wound. Every name is a door through which pain can enter.',
+    'saga_11': 'So she founded an order to close those doors forever. They wear white. They carry no books. They call themselves... the White Page.',
+    'saga_12': 'Where the White Page passes, the Script is erased. Sparks turn grey and forget themselves. People keep breathing, keep walking... but nothing is written in them anymore. That is the Blanking.',
+    'saga_13': 'On the island of Lumen, every sixteen-year-old receives a Codex. Most open with one page already glowing. The lucky, with two. The rare, with three.',
+    'saga_14': 'And one book, on one cold morning... opened blank.',
+    'saga_15': 'That same night, white sails came out of the fog. And by morning, half of Lumen Harbor had forgotten its own name.',
+    'saga_16': "Some books are blank because they are broken. Some books are blank... because they haven't been written yet.",
 }
 PAUSE_SENTENCE = 0.42      # seconds between sentences (an ellipsis inside a sentence is voiced by the model itself)
 VOICE_DEFAULT = 'am_michael*0.7+am_onyx*0.3'
