@@ -68,10 +68,11 @@ def manifest():
             if cls == 'SkeletalMesh' and not mesh: mesh = p.split('.')[0]
             elif cls == 'AnimSequence': anims[nm] = p.split('.')[0]
         if not mesh: log('no mesh', k); continue
+        stem = mesh.split('/')[-1]          # Interchange names the clips <mesh><clip>, e.g. DragonFlying_Idle
         roles = {}
         for role, cands in ROLES.items():
             for c in cands:
-                hit = [v for n, v in anims.items() if n == c or n.endswith('_' + c) or n.endswith('Anim_' + c)]
+                hit = [v for n, v in anims.items() if n in (stem + c, stem + '_' + c, c, stem + '_Anim_' + c)]
                 if hit: roles[role] = hit[0]; break
         sm = unreal.load_asset(mesh); b = sm.get_bounds() if sm else None
         h = round(b.box_extent.z * 2, 1) if b else 100.0
