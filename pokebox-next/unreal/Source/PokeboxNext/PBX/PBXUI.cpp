@@ -20,12 +20,16 @@
 static const FLinearColor InkC(.03f, .025f, .04f);
 static const FLinearColor PaperC(1.f, .98f, .93f);
 static const FLinearColor GoldC(1.f, .82f, .2f);
+// 2026-10-31 (phase 7): calm, elegant UI for the realistic world — dark smoked-glass panels, thin warm rims, ivory text
+static const FLinearColor TextC(.95f, .93f, .88f);
+static const FLinearColor GlassC(.045f, .05f, .065f, .78f);
+static const FLinearColor RimC(1.f, .88f, .62f, .55f);
 
 FSlateFontInfo PBXUI::Font(const TCHAR* Kind, int32 Size, int32 Outline)
 {
 	static TMap<FString, TSharedPtr<const FCompositeFont>> Cache;
 	const FString K = Kind;
-	const TCHAR* File = K == TEXT("title") ? TEXT("Bangers.ttf") : K == TEXT("bold") ? TEXT("BarlowCondensed-ExtraBold.ttf") : TEXT("BarlowCondensed-SemiBold.ttf");
+	const TCHAR* File = K == TEXT("title") ? TEXT("BarlowCondensed-ExtraBold.ttf") : K == TEXT("bold") ? TEXT("BarlowCondensed-ExtraBold.ttf") : TEXT("BarlowCondensed-SemiBold.ttf");   // 2026-10-31: no comic Bangers in the realistic look
 	const FString Path = FPaths::ProjectContentDir() / TEXT("PBX/Fonts") / File;
 	TSharedPtr<const FCompositeFont>& F = Cache.FindOrAdd(Path);
 	if (!F.IsValid())
@@ -34,7 +38,8 @@ FSlateFontInfo PBXUI::Font(const TCHAR* Kind, int32 Size, int32 Outline)
 		else { FSlateFontInfo D = FCoreStyle::GetDefaultFontStyle(K == TEXT("body") ? "Regular" : "Bold", Size); if (Outline) { D.OutlineSettings.OutlineSize = Outline; D.OutlineSettings.OutlineColor = InkC; } return D; }
 	}
 	FSlateFontInfo I(F, Size);
-	if (Outline) { I.OutlineSettings.OutlineSize = Outline; I.OutlineSettings.OutlineColor = InkC; }
+	if (K == TEXT("title")) I.LetterSpacing = 90;                  // wide-tracked capitals read calm and elegant
+	if (Outline) { I.OutlineSettings.OutlineSize = FMath::Max(1, Outline / 2); I.OutlineSettings.OutlineColor = FLinearColor(0, 0, 0, .6f); }
 	return I;
 }
 
@@ -111,7 +116,8 @@ private:
 
 TSharedRef<SWidget> SPBXHud::Panel(TSharedRef<SWidget> Content, FLinearColor Fill, float Pad)
 {
-	TSharedPtr<FSlateBrush> B = MakeShared<FSlateRoundedBoxBrush>(Fill, 10.f, InkC, 4.f); Sink->Add(B);
+	const bool bLight = Fill.R + Fill.G + Fill.B > 1.5f;        // the old paper colours become smoked glass
+	TSharedPtr<FSlateBrush> B = MakeShared<FSlateRoundedBoxBrush>(bLight ? GlassC : Fill, 12.f, RimC, 1.5f); Sink->Add(B);
 	return SNew(SBorder).BorderImage(B.Get()).Padding(Pad)[Content];
 }
 
@@ -127,7 +133,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 {
 	M = InModel; Sink = &Keep;
 	ForceVolatile(true);
-	TSharedPtr<FSlateBrush> TagB = MakeShared<FSlateRoundedBoxBrush>(GoldC, 6.f, InkC, 3.f); Keep.Add(TagB);
+	TSharedPtr<FSlateBrush> TagB = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.07f, .065f, .06f, .92f), 8.f, GoldC, 1.5f); Keep.Add(TagB);   // speaker name: dark tab, gold rim
 	TSharedPtr<FSlateBrush> Dark = MakeShared<FSlateColorBrush>(FLinearColor(0, 0, 0, .55f)); Keep.Add(Dark);
 	TSharedPtr<FSlateBrush> LogB = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.05f, .045f, .07f, .82f), 8.f, FLinearColor(1, .82f, .2f, .9f), 2.f); Keep.Add(LogB);
 	TSharedPtr<FSlateBrush> BannerB = MakeShared<FSlateColorBrush>(FLinearColor::White); Keep.Add(BannerB);
@@ -154,7 +160,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			SNew(SBox).WidthOverride(560).Visibility_Lambda([this] { return Vis(M->Mode == EPBXUIMode::Explore && !M->Objective.IsEmpty()); })
 			[
 				Panel(SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Chapter.ToUpper()); }).Font(PBXUI::Font(TEXT("bold"), 15)).ColorAndOpacity(FLinearColor(.35f, .3f, .28f))]
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Chapter.ToUpper()); }).Font(PBXUI::Font(TEXT("bold"), 15)).ColorAndOpacity(FLinearColor(.78f, .72f, .62f))]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 0)
 					[
 						SNew(SHorizontalBox)
@@ -164,8 +170,8 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 							.Visibility_Lambda([this] { return M->bArrow ? EVisibility::HitTestInvisible : EVisibility::Hidden; })
 							.RenderTransform_Lambda([this] { return FSlateRenderTransform(FQuat2D(FMath::DegreesToRadians(M->ArrowAngle))); }).RenderTransformPivot(FVector2D(.5f, .5f))
 						]
-						+ SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Objective); }).Font(PBXUI::Font(TEXT("bold"), 25)).ColorAndOpacity(InkC).AutoWrapText(true)]
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10, 0, 0, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Distance >= 0 ? FString::Printf(TEXT("%d m"), M->Distance) : FString()); }).Font(PBXUI::Font(TEXT("bold"), 22)).ColorAndOpacity(FLinearColor(.5f, .35f, .1f))]
+						+ SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Objective); }).Font(PBXUI::Font(TEXT("bold"), 25)).ColorAndOpacity(TextC).AutoWrapText(true)]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10, 0, 0, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Distance >= 0 ? FString::Printf(TEXT("%d m"), M->Distance) : FString()); }).Font(PBXUI::Font(TEXT("bold"), 22)).ColorAndOpacity(GoldC)]
 					], PaperC, 14.f)
 			]
 		]
@@ -179,8 +185,8 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
 						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().FillWidth(1)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Partner.Name); }).Font(PBXUI::Font(TEXT("bold"), 24)).ColorAndOpacity(InkC)]
-						+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(FString::Printf(TEXT("Lv %d"), M->Partner.Lv)); }).Font(PBXUI::Font(TEXT("bold"), 20)).ColorAndOpacity(FLinearColor(.4f, .35f, .3f))]
+						+ SHorizontalBox::Slot().FillWidth(1)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Partner.Name); }).Font(PBXUI::Font(TEXT("bold"), 24)).ColorAndOpacity(TextC)]
+						+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(FString::Printf(TEXT("Lv %d"), M->Partner.Lv)); }).Font(PBXUI::Font(TEXT("bold"), 20)).ColorAndOpacity(FLinearColor(.8f, .76f, .7f))]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
 					[
@@ -197,7 +203,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		[
 			SNew(SBox).Visibility_Lambda([this] { return Vis(M->Mode == EPBXUIMode::Explore && !M->Prompt.IsEmpty()); })
 			[
-				Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Prompt); }).Font(PBXUI::Font(TEXT("bold"), 26)).ColorAndOpacity(InkC), PaperC, 12.f)
+				Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Prompt); }).Font(PBXUI::Font(TEXT("bold"), 26)).ColorAndOpacity(TextC), PaperC, 12.f)
 			]
 		]
 
@@ -206,9 +212,9 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[SNew(SBox).WidthOverride(430).Visibility_Lambda([this] { return Vis(M->Toasts.Num() > 0); })
-				[Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Toasts.Num() ? M->Toasts[0].Text : FString()); }).Font(PBXUI::Font(TEXT("bold"), 22)).ColorAndOpacity(InkC).AutoWrapText(true), FLinearColor(1, .95f, .75f), 12.f)]]
+				[Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Toasts.Num() ? M->Toasts[0].Text : FString()); }).Font(PBXUI::Font(TEXT("bold"), 22)).ColorAndOpacity(TextC).AutoWrapText(true), FLinearColor(1, .95f, .75f), 12.f)]]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)[SNew(SBox).WidthOverride(430).Visibility_Lambda([this] { return Vis(M->Toasts.Num() > 1); })
-				[Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Toasts.Num() > 1 ? M->Toasts[1].Text : FString()); }).Font(PBXUI::Font(TEXT("bold"), 22)).ColorAndOpacity(InkC).AutoWrapText(true), FLinearColor(1, .95f, .75f), 12.f)]]
+				[Panel(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Toasts.Num() > 1 ? M->Toasts[1].Text : FString()); }).Font(PBXUI::Font(TEXT("bold"), 22)).ColorAndOpacity(TextC).AutoWrapText(true), FLinearColor(1, .95f, .75f), 12.f)]]
 		]
 
 		// ---------------- battle layer
@@ -289,15 +295,15 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 					Panel(SNew(SBox).MinDesiredHeight(130)
 						[
 							SNew(SVerticalBox)
-							+ SVerticalBox::Slot().FillHeight(1).Padding(8, 14, 8, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Line.Left(FMath::FloorToInt(M->Visible))); }).Font(PBXUI::Font(TEXT("body"), 31)).ColorAndOpacity(InkC).AutoWrapText(true)]
-							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(TEXT("E / click  >"))).Font(PBXUI::Font(TEXT("bold"), 18)).ColorAndOpacity(FLinearColor(.5f, .45f, .4f))
+							+ SVerticalBox::Slot().FillHeight(1).Padding(8, 14, 8, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Line.Left(FMath::FloorToInt(M->Visible))); }).Font(PBXUI::Font(TEXT("body"), 31)).ColorAndOpacity(TextC).AutoWrapText(true)]
+							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(TEXT("E / click  >"))).Font(PBXUI::Font(TEXT("bold"), 18)).ColorAndOpacity(FLinearColor(.72f, .68f, .62f))
 								.Visibility_Lambda([this] { return M->Visible >= M->Line.Len() ? EVisibility::HitTestInvisible : EVisibility::Hidden; })]
 						], PaperC, 22.f)
 				]
 				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(30, 0, 0, 0)
 				[
 					SNew(SBorder).BorderImage(TagB.Get()).Padding(FMargin(18, 4)).Visibility_Lambda([this] { return Vis(!M->Speaker.IsEmpty()); })
-					[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Speaker); }).Font(PBXUI::Font(TEXT("title"), 34)).ColorAndOpacity(InkC)]
+					[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Speaker); }).Font(PBXUI::Font(TEXT("title"), 30)).ColorAndOpacity(GoldC)]
 				]
 			]
 		]
@@ -307,7 +313,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		[
 			SNew(SVerticalBox).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::Visible : EVisibility::Collapsed; })
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceTitle); }).Font(PBXUI::Font(TEXT("title"), 76, 4)).ColorAndOpacity(FLinearColor::White)]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 22)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceSub); }).Font(PBXUI::Font(TEXT("bold"), 26, 2)).ColorAndOpacity(PaperC).Justification(ETextJustify::Center)]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 22)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceSub); }).Font(PBXUI::Font(TEXT("bold"), 26, 2)).ColorAndOpacity(TextC).Justification(ETextJustify::Center)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SAssignNew(ChoiceHost, SBox)]
 		]
 
@@ -429,15 +435,15 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 	for (int32 i = 0; i < M->Options.Num(); i++)
 	{
 		const FPBXOption& O = M->Options[i];
-		TSharedPtr<FSlateBrush> Sel = MakeShared<FSlateRoundedBoxBrush>(PaperC, 12.f, GoldC, 7.f); Sink->Add(Sel);
-		TSharedPtr<FSlateBrush> Nor = MakeShared<FSlateRoundedBoxBrush>(PaperC, 12.f, InkC, 4.f); Sink->Add(Nor);
-		TSharedPtr<FSlateBrush> Off = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.7f, .68f, .64f), 12.f, InkC, 4.f); Sink->Add(Off);
+		TSharedPtr<FSlateBrush> Sel = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.13f, .12f, .1f, .9f), 12.f, GoldC, 2.5f); Sink->Add(Sel);
+		TSharedPtr<FSlateBrush> Nor = MakeShared<FSlateRoundedBoxBrush>(GlassC, 12.f, RimC, 1.2f); Sink->Add(Nor);
+		TSharedPtr<FSlateBrush> Off = MakeShared<FSlateRoundedBoxBrush>(FLinearColor(.03f, .03f, .04f, .6f), 12.f, FLinearColor(1, 1, 1, .15f), 1.f); Sink->Add(Off);
 		auto OnDown = [this, i](const FGeometry&, const FPointerEvent&) { M->Selected = i; if (M->OnPick && M->Options.IsValidIndex(i) && M->Options[i].bEnabled) M->OnPick(i); return FReply::Handled(); };
 		auto Brush = [this, i, Sel, Nor, Off] { return !M->Options.IsValidIndex(i) || !M->Options[i].bEnabled ? Off.Get() : M->Selected == i ? Sel.Get() : Nor.Get(); };
 		TSharedRef<SVerticalBox> Inner = SNew(SVerticalBox);
 		if (M->bCards && O.Image.IsValid())
 			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(250).HeightOverride(349)[SNew(SImage).Image(O.Image.Get())]];
-		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 40 : 32)).ColorAndOpacity(InkC)];
+		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 40 : 32)).ColorAndOpacity(TextC)];
 		if (!O.Sub.IsEmpty())
 			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("bold"), 20)).ColorAndOpacity(O.Color * .8f).WrapTextAt(M->bCards ? 0.f : 510.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
 		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).Padding(M->bCards ? FMargin(14) : FMargin(22, 10)).OnMouseButtonDown_Lambda(OnDown)
