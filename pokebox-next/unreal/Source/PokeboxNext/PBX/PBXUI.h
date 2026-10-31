@@ -49,6 +49,9 @@ struct FPBXUIModel
 	float FlashT = 0.f; FLinearColor FlashColor = FLinearColor::White;     // full-screen flash on big hits
 	float IntroT = 0.f; FString IntroA, IntroB; FLinearColor IntroColA = FLinearColor(.9f, .3f, .2f), IntroColB = FLinearColor(.2f, .45f, .9f);
 	float Letterbox = 0.f; FString Caption, CaptionSub; float CaptionA = 0.f;   // cutscenes (phase 6)
+	// Sigil & Spark intro (2026-10-31): the "ink myth" overlay (glyphs drawing themselves) and timed subtitles
+	float Ink = 0.f, InkT = 0.f, InkWipe = 0.f; int32 InkMode = 0; FString InkTitle;
+	FString Subtitle, SubSpeaker; float SubA = 0.f;
 	TArray<FPBXSpark> Sparks; FVector2D ViewSize = FVector2D(1920, 1080); float Time = 0.f;
 };
 

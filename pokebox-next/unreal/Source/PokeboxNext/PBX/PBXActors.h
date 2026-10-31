@@ -106,6 +106,7 @@ public:
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<UAnimSequence>> Clips;
 	UPROPERTY(Transient) TArray<TObjectPtr<USkeletalMeshComponent>> BodyParts;   // eyes / crowns of multi-mesh creatures (leader pose)
 	bool bCreature = false, bFly = false; FString CreatureKey;
+	FString ForceKey;   // set before Setup(): this creature regardless of the card (intro / scripted scenes)
 	/** where to look when standing still (battle: the opponent); zero = the camera */
 	FVector FaceAt = FVector::ZeroVector;
 	void PlayClip(FName ClipRole, bool bLoop, float Lock = 0.f);

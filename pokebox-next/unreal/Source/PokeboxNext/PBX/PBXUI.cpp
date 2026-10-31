@@ -16,6 +16,9 @@
 #include "Misc/Paths.h"
 #include "Widgets/SLeafWidget.h"
 #include "Rendering/DrawElements.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Fonts/FontMeasure.h"
+#include "Rendering/SlateRenderer.h"
 
 static const FLinearColor InkC(.03f, .025f, .04f);
 static const FLinearColor PaperC(1.f, .98f, .93f);
@@ -86,6 +89,106 @@ void PBXUI::TickSparks(FPBXUIModel& M, float Dt)
 		S.P += S.V * Dt; S.Phase += S.Spin * Dt;
 	}
 }
+
+// The intro's "ink myth" (Sigil & Spark): a dark page on which golden Script glyphs draw themselves. Modes: 1 one glyph
+// writes itself in the middle · 2 glyphs spread over the page like a map of islands · 4 an open book whose pages fill with
+// lines of glyphs · 5 the full page, erased by a white sweep (InkWipe 0..1). InkTitle = a big centred title.
+class SPBXInk : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SPBXInk) {}
+	SLATE_END_ARGS()
+	void Construct(const FArguments&, TSharedPtr<FPBXUIModel> InM) { M = InM; }
+	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(8, 8); }
+	static TArray<TArray<FVector2f>> Glyph(uint32 Seed)
+	{
+		FRandomStream R(Seed); TArray<TArray<FVector2f>> Strokes;
+		const int32 NS = R.RandRange(2, 4);
+		for (int32 s = 0; s < NS; s++)
+		{
+			TArray<FVector2f> P; FVector2f C(R.FRandRange(-.6f, .6f), R.FRandRange(-.8f, .8f)); float A = R.FRandRange(0.f, 6.28f);
+			const int32 NP = R.RandRange(3, 6);
+			for (int32 k = 0; k < NP; k++) { P.Add(C); A += R.FRandRange(-1.6f, 1.6f); C += FVector2f(FMath::Cos(A), FMath::Sin(A)) * R.FRandRange(.25f, .55f); C.X = FMath::Clamp(C.X, -1.f, 1.f); C.Y = FMath::Clamp(C.Y, -1.f, 1.f); }
+			Strokes.Add(P);
+		}
+		return Strokes;
+	}
+	static void DrawGlyph(FSlateWindowElementList& Out, int32 Layer, const FGeometry& G, uint32 Seed, FVector2f At, float Size, float Reveal, FLinearColor C)
+	{
+		if (Reveal <= 0.f || C.A <= .01f) return;
+		const TArray<TArray<FVector2f>> St = Glyph(Seed);
+		float Total = 0.f; for (const TArray<FVector2f>& P : St) for (int32 k = 1; k < P.Num(); k++) Total += (P[k] - P[k - 1]).Size();
+		float Budget = Total * FMath::Clamp(Reveal, 0.f, 1.f);
+		for (const TArray<FVector2f>& P : St)
+		{
+			TArray<FVector2f> Pts; Pts.Add(At + P[0] * Size);
+			for (int32 k = 1; k < P.Num() && Budget > 0.f; k++)
+			{
+				const float L = (P[k] - P[k - 1]).Size();
+				const FVector2f E = L <= Budget ? P[k] : P[k - 1] + (P[k] - P[k - 1]) * (Budget / L);
+				Pts.Add(At + E * Size); Budget -= L;
+			}
+			if (Pts.Num() < 2) break;
+			FLinearColor Glow = C; Glow.A *= .22f;
+			FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), Pts, ESlateDrawEffect::None, Glow, true, FMath::Max(3.f, Size * .09f));
+			FSlateDrawElement::MakeLines(Out, Layer + 1, G.ToPaintGeometry(), Pts, ESlateDrawEffect::None, C, true, FMath::Max(1.5f, Size * .03f));
+		}
+	}
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+	{
+		if (!M.IsValid() || M->Ink <= .001f) return Layer;
+		const FVector2f S = FVector2f(G.GetLocalSize()); const float A = M->Ink, T = M->InkT;
+		FSlateDrawElement::MakeBox(Out, Layer, G.ToPaintGeometry(), White(), ESlateDrawEffect::None, FLinearColor(.012f, .014f, .028f, A));
+		const FLinearColor Gold(1.f, .78f, .38f, A);
+		auto Wiped = [&](float X) { return M->InkMode == 5 && X / S.X < M->InkWipe * 1.25f - .1f; };
+		if (M->InkMode == 1)
+			DrawGlyph(Out, Layer + 1, G, 7, S * .5f, S.Y * .22f, T / 2.6f, Gold);
+		else if (M->InkMode == 2 || M->InkMode == 5)
+		{
+			FRandomStream R(42);
+			for (int32 i = 0; i < 46; i++)
+			{
+				const FVector2f P(R.FRandRange(.08f, .92f) * S.X, R.FRandRange(.12f, .88f) * S.Y);
+				const float Delay = M->InkMode == 5 ? -10.f : R.FRandRange(0.f, 3.5f), Sz = R.FRandRange(.025f, .07f) * S.Y;
+				FLinearColor C = Gold; C.A *= R.FRandRange(.45f, 1.f);
+				if (Wiped(P.X)) continue;
+				if (M->InkMode == 5 && P.X / S.X < M->InkWipe * 1.25f + .05f) C = FLinearColor(1, 1, 1, A);   // the white edge eats the glyphs
+				DrawGlyph(Out, Layer + 1, G, 100 + i, P, Sz, (T - Delay) / 1.6f, C);
+			}
+			if (M->InkMode == 5)   // the white sweep itself
+			{
+				const float X = (M->InkWipe * 1.25f - .1f) * S.X;
+				if (X > 0.f) FSlateDrawElement::MakeBox(Out, Layer + 3, G.ToPaintGeometry(FVector2f(FMath::Min(X, S.X), S.Y), FSlateLayoutTransform()), White(), ESlateDrawEffect::None, FLinearColor(.96f, .96f, .94f, A));
+			}
+		}
+		else if (M->InkMode == 4)
+		{
+			const FVector2f C = S * .5f, Pg(S.Y * .42f, S.Y * .56f);
+			for (int32 side = 0; side < 2; side++)
+			{
+				const FVector2f O = C + FVector2f(side ? 12.f : -12.f - Pg.X, -Pg.Y * .5f);
+				TArray<FVector2f> Box = { O, O + FVector2f(Pg.X, 0), O + Pg, O + FVector2f(0, Pg.Y), O };
+				FSlateDrawElement::MakeLines(Out, Layer + 1, G.ToPaintGeometry(), Box, ESlateDrawEffect::None, FLinearColor(1.f, .8f, .45f, .55f * A), true, 2.f);
+				for (int32 row = 0; row < 7; row++) for (int32 col = 0; col < 6; col++)
+				{
+					const float Delay = (side * 42 + row * 6 + col) * .07f;
+					DrawGlyph(Out, Layer + 2, G, 300 + side * 100 + row * 10 + col, O + FVector2f((col + .7f) * Pg.X / 6.6f, (row + .8f) * Pg.Y / 7.6f), Pg.X * .055f, (T - Delay) / .5f, Gold);
+				}
+			}
+		}
+		if (!M->InkTitle.IsEmpty())
+		{
+			const FSlateFontInfo F = PBXUI::Font(TEXT("title"), 96, 0);
+			const float K = FMath::Clamp(T / 1.5f, 0.f, 1.f);
+			const FVector2f TS = FVector2f(FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(M->InkTitle, F));
+			FSlateDrawElement::MakeText(Out, Layer + 4, G.ToPaintGeometry(TS, FSlateLayoutTransform(S * .5f - TS * .5f)),
+				M->InkTitle, F, ESlateDrawEffect::None, FLinearColor(1.f, .86f, .52f, A * K));
+		}
+		return Layer + 5;
+	}
+private:
+	TSharedPtr<FPBXUIModel> M;
+};
 
 class SPBXSparks : public SLeafWidget
 {
@@ -327,6 +430,8 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, FMath::Clamp(M->BigT, 0.f, 1.f))); })]
 		]
 
+		// ---------------- intro "ink myth" overlay (Sigil & Spark)
+		+ SOverlay::Slot()[ SNew(SPBXInk, M).Visibility(EVisibility::HitTestInvisible) ]
 		// ---------------- cutscene letterbox + caption (phase 6)
 		+ SOverlay::Slot().VAlign(VAlign_Top)
 		[
@@ -343,6 +448,17 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, .96f, .88f, M->CaptionA)); })]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6, 0, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->CaptionSub); }).Font(PBXUI::Font(TEXT("body"), 26, 2))
 				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, .9f * M->CaptionA)); })]
+		]
+		// ---------------- subtitles (user 2026-10-31: every narrated / spoken line of the intro)
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 34)
+		[
+			SNew(SBorder).Visibility_Lambda([this] { return M->SubA > .01f && !M->Subtitle.IsEmpty() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			.BorderImage(White()).BorderBackgroundColor_Lambda([this] { return FSlateColor(FLinearColor(0, 0, 0, .55f * M->SubA)); }).Padding(FMargin(22, 8))
+			[
+				SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->SubSpeaker.IsEmpty() ? M->Subtitle : M->SubSpeaker + TEXT(":  ") + M->Subtitle); })
+				.Font(PBXUI::Font(TEXT("body"), 26, 1)).Justification(ETextJustify::Center).AutoWrapText(true).WrapTextAt(1300.f)
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->SubA)); })
+			]
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(0, 0, 40, 30)
 		[

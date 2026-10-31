@@ -121,9 +121,13 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 				const TSharedPtr<FJsonObject> CO = CV->AsObject();
 				UStaticMesh* CM = Cast<UStaticMesh>(LoadPath(CO->GetStringField(TEXT("mesh")))); if (!CM) continue;
 				UStaticMeshComponent* SC = NewObject<UStaticMeshComponent>(this);
-				SC->SetupAttachment(GetMesh(), TEXT("head")); SC->SetStaticMesh(CM); SC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				SC->SetStaticMesh(CM); SC->SetCollisionEnabled(ECollisionEnabled::NoCollision); SC->SetMobility(EComponentMobility::Movable);
 				if (UMaterialInterface* MI = Cast<UMaterialInterface>(LoadPath(CO->GetStringField(TEXT("material"))))) for (int32 k = 0; k < SC->GetNumMaterials(); k++) SC->SetMaterial(k, MI);
-				SC->RegisterComponent(); SC->SetRelativeTransform(HeadRef.Inverse()); MHParts.Add(SC); NC++;
+				SC->RegisterComponent();
+				SC->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("head"));   // attach AFTER registering (r60: hair never showed)
+				SC->SetRelativeTransform(HeadRef.Inverse()); MHParts.Add(SC); NC++;
+				UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s hair at %s, head %s, socket %d, mat %s"), *Id, *SC->Bounds.Origin.ToCompactString(),
+					*GetMesh()->GetSocketLocation(TEXT("head")).ToCompactString(), GetMesh()->DoesSocketExist(TEXT("head")) ? 1 : 0, SC->GetMaterial(0) ? *SC->GetMaterial(0)->GetName() : TEXT("none"));
 			}
 		UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s %s: %d hair cards meshes"), *Id, *G->GetName(), NC);
 	}
@@ -343,7 +347,7 @@ bool APBXEcho::SetupCreature(const FPBXCardDef* C, float Height)
 	if (!Keys.Num()) (*Pool)->TryGetStringArrayField(bBig ? TEXT("small") : TEXT("big"), Keys);
 	TArray<FString> Ok; for (const FString& K : Keys) if ((*Cre)->HasField(K)) Ok.Add(K);
 	if (!Ok.Num()) return false;
-	const FString Key = Ok[GetTypeHash(C->Id) % Ok.Num()];
+	const FString Key = (!ForceKey.IsEmpty() && (*Cre)->HasField(ForceKey)) ? ForceKey : Ok[GetTypeHash(C->Id) % Ok.Num()];
 	const TSharedPtr<FJsonObject> E = (*Cre)->GetObjectField(Key);
 	auto LoadP = [](const FString& P) -> UObject* { const FString N = FPaths::GetBaseFilename(P); return StaticLoadObject(UObject::StaticClass(), nullptr, *(P + TEXT(".") + N)); };
 	USkeletalMesh* SM = Cast<USkeletalMesh>(LoadP(E->GetStringField(TEXT("mesh"))));

@@ -27,7 +27,13 @@ struct FPBXTrainer { FName Id; float Sight = 900.f; TArray<TPair<FName, int32>> 
 struct FPBXItem { FString Id, Item; int32 Count = 1; FVector Pos = FVector::ZeroVector; TWeakObjectPtr<AActor> Actor; };
 struct FPBXLine { FName Who; FString Text; };
 /** one camera move of a cutscene (phase 6): eye A0 -> A1 looking at L0 -> L1, eased, with an optional caption */
-struct FPBXCutShot { FVector A0, A1, L0, L1; float Dur = 4.f, Fov = 60.f; FString Caption, Sub; };
+struct FPBXCutShot
+{
+	FVector A0, A1, L0, L1; float Dur = 4.f, Fov = 60.f; FString Caption, Sub;
+	// Sigil & Spark intro (2026-10-31): narration (a sound under /Game/PBX/Audio, the shot lasts at least its length + .7 s),
+	// a subtitle (+ speaker), the ink overlay mode (0 = the world) / its title, and a hook that runs when the shot starts
+	FString Vo, Subtitle, SubSpeaker; int32 Ink = 0; FString InkTitle; TFunction<void()> OnStart;
+};
 
 UCLASS()
 class APBXDirector : public AActor
@@ -116,7 +122,11 @@ private:
 	void QSay(const TArray<FPBXLine>& Lines);
 	void QFade(float To, float Secs = .35f);
 	/** a skippable letterboxed cutscene in the script queue (confirm skips); AutoShot = screenshot name in the autotest */
-	void QCut(const TArray<FPBXCutShot>& Shots, const FString& AutoShot = FString());
+	void QCut(const TArray<FPBXCutShot>& Shots, const FString& AutoShot = FString(), TFunction<void()> OnEnd = nullptr);
+	/** the Sigil & Spark opening (SIGIL_AND_SPARK.md section 8): ink myth → Lumen Harbor at dawn → the White Page */
+	void PlayIntro();
+	bool bIntroShip = false; float IntroShipT0 = 0.f;
+	UPROPERTY() TArray<TObjectPtr<AActor>> IntroActors;
 	void CheckCutscenes();   // first visits: the lighthouse island, the Lamplighters' Rest
 	bool Busy() const { return Queue.Num() > 0; }
 

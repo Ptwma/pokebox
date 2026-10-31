@@ -9,6 +9,8 @@
 #include "Components/TextRenderComponent.h"
 #include "Dom/JsonObject.h"
 #include "Engine/Engine.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -452,30 +454,60 @@ void APBXDirector::QFade(float To, float Secs)
 	TSharedPtr<float> From = MakeShared<float>(-1.f);
 	Q([this, To, Secs, From](float T) { if (*From < 0.f) *From = UI->Fade; UI->Fade = FMath::Lerp(*From, To, FMath::Clamp(T / Secs, 0.f, 1.f)); return T >= Secs; });
 }
-void APBXDirector::QCut(const TArray<FPBXCutShot>& Shots, const FString& AutoShot)
+void APBXDirector::QCut(const TArray<FPBXCutShot>& InShots, const FString& AutoShot, TFunction<void()> OnEnd)
 {
 	TSharedPtr<bool> bShotDone = MakeShared<bool>(false);
-	Q([this, Shots, AutoShot, bShotDone](float T)
+	TSharedPtr<TArray<FPBXCutShot>> Shots = MakeShared<TArray<FPBXCutShot>>(InShots);
+	TSharedPtr<int32> Cur = MakeShared<int32>(-1);
+	TSharedPtr<TWeakObjectPtr<UAudioComponent>> Voice = MakeShared<TWeakObjectPtr<UAudioComponent>>();
+	TSharedPtr<bool> bTimed = MakeShared<bool>(false); TSharedPtr<int32> LastShot = MakeShared<int32>(-1);
+	Q([this, Shots, AutoShot, bShotDone, Cur, Voice, bTimed, OnEnd, LastShot](float T)
 	{
-		float Total = 0.f; for (const FPBXCutShot& S : Shots) Total += S.Dur;
+		if (!*bTimed)   // narration decides how long a shot lasts
+		{
+			*bTimed = true;
+			for (FPBXCutShot& S : *Shots) if (!S.Vo.IsEmpty()) if (USoundBase* Snd_ = Snd(*S.Vo)) S.Dur = FMath::Max(S.Dur, Snd_->GetDuration() + .7f);
+		}
+		float Total = 0.f; for (const FPBXCutShot& S : *Shots) Total += S.Dur;
 		APlayerController* PC = GetWorld()->GetFirstPlayerController();
-		auto End = [this, PC]() { UI->Letterbox = 0.f; UI->Caption.Empty(); UI->CaptionSub.Empty(); UI->CaptionA = 0.f; bConfirm = false;
-			if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f); if (PC && Player) PC->SetViewTarget(Player); if (Player) Player->SnapCamera(); return true; };
-		if (!Cam || Shots.Num() == 0) return End();
+		auto End = [this, PC, Voice, OnEnd]() {
+			UI->Letterbox = 0.f; UI->Caption.Empty(); UI->CaptionSub.Empty(); UI->CaptionA = 0.f; bConfirm = false;
+			UI->Ink = 0.f; UI->InkTitle.Empty(); UI->Subtitle.Empty(); UI->SubSpeaker.Empty(); UI->SubA = 0.f;
+			if (UAudioComponent* V = Voice->Get()) V->Stop();
+			if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f); if (PC && Player) PC->SetViewTarget(Player); if (Player) Player->SnapCamera();
+			if (OnEnd) OnEnd();
+			return true; };
+		if (!Cam || Shots->Num() == 0) return End();
 		if (T > .3f && bConfirm) return End();                  // skip
 		bConfirm = false;
 		if (T >= Total) return End();
 		UI->Mode = EPBXUIMode::None; UI->Prompt.Empty();
 		UI->Letterbox = FMath::Min(1.f, T * 2.f) * FMath::Min(1.f, (Total - T) * 2.f);
 		float Acc = 0.f; int32 i = 0;
-		while (i < Shots.Num() - 1 && T > Acc + Shots[i].Dur) { Acc += Shots[i].Dur; i++; }
-		const FPBXCutShot& S = Shots[i]; const float a = FMath::Clamp((T - Acc) / S.Dur, 0.f, 1.f), e = a * a * (3.f - 2.f * a);
+		while (i < Shots->Num() - 1 && T > Acc + (*Shots)[i].Dur) { Acc += (*Shots)[i].Dur; i++; }
+		const FPBXCutShot& S = (*Shots)[i]; const float Local = T - Acc, a = FMath::Clamp(Local / S.Dur, 0.f, 1.f), e = a * a * (3.f - 2.f * a);
+		if (*Cur != i)   // a new shot: its narration, subtitle and event
+		{
+			*Cur = i;
+			if (UAudioComponent* V = Voice->Get()) V->FadeOut(.3f, 0.f);
+			*Voice = nullptr;
+			if (!S.Vo.IsEmpty()) if (USoundBase* Snd_ = Snd(*S.Vo)) *Voice = UGameplayStatics::SpawnSound2D(this, Snd_, 1.f);
+			UI->Subtitle = S.Subtitle; UI->SubSpeaker = S.SubSpeaker;
+			UI->InkMode = S.Ink; UI->InkTitle = S.InkTitle;
+			if (S.OnStart) S.OnStart();
+		}
+		UI->SubA = S.Subtitle.IsEmpty() ? 0.f : FMath::Clamp(FMath::Min(Local * 3.f, (S.Dur - Local) * 3.f), 0.f, 1.f);
+		UI->InkT = Local;
+		const bool bPrevInk = i > 0 && (*Shots)[i - 1].Ink > 0, bNextInk = i + 1 < Shots->Num() && (*Shots)[i + 1].Ink > 0;
+		UI->Ink = S.Ink > 0 ? FMath::Min(bPrevInk ? 1.f : FMath::Clamp(Local * 1.5f, 0.f, 1.f), bNextInk ? 1.f : FMath::Clamp((S.Dur - Local) * 1.5f, 0.f, 1.f)) : 0.f;
+		if (S.Ink == 5) UI->InkWipe = FMath::Clamp((Local - 1.2f) / FMath::Max(1.f, S.Dur - 2.f), 0.f, 1.f);
 		const FVector Eye = FMath::Lerp(S.A0, S.A1, e), At = FMath::Lerp(S.L0, S.L1, e);
-		Cam->SetActorLocationAndRotation(Eye, (At - Eye).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(S.Fov);
+		if (!Eye.Equals(At)) { Cam->SetActorLocationAndRotation(Eye, (At - Eye).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(S.Fov); }
 		if (PC && PC->GetViewTarget() != Cam) PC->SetViewTarget(Cam);
 		UI->Caption = S.Caption; UI->CaptionSub = S.Sub;
-		UI->CaptionA = S.Caption.IsEmpty() ? 0.f : FMath::Clamp(FMath::Min((T - Acc) - .4f, S.Dur - (T - Acc) - .2f) * 2.f, 0.f, 1.f);
-		if (bAuto && !AutoShot.IsEmpty() && !*bShotDone && i == Shots.Num() / 2 && a > .5f) { *bShotDone = true; Shot(AutoShot); }
+		UI->CaptionA = S.Caption.IsEmpty() ? 0.f : FMath::Clamp(FMath::Min(Local - .4f, S.Dur - Local - .2f) * 2.f, 0.f, 1.f);
+		if (bAuto && !AutoShot.IsEmpty() && a > .55f && *LastShot < i)   // autotest: one screenshot per shot (intro review)
+		{ *LastShot = i; Shot(Shots->Num() > 4 ? FString::Printf(TEXT("%s_%02d"), *AutoShot, i) : AutoShot); }
 		return false;
 	});
 }
@@ -1905,6 +1937,146 @@ void APBXDirector::ShowMenu(EMenu M)
 	if (M != EMenu::None) UI->Mode = EPBXUIMode::Menu;
 }
 
+void APBXDirector::PlayIntro()
+{
+	UWorld* W = GetWorld();
+	const FPBXDoor* Lab = nullptr; for (const FPBXDoor& D : Doors) if (D.Id == TEXT("lab")) Lab = &D;
+	const float Yaw = Lab ? Lab->Outside.Yaw : 0.f;
+	const FVector F = FRotator(0.f, Yaw, 0.f).Vector(), R(-F.Y, F.X, 0.f), Up(0, 0, 1);
+	auto G = [W](FVector P) { P.Z = PBXWorld::GroundZ(W, P, 600.f, 3000.f, P.Z); return P; };
+	const FVector C = G(Lab ? Lab->Outside.Pos : PlayerLoc());
+	const FVector ValeP = G(C + F * 130.f), RhoP = G(C + F * 480.f - R * 170.f), YouP = G(C + F * 480.f), KidP = G(C + F * 480.f + R * 170.f);
+	const FVector In = Lab ? Lab->Inside.Pos : C; const float InYaw = Lab ? Lab->Inside.Yaw : 0.f;
+	const FVector Fi = FRotator(0.f, InYaw, 0.f).Vector(), Ri(-Fi.Y, Fi.X, 0.f);
+	const FName AnyCard = PBXData::Cards().Num() ? PBXData::Cards()[0].Id : NAME_None;
+	auto Spawn = [this, AnyCard](const TCHAR* Key, const FVector& P, float H) -> APBXEcho*
+	{
+		APBXEcho* E = GetWorld()->SpawnActor<APBXEcho>(APBXEcho::StaticClass(), FTransform(P));
+		if (!E) return nullptr;
+		E->ForceKey = Key; E->Setup(AnyCard, H); E->PlaceAt(P); E->Mode = APBXEcho::EMode::Idle; IntroActors.Add(E); return E;
+	};
+	auto Put = [](APBXNPC* N, const FVector& P, float Yw) { if (!N) return; N->SetActorLocationAndRotation(P + FVector(0, 0, 95.f), FRotator(0.f, Yw, 0.f), false, nullptr, ETeleportType::TeleportPhysics); N->StopTurning(); };
+	auto Mk = [](float Dur, const TCHAR* Vo, const TCHAR* Sub, int32 Ink = 0) { FPBXCutShot S; S.A0 = S.A1 = S.L0 = S.L1 = FVector::ZeroVector; S.Dur = Dur; S.Fov = 55.f; S.Vo = Vo; S.Subtitle = Sub; S.Ink = Ink; return S; };
+	auto CamS = [](FPBXCutShot& S, const FVector& A0, const FVector& A1, const FVector& L0, const FVector& L1, float Fov = 55.f) { S.A0 = A0; S.A1 = A1; S.L0 = L0; S.L1 = L1; S.Fov = Fov; };
+	TSharedPtr<float> FogWas = MakeShared<float>(-1.f);
+	auto Fog = [W, FogWas](float D)
+	{
+		for (TActorIterator<AExponentialHeightFog> It(W); It; ++It) if (UExponentialHeightFogComponent* FC = It->GetComponent())
+		{ if (*FogWas < 0.f) *FogWas = FC->FogDensity; FC->SetFogDensity(D < 0.f ? *FogWas : D); }
+	};
+	MusicHold = 9999.f; Music(TEXT("mus_island"));
+	TArray<FPBXCutShot> Sh;
+	// ---- Part I: the First Words (the ink myth)
+	Sh.Add(Mk(3.f, TEXT("vo_intro_01"), TEXT("Before the sea had a name, there was the Script."), 1));
+	Sh.Add(Mk(3.f, TEXT("vo_intro_02"), TEXT("Every wave, every stone, every living thing. Each one a word, written in a language older than memory."), 2));
+	{
+		FPBXCutShot S = Mk(3.f, TEXT("vo_intro_03"), TEXT("Some words carried so much meaning... that they woke up. We call them Sparks."));
+		const FVector P = G(C + R * 1500.f + F * 300.f);
+		CamS(S, P - F * 700.f + R * 140.f + Up * 160.f, P - F * 470.f - R * 90.f + Up * 105.f, P + Up * 80.f, P + Up * 95.f, 42.f);
+		S.OnStart = [this, Spawn, P, F, R]()
+		{
+			for (APBXEcho* E : { Spawn(TEXT("Flying/Dragon"), P - R * 170.f, 95.f), Spawn(TEXT("Flying/Glub"), P, 90.f), Spawn(TEXT("Flying/Armabee"), P + R * 170.f, 80.f) })
+				if (E) { E->Mode = APBXEcho::EMode::Stage; E->FaceAt = P - F * 600.f; E->PopIn(); if (FX) FX->Burst(E->GetActorLocation() + FVector(0, 0, 60), FLinearColor(1.f, .8f, .4f), 26, 260.f, 14.f, 1.4f, 60.f, .8f); }
+		};
+		Sh.Add(S);
+	}
+	Sh.Add(Mk(3.f, TEXT("vo_intro_04"), TEXT("And people learned to write beside them, in books that remember every bond."), 4));
+	Sh.Add(Mk(3.f, TEXT("vo_intro_05"), TEXT("But there are those who believe that every word is a wound, waiting to open. They call themselves the White Page."), 5));
+	{ FPBXCutShot S = Mk(4.f, TEXT(""), TEXT(""), 6); S.InkTitle = TEXT("SIGIL  &  SPARK"); Sh.Add(S); }
+	// ---- Part II: Lumen Harbor, dawn
+	{
+		FPBXCutShot S = Mk(5.f, TEXT("vo_intro_07"), TEXT("Lumen Harbor. Thirty years without a Blanking."));
+		CamS(S, FVector(-9000, -30000, 4200), FVector(-2500, -15000, 1800), FVector(0, -4000, 0), FVector(-1000, -5200, 0));
+		Sh.Add(S);
+	}
+	{
+		FPBXCutShot S = Mk(5.f, TEXT("vo_intro_08"), TEXT("Today, every eleven-year-old on the island receives a Codex."));
+		S.Caption = TEXT("THE RITE OF PAGES");
+		CamS(S, C - F * 2600.f + R * 1500.f + Up * 1400.f, C + F * 1000.f + R * 750.f + Up * 420.f, C, C + F * 420.f + Up * 90.f);
+		S.OnStart = [this, Put, ValeP, RhoP, YouP, KidP, Yaw]()
+		{
+			for (AActor* A : IntroActors) if (A) A->Destroy();
+			IntroActors.Reset();
+			Put(NPCs.FindRef(TEXT("vale")), ValeP, Yaw);
+			Put(NPCs.FindRef(TEXT("rho")), RhoP, Yaw + 180.f); Put(NPCs.FindRef(TEXT("kid")), KidP, Yaw + 180.f);
+			TeleportPlayer(YouP + FVector(0, 0, 95.f), Yaw + 180.f);
+		};
+		Sh.Add(S);
+	}
+	{
+		FPBXCutShot S = Mk(4.5f, TEXT(""), TEXT("Rho Calder. Three pages on the first day!"));
+		S.SubSpeaker = TEXT("Archivist Vale");
+		CamS(S, RhoP - R * 430.f + F * 140.f + Up * 175.f, RhoP - R * 330.f + F * 90.f + Up * 160.f, RhoP + Up * 115.f, RhoP + Up * 120.f, 45.f);
+		S.OnStart = [this, RhoP]()
+		{
+			if (FX) { FX->Burst(RhoP + FVector(0, 0, 110), FLinearColor(1.f, .78f, .3f), 46, 340.f, 16.f, 1.5f, -80.f, .6f); FX->Ring(RhoP + FVector(0, 0, 20), FLinearColor(1.f, .8f, .35f), 140.f, 30); }
+			if (APBXNPC* Rh = NPCs.FindRef(TEXT("rho"))) Rh->PlayAction(TEXT("Idle_Talking_Loop"), true, .2f);
+		};
+		Sh.Add(S);
+	}
+	{
+		FPBXCutShot S = Mk(3.f, TEXT("vo_intro_10"), TEXT("And then... there was you."));
+		CamS(S, YouP - F * 260.f + Up * 155.f, YouP - F * 175.f + Up * 145.f, YouP + Up * 125.f, YouP + Up * 120.f, 40.f);
+		S.OnStart = [this, YouP]() { if (FX) FX->Burst(YouP + FVector(0, 0, 100) - FVector(0, 0, 0), FLinearColor(.6f, .6f, .65f), 8, 60.f, 8.f, 1.f, 20.f, .3f); };
+		Sh.Add(S);
+	}
+	// ---- Part III: the White Page
+	{
+		FPBXCutShot S = Mk(6.5f, TEXT(""), TEXT("Not again... not after thirty years."));
+		S.SubSpeaker = TEXT("Old Gus");
+		CamS(S, FVector(-2600, -6200, 650), FVector(-2200, -6600, 600), FVector(-1500, -12500, 400), FVector(-600, -12000, 350), 50.f);
+		S.OnStart = [this, Fog]() { Fog(.09f); bIntroShip = true; IntroShipT0 = GetWorld()->GetTimeSeconds(); Music(TEXT("mus_battle")); };
+		Sh.Add(S);
+	}
+	{
+		FPBXCutShot S = Mk(5.f, TEXT(""), TEXT("Everyone inside! Now!"));
+		S.SubSpeaker = TEXT("Captain Bruce");
+		CamS(S, C + R * 1000.f + F * 600.f + Up * 320.f, C + R * 700.f + F * 300.f + Up * 260.f, C + F * 300.f, C, 50.f);
+		S.OnStart = [this, Spawn, C, F, R]()
+		{
+			const TCHAR* Keys[] = { TEXT("Blob/Cat"), TEXT("Blob/Dog"), TEXT("Flying/Pigeon"), TEXT("Blob/PinkBlob") };
+			for (int32 k = 0; k < 4; k++)
+				if (APBXEcho* E = Spawn(Keys[k], C + R * (k * 220.f - 330.f) + F * 700.f, 70.f))
+				{ E->Mode = APBXEcho::EMode::Wander; E->WanderBox = FBox2D(FVector2D(C - FVector(900, 900, 0)), FVector2D(C + FVector(900, 900, 0))); }
+			if (FX) for (int32 k = 0; k < 3; k++) { const FVector P = C + F * (900.f + k * 400.f) + R * (k * 300.f - 300.f); FX->Burst(P + FVector(0, 0, 80), FLinearColor(1, 1, 1), 40, 520.f, 20.f, 1.2f, 0.f, .5f); FX->Ring(P, FLinearColor(1, 1, 1), 260.f, 34); }
+		};
+		Sh.Add(S);
+	}
+	{
+		FPBXCutShot S = Mk(5.f, TEXT(""), TEXT("The starters, they're loose!"));
+		S.SubSpeaker = TEXT("Scribe Kelvin");
+		const FVector Mid = G(In + Fi * 420.f);
+		CamS(S, In + Fi * 80.f - Ri * 260.f + Up * 260.f, In + Fi * 160.f - Ri * 200.f + Up * 230.f, Mid + Up * 60.f, Mid + Up * 50.f, 60.f);
+		S.OnStart = [this, Spawn, In, Fi, Ri, InYaw, Mid]()
+		{
+			TeleportPlayer(In + Fi * 150.f + FVector(0, 0, 95.f), InYaw);
+			APBXEcho* A = Spawn(TEXT("Flying/Dragon"), Mid - Ri * 190.f, 85.f);
+			APBXEcho* B = Spawn(TEXT("Flying/Glub"), Mid, 80.f);
+			APBXEcho* D = Spawn(TEXT("Blob/Mushnub"), Mid + Ri * 190.f, 75.f);
+			for (APBXEcho* E : { A, B, D }) if (E) { E->Mode = APBXEcho::EMode::Stage; E->FaceAt = In; }
+			if (FX && B) FX->Beam(In + Fi * 40.f + FVector(0, 0, 180), B->GetActorLocation() + FVector(0, 0, 60), FLinearColor(1, 1, 1), .7f, 26.f);
+			if (B) B->SetFaint(true);
+		};
+		Sh.Add(S);
+	}
+	{
+		FPBXCutShot S = Mk(4.f, TEXT("vo_intro_14"), TEXT("Some books are blank... because they haven't been written yet."));
+		const FVector Me = In + Fi * 150.f;
+		CamS(S, Me + Fi * 230.f + Ri * 60.f + Up * 150.f, Me + Fi * 160.f + Ri * 40.f + Up * 140.f, Me + Up * 110.f, Me + Up * 115.f, 42.f);
+		S.OnStart = [this, Me]() { if (FX) { FX->Burst(Me + FVector(0, 0, 105), FLinearColor(1.f, .8f, .35f), 60, 300.f, 16.f, 1.8f, -40.f, .7f); FX->Ring(Me + FVector(0, 0, 15), FLinearColor(1.f, .8f, .35f), 160.f, 36); } };
+		Sh.Add(S);
+	}
+	QCut(Sh, TEXT("c1_intro"), [this, Fog]()
+	{
+		for (AActor* A : IntroActors) if (A) A->Destroy();
+		IntroActors.Reset(); bIntroShip = false; Fog(-1.f);
+		for (const TPair<FName, TObjectPtr<APBXNPC>>& It : NPCs) if (APBXNPC* N = It.Value) if (!N->GetAttachParentActor())
+			N->SetActorLocationAndRotation(N->Home, FRotator(0.f, N->HomeYaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics), N->ReturnToIdle();
+		PlacePlayer(NewGameSpot);
+		MusicHold = 0.f;
+	});
+}
+
 void APBXDirector::StartNewGame(bool bMale)
 {
 	CloseChoice(); Menu = EMenu::None;
@@ -1917,11 +2089,9 @@ void APBXDirector::StartNewGame(bool bMale)
 	ApplyPlayerLook();
 	PlacePlayer(NewGameSpot);
 	RefreshWorld();
-	// phase 6: the opening flyover — the bay, the harbour, down over the roofs to home (skippable)
+	// Sigil & Spark (2026-10-31): the opening film — the ink myth, Lumen Harbor at dawn, the White Page (skippable with E)
 	QFade(0.f, 1.f);
-	QCut({ { FVector(-9000, -32000, 5200), FVector(-3000, -17000, 2600), FVector(0, -2000, 600), FVector(0, 0, 400), 6.f, 55.f, TEXT("LUMEN HARBOR"), TEXT("A harbour town under the Alps") },
-	       { FVector(-3200, -7600, 700), FVector(2800, -7000, 550), FVector(-1200, -5000, 0), FVector(1500, -5200, 0), 5.f, 55.f, TEXT(""), TEXT("") },
-	       { FVector(-1500, 3200, 1700), FVector(-1500, 1300, 650), FVector(-1500, -300, 300), FVector(-1500, -400, 250), 4.5f, 55.f, TEXT(""), TEXT("") } }, TEXT("c1_intro"));
+	PlayIntro();
 	QFade(1.f, .6f);
 	QWait(.3f);
 	QDo([this] { Player->PlayAction(TEXT("LayToIdle"), false, .05f); });
@@ -2130,7 +2300,7 @@ void APBXDirector::AutoTick(float Dt)
 	auto Fail = [this](const TCHAR* Why) { PBXLOG("[PBXAUTO] FAIL step %d: %s", AutoStep, Why); bAutoFail = true; AutoNext(); };
 	auto Idle = [this] { return !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore; };
 	auto DoorById = [this](const TCHAR* Id) -> const FPBXDoor* { for (const FPBXDoor& D : Doors) if (D.Id == Id) return &D; return nullptr; };
-	if (AutoStepT > 90.f) { Fail(TEXT("timeout")); return; }
+	if (AutoStepT > (AutoStep == 3 ? 170.f : 90.f)) { Fail(TEXT("timeout")); return; }   // step 3 waits for the ~80 s intro film
 	switch (AutoStep)
 	{
 	case 0: if (AutoT > 4.f) { Shot(TEXT("01_title")); AutoNext(); } break;
@@ -2675,6 +2845,12 @@ void APBXDirector::TickLife(float Dt)
 			P = B.C + FVector2D(B.Rx * FMath::Cos(Ang), B.Ry * FMath::Sin(Ang));
 			const FVector2D Vel(-B.Rx * FMath::Sin(Ang), B.Ry * FMath::Cos(Ang));
 			Yaw = FMath::RadiansToDegrees(FMath::Atan2(Vel.Y, Vel.X)); Heel = 9.f + 3.f * FMath::Sin(T * .4f) + 4.f * Rough;
+		}
+		if (bIntroShip && A->ActorHasTag(FName(TEXT("PBX_Sail_1"))))   // the intro: the White Page's ship slides out of the fog towards the harbour mouth
+		{
+			const float k = FMath::Clamp((T - IntroShipT0) / 14.f, 0.f, 1.f);
+			const FVector2D S0(-3200.f, -17800.f), S1(-500.f, -12600.f);
+			P = FMath::Lerp(S0, S1, k); Yaw = FMath::RadiansToDegrees(FMath::Atan2(S1.Y - S0.Y, S1.X - S0.X)); Heel = 5.f;
 		}
 		const FVector2D F(FMath::Cos(FMath::DegreesToRadians(Yaw)), FMath::Sin(FMath::DegreesToRadians(Yaw))), Rt(-F.Y, F.X);
 		const float H = B.Len * .45f, Wd = B.Beam * .5f;
