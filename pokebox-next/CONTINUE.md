@@ -1,6 +1,12 @@
-# Pokebox Next — ΣΥΝΕΧΕΙΑ (handoff 2026-10-30, 19:55)
+# Pokebox Next — ΣΥΝΕΧΕΙΑ (handoff 2026-10-31, 15:20)
 
 > Πλήρης λίστα θεμάτων: Project doc `claude/pokebox-next-TOMORROW.md` (ενότητα **H** = αυτή η δουλειά). Αυτό είναι το σημείο επανεκκίνησης.
+
+## 00. Τι έγινε στις 31/10 (TOMORROW ενότητα H5)
+- **18/18 MetaHumans χτισμένοι** και στον δίσκο (OPTIMIZED/LOW, υφές 2K), manifest, 86 animations retarget → `Anim_MH`, μουσική εισήχθη, **C++ compile OK** (MetaHumans, cutscenes, μουσική ανά ζώνη, UI), **autotest PASS 56**, save επαναφέρθηκε (md5 3b44…).
+- Μαθήματα: χτίσιμο χωρίς save → OOM crash (τώρα 1 χαρακτήρας/job + restart editor όταν RAM < 15 GB)· modal "Overwrite Existing Object" κρεμάει την ουρά (reuse IK rigs)· UBT κόλλησε με UBA → `-NoUBA`.
+- **Επόμενο (μεγαλύτερο οπτικό κενό):** όλοι φορούν το λευκό default garment και είναι ξυπόλητοι → ρούχα/παπούτσια (Fab δωρεάν outfits ή δικά μας ή χρωματισμός). Μετά: hitches 400–600 ms (preload MH), φωτισμός εσωτερικών, τρένο pass 2, φάση 8.
+- Το PC αποσυνδέθηκε (~14:58, stale sign-in στο Claude desktop app) — χρειάζεται νέο sign-in από τον χρήστη.
 
 ## 0. Τι έγινε στις 30/10 (commits 2d9c378 + επόμενο)
 - Η λίστα διορθώσεων (ρυάκι, τούνελ, δάσος, νησί, προβλήτα, βάρκες, ανεμόμυλοι, βάρκες με NPC, λιμανάκι) **χτίστηκε και ελέγχθηκε**: captures r58/r58b, autotest **PASS 54** (διάσχιση με βάρκα μέχρι το νησί, πλήρωμα στις βάρκες, ιστιοφόρο), validator FAIL 0 / WARN 14.
