@@ -31,21 +31,26 @@ def trees(fix=False, report=None):
         for c in host.get_components_by_class(unreal.InstancedStaticMeshComponent):
             sm = c.get_editor_property('static_mesh'); nm = sm.get_name() if sm else '?'
             n = c.get_instance_count(); rm = []; moves = []
+            # r59 lesson: the Poly Haven sets share ONE pivot (tree b/c sit metres away from it) → measure at the mesh's own
+            # footprint centre and its lowest point, transformed by the instance, never at the instance origin
+            b = sm.get_bounding_box() if sm else None
+            if not b: continue
+            foot = unreal.Vector((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, b.min.z)
             for i in range(n):
                 t = c.get_instance_transform(i, True)
                 if isinstance(t, tuple): t = t[-1]
-                p = t.translation; total += 1
+                p = t.transform_location(foot); total += 1
                 gz, act = _hit_z(world, p.x, p.y, p.z + 8000.0, p.z - 4000.0, ignore=[host])
                 if gz is None: continue
-                if gz - p.z > 120.0:
+                if gz - p.z > 150.0:
                     rm.append(i); buried += 1
                     if len(samples) < 25: samples.append(('buried', nm, round(p.x), round(p.y), round(gz - p.z), act.get_actor_label() if act else ''))
                 elif p.z - gz > 60.0:
-                    floating += 1; t.translation = unreal.Vector(p.x, p.y, gz - 10.0); moves.append((i, t))
+                    floating += 1; t.translation = t.translation + unreal.Vector(0, 0, gz - 10.0 - p.z); moves.append((i, t))
             if fix:
                 for i, t in moves: c.update_instance_transform(i, t, True, False, True)
                 if rm: c.remove_instances(rm)
-                c.mark_render_state_dirty()
+
             if rm or moves: log('instances', nm, 'buried', len(rm), 'floating', len(moves), 'of', n)
     log('trees/plants', total, 'buried', buried, 'floating', floating, 'fixed' if fix else 'report only')
     if report is not None: report += [f'instances {total}: buried {buried} (removed={fix}), floating {floating} (dropped={fix})'] + [str(s) for s in samples]

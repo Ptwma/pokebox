@@ -62,21 +62,27 @@ def manifest():
     for k in keys():
         d = folder(k)
         if not EAL.does_directory_exist(d): log('not imported', k); continue
-        mesh, anims = None, {}
+        meshes, anims = [], {}
         for p in EAL.list_assets(d, recursive=True):
             ad = EAL.find_asset_data(p); cls = str(ad.asset_class_path.asset_name); nm = str(ad.asset_name)
-            if cls == 'SkeletalMesh' and not mesh: mesh = p.split('.')[0]
+            if cls == 'SkeletalMesh': meshes.append(p.split('.')[0])
             elif cls == 'AnimSequence': anims[nm] = p.split('.')[0]
-        if not mesh: log('no mesh', k); continue
-        stem = mesh.split('/')[-1]          # Interchange names the clips <mesh><clip>, e.g. DragonFlying_Idle
+        if not meshes: log('no mesh', k); continue
+        # some creatures are several skinned meshes (body + eyes / crown): the biggest is the body, the rest follow it
+        def _h(mp):
+            sm = unreal.load_asset(mp); b = sm.get_bounds() if sm else None
+            return (b.box_extent.x * b.box_extent.y * b.box_extent.z) if b else 0.0
+        meshes.sort(key=_h, reverse=True); mesh = meshes[0]
+        # Interchange names the clips <node><clip> (DragonFlying_Idle, FishDeath for the mesh Fish_Blob): match the clip
+        # name at the END, and reject a longer clip that merely ends the same way (Jump_Idle is not Idle)
         roles = {}
         for role, cands in ROLES.items():
             for c in cands:
-                hit = [v for n, v in anims.items() if n in (stem + c, stem + '_' + c, c, stem + '_Anim_' + c)]
+                hit = [v for n, v in sorted(anims.items()) if n.endswith(c) and not n[:-len(c)].endswith('_')]
                 if hit: roles[role] = hit[0]; break
         sm = unreal.load_asset(mesh); b = sm.get_bounds() if sm else None
         h = round(b.box_extent.z * 2, 1) if b else 100.0
-        out['creatures'][k] = {'mesh': mesh, 'height': h, 'fly': k.startswith('Flying/'), 'anims': roles}
+        out['creatures'][k] = {'mesh': mesh, 'parts': meshes[1:], 'height': h, 'fly': k.startswith('Flying/'), 'anims': roles}
         log('creature', k, h, sorted(roles))
     path = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()) + 'PBX/Data/creatures.json'
     open(path, 'w', encoding='utf-8').write(json.dumps(out, indent=1)); log('manifest ->', path, len(out['creatures']))

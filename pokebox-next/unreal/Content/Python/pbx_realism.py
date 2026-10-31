@@ -218,18 +218,27 @@ for (int i = 0; i < 8; i++)
 return keep;
 """
 
+_MPC = None
 def sea_mpc():
-    """MPC_PBX_Sea.Swell: the sea state (1 = normal swell, up to ~2.4 in a set of big waves) — written by APBXDirector"""
+    """MPC_PBX_Sea.Swell: the sea state (1 = normal swell, up to ~2.4 in a set of big waves) + B0..B7 hull outlines —
+    written by APBXDirector. Parameters are created ONCE: re-assigning them makes new ids and every material node that
+    points at the old ones fails to compile (r59: the sea fell back to the default material)."""
+    global _MPC
+    if _MPC: return _MPC
     path = G + '/Materials/MPC_PBX_Sea'
     c = unreal.load_asset(path) if EAL.does_asset_exist(path) else None
     if not c:
         c = unreal.AssetToolsHelpers.get_asset_tools().create_asset('MPC_PBX_Sea', G + '/Materials', unreal.MaterialParameterCollection, unreal.MaterialParameterCollectionFactoryNew())
-    p = unreal.CollectionScalarParameter(); p.set_editor_property('parameter_name', 'Swell'); p.set_editor_property('default_value', 1.0)
-    c.set_editor_property('scalar_parameters', [p])
-    vs = []
-    for i in range(NBOATS):   # B<i> = (x m, y m, yaw rad, half length m; 0 = unused) — the hulls the sea must not draw inside
-        v = unreal.CollectionVectorParameter(); v.set_editor_property('parameter_name', f'B{i}'); v.set_editor_property('default_value', unreal.LinearColor(0, 0, 0, 0)); vs.append(v)
-    c.set_editor_property('vector_parameters', vs); EAL.save_loaded_asset(c)
+    have_s = [str(p.get_editor_property('parameter_name')) for p in c.get_editor_property('scalar_parameters')]
+    have_v = [str(p.get_editor_property('parameter_name')) for p in c.get_editor_property('vector_parameters')]
+    if 'Swell' not in have_s or any(f'B{i}' not in have_v for i in range(NBOATS)):
+        p = unreal.CollectionScalarParameter(); p.set_editor_property('parameter_name', 'Swell'); p.set_editor_property('default_value', 1.0)
+        c.set_editor_property('scalar_parameters', [p])
+        vs = []
+        for i in range(NBOATS):   # B<i> = (x m, y m, yaw rad, half length m; 0 = unused)
+            v = unreal.CollectionVectorParameter(); v.set_editor_property('parameter_name', f'B{i}'); v.set_editor_property('default_value', unreal.LinearColor(0, 0, 0, 0)); vs.append(v)
+        c.set_editor_property('vector_parameters', vs); EAL.save_loaded_asset(c)
+    _MPC = c
     return c
 
 def master_sea():

@@ -343,6 +343,16 @@ bool APBXEcho::SetupCreature(const FPBXCardDef* C, float Height)
 	const float MeshH = FMath::Max(10.f, (float)E->GetNumberField(TEXT("height")));
 	const float S = Height * (bFly ? .8f : 1.f) / MeshH;
 	Body->SetSkeletalMesh(SM); Body->SetVisibility(true); Paper->SetVisibility(false);
+	for (USkeletalMeshComponent* P : BodyParts) if (P) P->DestroyComponent();
+	BodyParts.Reset();
+	TArray<FString> PartPaths; E->TryGetStringArrayField(TEXT("parts"), PartPaths);
+	for (const FString& PP : PartPaths)
+		if (USkeletalMesh* PM = Cast<USkeletalMesh>(LoadP(PP)))
+		{
+			USkeletalMeshComponent* C2 = NewObject<USkeletalMeshComponent>(this);
+			C2->SetupAttachment(Body); C2->RegisterComponent(); C2->SetSkeletalMesh(PM); C2->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			C2->SetLeaderPoseComponent(Body); BodyParts.Add(C2);
+		}
 	Body->SetRelativeScale3D(FVector(S)); Body->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));   // glTF front (+Y after import) → actor +X
 	Body->SetRelativeLocation(FVector(0.f, 0.f, bFly ? Height * .45f : 0.f));                      // flyers hover
 	bCreature = true; CurClip = NAME_None; ClipLock = 0.f; PlayClip(TEXT("idle"), true);
@@ -367,7 +377,7 @@ bool APBXEcho::Setup(FName Card, float Height)
 	UTexture2D* Tex = C ? LoadObject<UTexture2D>(nullptr, *C->EchoTexturePath()) : nullptr;
 	if (!M || !Mat || !Tex) { GPBXMissingAssets++; UE_LOG(LogTemp, Error, TEXT("[PBX] echo assets missing for %s (mesh %d mat %d tex %d)"), *Card.ToString(), M != nullptr, Mat != nullptr, Tex != nullptr); }
 	if (SetupCreature(C, Height)) return true;
-	bCreature = false; Body->SetVisibility(false); Paper->SetVisibility(true);
+	bCreature = false; Body->SetVisibility(false, true); Paper->SetVisibility(true);
 	if (M) Paper->SetStaticMesh(M);
 	if (Mat) { MID = UMaterialInstanceDynamic::Create(Mat, this); if (Tex) MID->SetTextureParameterValue(TEXT("Tex"), Tex); Paper->SetMaterial(0, MID); }
 	// visible-art normalisation (council S9): cut-outs have transparent margins of every size, so a wide Rattata read small

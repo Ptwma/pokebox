@@ -13,6 +13,7 @@ KIT_DIRS = {'QProps': os.path.join(KITS, 'q_props', 'Exports', 'FBX'), 'KTown': 
             'KPirate': os.path.join(KITS, 'k_pirate', 'Models', 'FBX format'), 'KSurvival': os.path.join(KITS, 'k_survival', 'Models', 'FBX format'),
             'KFurniture': os.path.join(KITS, 'k_furniture', 'Models', 'FBX format')}
 G = '/Game/PBX'
+QA_FIX = True   # the trees QA after a build removes / drops what it finds (set False to only report)
 AT = unreal.AssetToolsHelpers.get_asset_tools()
 EAL = unreal.EditorAssetLibrary
 MEL = unreal.MaterialEditingLibrary
@@ -796,7 +797,7 @@ def build_level(map_name='L_Town', plan_file='town_plan.json'):
         if map_name == 'L_Route1': pbx_dressing.route1(save=False)
         import pbx_realism; pbx_realism.level(save=False)   # physical sky / clouds / grade (2026-10-22)
         import pbx_validate; pbx_validate.run(map_name, fix=True)
-        import pbx_qa; pbx_qa.trees(fix=True); les.save_current_level()   # trees inside rocks / cliffs added after the forest, floating plants (2026-10-31)
+        import pbx_qa; pbx_qa.trees(fix=QA_FIX); les.save_current_level()   # trees inside rocks / cliffs added after the forest, floating plants (2026-10-31)
     except Exception as ex: log('validate fix', ex)
 
 ROUTE1_MESHES = ['SM_R1_Ground', 'SM_R1_Mountains', 'SM_R1_Hut', 'SM_R1_GateEast', 'SM_R1_GateWest', 'SM_ItemBall']

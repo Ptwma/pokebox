@@ -104,6 +104,7 @@ public:
 	// 2026-10-31: an original 3D creature (Quaternius Ultimate Monsters, CC0) instead of the paper cut-out — Content/PBX/Data/creatures.json
 	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Body;
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<UAnimSequence>> Clips;
+	UPROPERTY(Transient) TArray<TObjectPtr<USkeletalMeshComponent>> BodyParts;   // eyes / crowns of multi-mesh creatures (leader pose)
 	bool bCreature = false, bFly = false; FString CreatureKey;
 	/** where to look when standing still (battle: the opponent); zero = the camera */
 	FVector FaceAt = FVector::ZeroVector;
