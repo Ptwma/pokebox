@@ -40,6 +40,69 @@ SPEC = {
     'crew_kid':  ('Mikel',   0.0, 136, -.4, -.8, 'Hair_S_CurlyFade', None, (.85, .3, .2)),
 }
 KIDS = {'player_m', 'player_f', 'rho', 'kid', 'crew_kid'}
+# hair colour for the hair CARDS material (the MetaHuman hair shader only draws through the groom renderer — r61)
+HAIR_COLOR = {'player_m': (.05, .03, .02), 'player_f': (.02, .015, .012), 'mom': (.09, .05, .03), 'vale': (.55, .42, .28),
+              'aide': (.04, .03, .02), 'rho': (.02, .015, .01), 'fisher': (.55, .55, .55), 'gardener': (.03, .02, .015),
+              'merchant': (.02, .015, .01), 'kid': (.03, .02, .015), 'conductor': (.25, .12, .05), 'guard': (.12, .08, .05),
+              'crew_jon': (.08, .05, .03), 'crew_ada': (.20, .10, .04), 'crew_ben': (.06, .04, .03), 'crew_old': (.75, .75, .74),
+              'crew_sail': (.62, .48, .30), 'crew_kid': (.04, .03, .02)}
+
+class builtins_flag: done = False
+HAIR_DEFAULT_TEX = '/MetaHumanCharacter/Optional/Grooms/GroomAssets/Hair/Hair_S_Messy/Hair_S_Messy_RootUVSeedCoverage'
+
+def hair_master():
+    """M_PBX_HairCards: masked, two-sided, coverage from the groom's RooUVSeedCoverage atlas (alpha), colour per character"""
+    import pbx_build as B
+    path = '/Game/PBX/Materials/M_PBX_HairCards'
+    MEL = unreal.MaterialEditingLibrary
+    if EAL.does_asset_exist(path):
+        m = unreal.load_asset(path)
+        if not getattr(builtins_flag, 'done', False):   # r61: the atlas is TC_MASKS → the sampler must be Masks (LinearColor = compile error → grey default material)
+            for e in MEL.get_material_expressions(m) if hasattr(MEL, 'get_material_expressions') else []:
+                if isinstance(e, unreal.MaterialExpressionTextureSampleParameter2D):
+                    e.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
+                    e.set_editor_property('texture', unreal.load_asset(HAIR_DEFAULT_TEX))   # a Masks default (the engine default is Color → compile error)
+            MEL.recompile_material(m); EAL.save_loaded_asset(m); builtins_flag.done = True
+        return m
+    m = unreal.AssetToolsHelpers.get_asset_tools().create_asset('M_PBX_HairCards', '/Game/PBX/Materials', unreal.Material, unreal.MaterialFactoryNew())
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED); m.set_editor_property('two_sided', True)
+    m.set_editor_property('opacity_mask_clip_value', .35)
+    t = MEL.create_material_expression(m, unreal.MaterialExpressionTextureSampleParameter2D, -700, 0)
+    t.set_editor_property('parameter_name', 'Coverage'); t.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_MASKS); t.set_editor_property('texture', unreal.load_asset(HAIR_DEFAULT_TEX))
+    c = MEL.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -700, -250)
+    c.set_editor_property('parameter_name', 'HairColor'); c.set_editor_property('default_value', unreal.LinearColor(.05, .03, .02, 1))
+    var = MEL.create_material_expression(m, unreal.MaterialExpressionLinearInterpolate, -400, -200)
+    var.set_editor_property('const_a', .7); var.set_editor_property('const_b', 1.25)
+    MEL.connect_material_expressions(t, 'B', var, 'Alpha')            # seed → strand-to-strand variation
+    mul = MEL.create_material_expression(m, unreal.MaterialExpressionMultiply, -200, -220)
+    MEL.connect_material_expressions(c, '', mul, 'A'); MEL.connect_material_expressions(var, '', mul, 'B')
+    MEL.connect_material_property(mul, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    MEL.connect_material_property(t, 'A', unreal.MaterialProperty.MP_OPACITY_MASK)
+    r = MEL.create_material_expression(m, unreal.MaterialExpressionConstant, -200, 100); r.set_editor_property('r', .5)
+    MEL.connect_material_property(r, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m); log('hair master instr', MEL.get_statistics(m).num_pixel_shader_instructions)
+    return m
+
+def hair_mi(cid, groom_name):
+    """MI_HairCards_<cid>_<groom>: the master with that groom's coverage atlas and the character's hair colour"""
+    # the atlas is spelled RootUV... (built / plugin) or RooUV... (some Common copies): look in the character's build first
+    cov = None
+    for root in (f'/Game/PBX/MH/Built/MH_{cid}/Grooms', '/Game/PBX/MH/Common/Optional/Grooms', '/MetaHumanCharacter/Optional/Grooms'):
+        if not EAL.does_directory_exist(root): continue
+        cov = next((p.split('.')[0] for p in EAL.list_assets(root, recursive=True)
+                    if p.split('/')[-1].split('.')[0] in (f'{groom_name}_RootUVSeedCoverage', f'{groom_name}_RooUVSeedCoverage')), None)
+        if cov: break
+    if not cov: log('no coverage atlas', groom_name); return ''
+    path = f'/Game/PBX/MH/HairCards/MI_HairCards_{cid}_{groom_name}'
+    mi = unreal.load_asset(path) if EAL.does_asset_exist(path) else unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+        path.split('/')[-1], '/Game/PBX/MH/HairCards', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+    MEL = unreal.MaterialEditingLibrary
+    mi.set_editor_property('parent', hair_master())
+    MEL.set_material_instance_texture_parameter_value(mi, 'Coverage', unreal.load_asset(cov))
+    col = HAIR_COLOR.get(cid, (.05, .03, .02)) if groom_name.startswith('Hair') else tuple(min(1, x * 1.1) for x in HAIR_COLOR.get(cid, (.05, .03, .02)))
+    MEL.set_material_instance_vector_parameter_value(mi, 'HairColor', unreal.LinearColor(col[0], col[1], col[2], 1))
+    MEL.update_material_instance(mi); EAL.save_loaded_asset(mi)
+    return path
 
 def S(): return unreal.get_editor_subsystem(unreal.MetaHumanCharacterEditorSubsystem)
 
@@ -272,6 +335,8 @@ def manifest():
                 cards = [n for n in names if n.split('/')[-1].startswith(gn + '_CardsMesh_') and n.endswith('_' + lod)]
                 if cards: break
             mat = next((n for n in names if n.split('/')[-1] == f'MI_WI_{gn}_Hair_Cards'), '') or next((n for n in names if n.endswith('_Cards') and n.split('/')[-1].startswith('MI_')), '')
+            try: mat = hair_mi(cid, gn) or mat
+            except Exception as ex: log('hair mi', cid, gn, ex)
             g['cards'] = [{'mesh': c, 'material': mat} for c in cards]
         EAS.destroy_actor(a); out[cid] = e; log('manifest', cid, e['body'] is not None, len(e['parts']), len(e['grooms']))
     path = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()) + 'PBX/Data/mh_manifest.json'

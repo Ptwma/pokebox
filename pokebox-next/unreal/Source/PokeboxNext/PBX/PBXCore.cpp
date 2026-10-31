@@ -24,30 +24,34 @@ namespace PBXData
 			{
 				FPBXCardDef D; D.Id = Id; D.Name = Name; D.Type = Type; D.HP = HP; D.Atk = Atk; D.Spd = Spd; D.Rarity = R; D.Size = Size; C.Add(D);
 			};
-			// starters (Dr. Vale's three cards)
-			Add(TEXT("Bulbasaur_MEW_001"), TEXT("Bulbasaur"), TEXT("Grass"), 130, 59, 84, 2, 1.0f);
-			Add(TEXT("Charmander_MEW_004"), TEXT("Charmander"), TEXT("Fire"), 130, 60, 75, 3, 1.05f);
-			Add(TEXT("Squirtle_PGO_015"), TEXT("Squirtle"), TEXT("Water"), 100, 45, 94, 1, 1.0f);
-			// wild Echoes of the west road
-			Add(TEXT("Pidgey_OBF_162"), TEXT("Pidgey"), TEXT("Colorless"), 100, 49, 48, 0, .85f);
-			Add(TEXT("Lechonk_PAF_071"), TEXT("Lechonk"), TEXT("Colorless"), 100, 50, 78, 0, .85f);
-			Add(TEXT("Starly_SVI_148"), TEXT("Starly"), TEXT("Colorless"), 100, 51, 72, 0, .8f);
-			Add(TEXT("Jigglypuff_MEW_039"), TEXT("Jigglypuff"), TEXT("Colorless"), 90, 35, 43, 0, .8f);
-			Add(TEXT("Spearow_MEW_021"), TEXT("Spearow"), TEXT("Colorless"), 100, 36, 90, 0, .85f);
+			// Sigil & Spark (2026-10-31): the card ids stay (saves store them), every entry is now an ORIGINAL Spark with its own
+			// 3D model (Quaternius Ultimate Monsters, CC0). Names / Inks: SIGIL_AND_SPARK.md §5.
+			auto S = [&Add](const TCHAR* Id, const TCHAR* Name, const TCHAR* Type, int32 HP, int32 Atk, int32 Spd, int32 R, float Size, const TCHAR* Model)
+			{ Add(Id, Name, Type, HP, Atk, Spd, R, Size); C.Last().Creature = Model; };
+			// the three Sparks that hid in the Scriptorium (starters)
+			S(TEXT("Bulbasaur_MEW_001"), TEXT("Sporrow"), TEXT("Grass"), 130, 59, 84, 2, 1.0f, TEXT("Blob/Mushnub"));
+			S(TEXT("Charmander_MEW_004"), TEXT("Cindril"), TEXT("Fire"), 130, 60, 75, 3, 1.05f, TEXT("Flying/Dragon"));
+			S(TEXT("Squirtle_PGO_015"), TEXT("Glublet"), TEXT("Water"), 100, 45, 94, 1, 1.0f, TEXT("Flying/Glub"));
+			// wild Sparks of the west road
+			S(TEXT("Pidgey_OBF_162"), TEXT("Coobit"), TEXT("Colorless"), 100, 49, 48, 0, .85f, TEXT("Blob/Pigeon"));
+			S(TEXT("Lechonk_PAF_071"), TEXT("Barklet"), TEXT("Colorless"), 100, 50, 78, 0, .85f, TEXT("Blob/Dog"));
+			S(TEXT("Starly_SVI_148"), TEXT("Puffchirp"), TEXT("Colorless"), 100, 51, 72, 0, .8f, TEXT("Blob/Birb"));
+			S(TEXT("Jigglypuff_MEW_039"), TEXT("Blushy"), TEXT("Psychic"), 90, 35, 43, 0, .8f, TEXT("Blob/PinkBlob"));
+			S(TEXT("Spearow_MEW_021"), TEXT("Purrsk"), TEXT("Colorless"), 100, 36, 90, 0, .85f, TEXT("Blob/Cat"));
 			// Rho's partner
-			Add(TEXT("Eevee_MEW_133"), TEXT("Eevee"), TEXT("Colorless"), 110, 46, 70, 0, .9f);
-			// Route 1 (MEW 151 set)
-			Add(TEXT("Pidgey_MEW_016"), TEXT("Pidgey"), TEXT("Colorless"), 100, 45, 56, 0, .8f);
-			Add(TEXT("Pidgeotto_MEW_017"), TEXT("Pidgeotto"), TEXT("Colorless"), 120, 60, 71, 1, 1.0f);
-			Add(TEXT("Rattata_MEW_019"), TEXT("Rattata"), TEXT("Colorless"), 90, 50, 72, 0, .7f);
-			Add(TEXT("Caterpie_MEW_010"), TEXT("Caterpie"), TEXT("Grass"), 90, 32, 45, 0, .7f);
-			Add(TEXT("Metapod_MEW_011"), TEXT("Metapod"), TEXT("Grass"), 115, 22, 30, 0, .8f);
-			Add(TEXT("Weedle_MEW_013"), TEXT("Weedle"), TEXT("Grass"), 90, 36, 50, 0, .7f);
-			Add(TEXT("Kakuna_MEW_014"), TEXT("Kakuna"), TEXT("Grass"), 115, 26, 35, 0, .8f);
-			Add(TEXT("Nidoran_Female_MEW_029"), TEXT("Nidoran F"), TEXT("Darkness"), 100, 47, 41, 0, .75f);
-			Add(TEXT("Nidoran_Male_MEW_032"), TEXT("Nidoran M"), TEXT("Darkness"), 100, 57, 50, 0, .75f);
-			Add(TEXT("Oddish_MEW_043"), TEXT("Oddish"), TEXT("Grass"), 100, 50, 30, 0, .7f);
-			Add(TEXT("Pikachu_MEW_025"), TEXT("Pikachu"), TEXT("Lightning"), 100, 55, 90, 2, .75f);
+			S(TEXT("Eevee_MEW_133"), TEXT("Alpuff"), TEXT("Colorless"), 110, 46, 70, 0, .9f, TEXT("Flying/Alpaking"));
+			// Route 1
+			S(TEXT("Pidgey_MEW_016"), TEXT("Duskwing"), TEXT("Darkness"), 100, 45, 56, 0, .8f, TEXT("Flying/Pigeon"));
+			S(TEXT("Pidgeotto_MEW_017"), TEXT("Stormbill"), TEXT("Lightning"), 120, 60, 71, 1, 1.0f, TEXT("Big/Birb"));
+			S(TEXT("Rattata_MEW_019"), TEXT("Frostub"), TEXT("Fighting"), 90, 50, 72, 0, .7f, TEXT("Blob/Yeti"));
+			S(TEXT("Caterpie_MEW_010"), TEXT("Mossle"), TEXT("Grass"), 90, 32, 45, 0, .7f, TEXT("Blob/GreenBlob"));
+			S(TEXT("Metapod_MEW_011"), TEXT("Pricklet"), TEXT("Grass"), 115, 22, 30, 0, .8f, TEXT("Blob/Cactoro"));
+			S(TEXT("Weedle_MEW_013"), TEXT("Burrhook"), TEXT("Metal"), 90, 36, 50, 0, .7f, TEXT("Blob/GreenSpikyBlob"));
+			S(TEXT("Kakuna_MEW_014"), TEXT("Pebblit"), TEXT("Metal"), 115, 26, 35, 0, .8f, TEXT("Flying/Goleling"));
+			S(TEXT("Nidoran_Female_MEW_029"), TEXT("Glimmo"), TEXT("Psychic"), 100, 47, 41, 0, .75f, TEXT("Blob/Alien"));
+			S(TEXT("Nidoran_Male_MEW_032"), TEXT("Sparkcluck"), TEXT("Lightning"), 100, 57, 50, 0, .75f, TEXT("Blob/Chicken"));
+			S(TEXT("Oddish_MEW_043"), TEXT("Croakra"), TEXT("Water"), 100, 50, 30, 0, .7f, TEXT("Big/Frog"));
+			S(TEXT("Pikachu_MEW_025"), TEXT("Zumblet"), TEXT("Lightning"), 100, 55, 90, 2, .75f, TEXT("Flying/Armabee"));
 		}
 		return C;
 	}
@@ -61,6 +65,12 @@ namespace PBXData
 			{TEXT("Lightning"), FColor(0xf2, 0xc2, 0x30)}, {TEXT("Psychic"), FColor(0xb0, 0x5f, 0xc9)}, {TEXT("Fighting"), FColor(0xb5, 0x67, 0x3a)}, {TEXT("Darkness"), FColor(0x3f, 0x4a, 0x5a)},
 			{TEXT("Metal"), FColor(0x8e, 0x9a, 0xa6)}, {TEXT("Dragon"), FColor(0xc2, 0x9a, 0x2c)}, {TEXT("Colorless"), FColor(0xc9, 0xc2, 0xb0)} };
 		const FColor* C = M.Find(T); return FLinearColor(C ? *C : FColor(200, 200, 200));
+	}
+	FString InkName(const FString& T)
+	{
+		static const TMap<FString, FString> M = { {TEXT("Fire"), TEXT("Ember")}, {TEXT("Water"), TEXT("Tide")}, {TEXT("Grass"), TEXT("Bloom")}, {TEXT("Lightning"), TEXT("Volt")},
+			{TEXT("Psychic"), TEXT("Wisp")}, {TEXT("Fighting"), TEXT("Stone")}, {TEXT("Metal"), TEXT("Stone")}, {TEXT("Darkness"), TEXT("Dusk")}, {TEXT("Dragon"), TEXT("Ember")}, {TEXT("Colorless"), TEXT("Gale")} };
+		const FString* F = M.Find(T); return F ? *F : T;
 	}
 	float LvMult(int32 Lv) { return .72f + Lv * .0125f; }
 	int32 StartLevel(const FPBXCardDef& C) { return 10 + C.Rarity * 2; }   // council S6: the partner was Lv 18 on Route 1 (wild 8-15) — fights had no tension
@@ -93,12 +103,12 @@ float FPBXBattle::Mult(const FString& A, const FString& D)
 
 const FPBXSig& FPBXBattle::SigOf(const FString& T)
 {
-	static const TMap<FString, FPBXSig> S = {
-		{TEXT("Fire"), {TEXT("Flame Burst"), TEXT("burn"), TEXT("burns for 3 turns")}}, {TEXT("Water"), {TEXT("Hydro Cannon"), TEXT("soak"), TEXT("lowers their speed")}},
-		{TEXT("Grass"), {TEXT("Leaf Drain"), TEXT("drain"), TEXT("heals 35% of damage")}}, {TEXT("Lightning"), {TEXT("Thunder Shock"), TEXT("para"), TEXT("30% paralysis")}},
-		{TEXT("Psychic"), {TEXT("Mind Crush"), TEXT("weaken"), TEXT("lowers their attack")}}, {TEXT("Fighting"), {TEXT("Close Combat"), TEXT("pierce"), TEXT("ignores guard")}},
-		{TEXT("Darkness"), {TEXT("Night Slash"), TEXT("crit"), TEXT("high critical chance")}}, {TEXT("Metal"), {TEXT("Iron Bash"), TEXT("shield"), TEXT("raises your defense")}},
-		{TEXT("Dragon"), {TEXT("Dragon Rush"), TEXT("none"), TEXT("massive power")}}, {TEXT("Colorless"), {TEXT("Hyper Strike"), TEXT("none"), TEXT("reliable damage")}} };
+	static const TMap<FString, FPBXSig> S = {   // Sigil & Spark Art names (effects unchanged)
+		{TEXT("Fire"), {TEXT("Cinder Script"), TEXT("burn"), TEXT("burns for 3 turns")}}, {TEXT("Water"), {TEXT("Undertow"), TEXT("soak"), TEXT("lowers their speed")}},
+		{TEXT("Grass"), {TEXT("Rootdrink"), TEXT("drain"), TEXT("heals 35% of damage")}}, {TEXT("Lightning"), {TEXT("Static Sigil"), TEXT("para"), TEXT("30% paralysis")}},
+		{TEXT("Psychic"), {TEXT("Hush"), TEXT("weaken"), TEXT("lowers their attack")}}, {TEXT("Fighting"), {TEXT("Rockbreak"), TEXT("pierce"), TEXT("ignores guard")}},
+		{TEXT("Darkness"), {TEXT("Nightquill"), TEXT("crit"), TEXT("high critical chance")}}, {TEXT("Metal"), {TEXT("Bulwark"), TEXT("shield"), TEXT("raises your defense")}},
+		{TEXT("Dragon"), {TEXT("Wyrmfire"), TEXT("none"), TEXT("massive power")}}, {TEXT("Colorless"), {TEXT("Gust Rune"), TEXT("none"), TEXT("reliable damage")}} };
 	const FPBXSig* F = S.Find(T); return F ? *F : S[TEXT("Colorless")];
 }
 

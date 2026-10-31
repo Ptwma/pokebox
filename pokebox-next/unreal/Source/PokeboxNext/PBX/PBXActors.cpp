@@ -347,7 +347,7 @@ bool APBXEcho::SetupCreature(const FPBXCardDef* C, float Height)
 	if (!Keys.Num()) (*Pool)->TryGetStringArrayField(bBig ? TEXT("small") : TEXT("big"), Keys);
 	TArray<FString> Ok; for (const FString& K : Keys) if ((*Cre)->HasField(K)) Ok.Add(K);
 	if (!Ok.Num()) return false;
-	const FString Key = (!ForceKey.IsEmpty() && (*Cre)->HasField(ForceKey)) ? ForceKey : Ok[GetTypeHash(C->Id) % Ok.Num()];
+	const FString Key = (!ForceKey.IsEmpty() && (*Cre)->HasField(ForceKey)) ? ForceKey : (!C->Creature.IsEmpty() && (*Cre)->HasField(C->Creature)) ? C->Creature : Ok[GetTypeHash(C->Id) % Ok.Num()];
 	const TSharedPtr<FJsonObject> E = (*Cre)->GetObjectField(Key);
 	auto LoadP = [](const FString& P) -> UObject* { const FString N = FPaths::GetBaseFilename(P); return StaticLoadObject(UObject::StaticClass(), nullptr, *(P + TEXT(".") + N)); };
 	USkeletalMesh* SM = Cast<USkeletalMesh>(LoadP(E->GetStringField(TEXT("mesh"))));

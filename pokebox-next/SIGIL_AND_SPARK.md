@@ -5,8 +5,8 @@
 > are original. The *feeling* borrows from Black Clover (an underdog with a strange magic book), Pokémon (bond, collect,
 > evolve) and Digimon (evolution inside the fight) — nothing is copied.
 > User decisions (2026-10-31): story **C — Sigil & Spark**, battle **Pact Battle** (semi-real-time), intro **live in-engine**,
-> narration **offline TTS** — final: **Kokoro-82M `am_onyx`** (Apache-2.0, local), slow, short heavy statements with long silences
-> (the user asked for the *cadence* of a calm, solemn speaker, not anyone's voice). Tool: `tools/pbx_kokoro.py`; ~93 s of narration.
+> narration **offline TTS** — final: **Kokoro-82M voice "A" = `am_michael*0.7 + am_onyx*0.3`** (Apache-2.0, local), speed 0.92,
+> whole sentences per call, 0.42 s between sentences (the user asked for a calm, solemn *cadence*, not anyone's voice). Tool: `tools/pbx_kokoro.py`.
 
 ---
 
@@ -85,6 +85,19 @@ Ember > Bloom > Tide > Ember; Volt > Tide, Gale; Stone > Volt, Ember; Gale > Blo
 | Blob/PinkBlob | **Blushy** | Wisp |
 | Big/Bunny | **Lopkin** | Gale |
 
+### 5b. In the game now (phase 2, r61) — card id → Spark
+The card ids stay (saves store them); names, Inks, models and Art names are new. Card scans are no longer shown anywhere
+(the starter choice and Vale's table show the 3D Sparks).
+| Card id (internal) | Spark | Ink | Model |
+|---|---|---|---|
+| Bulbasaur_MEW_001 / Charmander_MEW_004 / Squirtle_PGO_015 | Sporrow / Cindril / Glublet (starters) | Bloom / Ember / Tide | Blob/Mushnub, Flying/Dragon, Flying/Glub |
+| Pidgey_OBF_162, Lechonk_PAF_071, Starly_SVI_148, Jigglypuff_MEW_039, Spearow_MEW_021 | Coobit, Barklet, Puffchirp, Blushy, Purrsk | Gale ×4, Wisp | Blob/Pigeon, Dog, Birb, PinkBlob, Cat |
+| Eevee_MEW_133 (Rho) | Alpuff | Gale | Flying/Alpaking |
+| Route 1: Pidgey/Pidgeotto/Rattata/Caterpie/Metapod/Weedle/Kakuna/NidoranF/NidoranM/Oddish/Pikachu (MEW) | Duskwing, Stormbill, Frostub, Mossle, Pricklet, Burrhook, Pebblit, Glimmo, Sparkcluck, Croakra, Zumblet | Dusk, Volt, Stone, Bloom, Bloom, Stone, Stone, Wisp, Volt, Tide, Volt | Flying/Pigeon, Big/Birb, Blob/Yeti, Blob/GreenBlob, Blob/Cactoro, Blob/GreenSpikyBlob, Flying/Goleling, Blob/Alien, Blob/Chicken, Big/Frog, Flying/Armabee |
+Arts: Cinder Script, Undertow, Rootdrink, Static Sigil, Hush, Rockbreak, Nightquill, Bulwark, Wyrmfire, Gust Rune.
+Items: Poké Ball → **Binding Ink**, Potion → **Mending Tea**. Player = **Scribe** (Mateo / Aoi). Lab = **the Scriptorium**.
+Dialogue rewritten for the day after the intro (the Blanking happened yesterday; Vale reads your First Page; you shield a starter).
+
 ## 6. Pact Battle (replaces turn-based card battles)
 - Arena = where you meet the enemy (as now). Your Spark **auto-attacks** (basic hit every ~1.6 s).
 - **3 Spark Arts** (keys 1/2/3 · gamepad X/Y/B), each with a cooldown; costs nothing — timing is the skill.
@@ -138,8 +151,8 @@ Arts as glyph tiles with an ink cool-down sweep, Sync as ink filling a quill nib
 ## 10. Production plan (honest)
 | Phase | Work | Size |
 |---|---|---|
-| 1 | narration with Piper (wav per line), intro engine (ink myth overlay + in-engine shots + fog/ship/white-light FX), title | ~1 day |
-| 2 | Spark roster data (names, Inks, stats, Arts) replaces the card database in world, battle and UI | ~1 day |
+| 1 ✅ | narration (Kokoro), intro engine (ink myth overlay + in-engine shots + fog/ship/white-light FX), title | ~1 day |
+| 2 ✅ (r61, data + text; battle is still turn-based) | Spark roster data (names, Inks, stats, Arts) replaces the card database in world, battle and UI | ~1 day |
 | 3 | Pact Battle (real-time core, Arts, dodge, Sync, writing QTE) + tutorial | ~1–2 days |
 | 4 | Codex UI/GUI restyle, Journal, menus | ~1 day |
 Limits: MetaHuman faces have no expressions / lip-sync (JOINTS_ONLY rig) → the intro avoids talking close-ups; clothes still

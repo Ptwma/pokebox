@@ -11,6 +11,7 @@ struct FPBXCardDef
 	FString Type;      // Grass, Fire, Water, Lightning, Psychic, Fighting, Darkness, Metal, Dragon, Colorless
 	int32 HP = 100, Atk = 40, Spd = 50, Rarity = 0;
 	float Size = 1.0f; // Echo standee height multiplier
+	FString Creature;  // Sigil & Spark: the Spark's 3D model (creatures.json key, e.g. "Flying/Dragon")
 	FString EchoTexturePath() const;
 	FString CardImagePath() const; // absolute path of the card scan on the PC (for the starter cards / UI)
 };
@@ -23,6 +24,7 @@ namespace PBXData
 	TArray<FName> WildPool();
 	FName RivalCard();
 	FLinearColor TypeColor(const FString& Type);
+	FString InkName(const FString& Type);   // Sigil & Spark display name of a type: Fire → Ember, Water → Tide …
 	float LvMult(int32 Lv);
 	int32 StartLevel(const FPBXCardDef& C);
 }

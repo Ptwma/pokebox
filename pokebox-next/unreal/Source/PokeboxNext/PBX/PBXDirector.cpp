@@ -239,23 +239,15 @@ void APBXDirector::SpawnWorld()
 			T->SetWorldSize(17.f); T->SetTextRenderColor(FColor(40, 28, 20)); T->SetCastShadow(false);
 		}
 	}
-	// the three cards on Dr. Vale's table
+	// Sigil & Spark: the three Sparks that hid in the Scriptorium sit on Vale's table (no card scans in the game any more)
 	TArray<FName> St = StarterTable.IsZero() ? TArray<FName>() : PBXData::Starters();
-	UStaticMesh* CardMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/PBX/Meshes/SM_EchoCard.SM_EchoCard"));
-	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Echo.M_PBX_Echo"));
-	for (int32 i = 0; i < St.Num() && CardMesh && Mat; i++)
+	for (int32 i = 0; i < St.Num(); i++)
 	{
-		const FVector P = StarterTable + FVector((i - 1) * 70.f, 0, 0);
-		AStaticMeshActor* A = W->SpawnActor<AStaticMeshActor>(P, FRotator(0, 90, 0));
-		if (!A) continue;
-		A->SetMobility(EComponentMobility::Movable);
-		A->GetStaticMeshComponent()->SetStaticMesh(CardMesh); A->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		A->SetActorScale3D(FVector(.42f, .42f * .716f, .42f));   // card aspect 63 x 88
-		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, A);
-		if (UTexture2D* T = CardTexture(St[i])) MID->SetTextureParameterValue(TEXT("Tex"), T);
-		A->GetStaticMeshComponent()->SetMaterial(0, MID);
-		A->SetActorRotation(FRotator(0, 90, -12));
-		TableCards.Add(A);
+		const FVector P = StarterTable + FVector((i - 1) * 75.f, 0, 0);
+		APBXEcho* E = W->SpawnActor<APBXEcho>(APBXEcho::StaticClass(), FTransform(P));
+		if (!E) continue;
+		E->Setup(St[i], 38.f); E->PlaceAt(P); E->Mode = APBXEcho::EMode::Idle; E->SetActorRotation(FRotator(0, -90, 0));
+		TableCards.Add(E);
 	}
 }
 
@@ -378,7 +370,7 @@ void APBXDirector::ArriveAt(const FString& SpotId)
 	{
 		// leaving Lumen Harbor for the first time ends chapter 1
 		SetStep(EPBXStep::Done);
-		QDo([this] { Splash(TEXT("CHAPTER 1 COMPLETE"), TEXT("A Licence to Remember"), 2.6f); PBXUI::Confetti(*UI, 120); });
+		QDo([this] { Splash(TEXT("CHAPTER 1 COMPLETE"), TEXT("The Blank Page"), 2.6f); PBXUI::Confetti(*UI, 120); });
 		QWait(2.8f);
 		QDo([this] { Splash(TEXT("CHAPTER 2"), TEXT("Route 1"), 2.6f); });
 		QWait(1.2f);
@@ -390,7 +382,7 @@ void APBXDirector::ArriveAt(const FString& SpotId)
 			QDo([N] { N->ReturnToIdle(); });
 		}
 	}
-	else if (!MapTitle.IsEmpty()) QDo([this] { Splash(MapTitle, IsTown() ? TEXT("home port of the Lattice Rangers") : TEXT("Lumen Harbor  ·  Mistvale"), 2.2f); });
+	else if (!MapTitle.IsEmpty()) QDo([this] { Splash(MapTitle, IsTown() ? TEXT("where every Codex begins") : TEXT("Lumen Harbor  ·  Mistvale"), 2.2f); });
 	QDo([this] { SaveNow(false); });
 	PBXLOG("[PBX] arrived at %s / %s (step %d)", *MapName, *SpotId, (int32)Step());
 }
@@ -401,15 +393,15 @@ void APBXDirector::ReachEnd(const FPBXExit& E)
 	if (Step() < EPBXStep::Route1Clear)
 	{
 		SetStep(EPBXStep::Route1Clear);
-		QSay({ { TEXT("note"), TEXT("A wall of pale fog rolls over the Mistvale gate. Through it, faint shapes glow — Echoes, dozens of them, drifting like lanterns.") },
-			   { TEXT("note"), TEXT("Your Lattice card buzzes: \"Ranger, it's Dr. Vale. Don't go in alone — the relay in Mistvale is screaming. Wait for my signal.\"") } });
+		QSay({ { TEXT("note"), TEXT("A wall of pale fog rolls over the Mistvale gate. Through it, faint shapes glow — Sparks, dozens of them, drifting like lanterns.") },
+			   { TEXT("note"), TEXT("Gold ink crawls across your Codex: \"Scribe — don't go in alone. Mistvale is being Blanked. Wait for my signal. — V.\"") } });
 		QDo([this] { SaveNow(false); ShowMenu(EMenu::Complete); });
 	}
 	else
 	{
 		const FPBXSpot* S = Spots.Find(TEXT("from_mistvale"));
 		if (S) TeleportPlayer(S->Pos, S->Yaw);
-		Toast(TEXT("The fog is too thick. Dr. Vale said to wait for her signal."));
+		Toast(TEXT("The fog is too thick. Archivist Vale said to wait for her signal."));
 	}
 }
 
@@ -761,7 +753,7 @@ void APBXDirector::UpdatePrompt()
 	case EKind::NPC: T = FString::Printf(TEXT("[E]  Talk to %s"), *SpeakerName(NearNPC)); break;
 	case EKind::Door: { const FPBXDoor& D = Doors[NearIndex / 2]; T = NearIndex % 2 ? TEXT("[E]  Go outside") : D.bLocked ? FString::Printf(TEXT("[E]  %s"), *D.Label) : FString::Printf(TEXT("[E]  Enter %s"), *D.Label); break; }
 	case EKind::Bed: T = TEXT("[E]  Rest (heal your team & save)"); break;
-	case EKind::Table: T = TEXT("[E]  Look at Dr. Vale's cards"); break;
+	case EKind::Table: T = TEXT("[E]  Look at the three Sparks"); break;
 	case EKind::Sign: T = Signs[NearIndex].bWorldText ? TEXT("[E]  Read the sign") : TEXT("[E]  Read"); break;
 	case EKind::Boat: T = TEXT("[E]  Take the rowboat"); break;
 	case EKind::Dock: T = FString::Printf(TEXT("[E]  Step ashore — %s"), *Docks[NearIndex].Name); break;
@@ -784,7 +776,7 @@ void APBXDirector::Interact()
 	case EKind::Sign: QSay({ { TEXT("note"), Signs[NearIndex].Text.Replace(TEXT("\n"), TEXT(" — ")) } }); break;
 	case EKind::Train:
 		if (Step() >= EPBXStep::Gate) QSay({ { TEXT("conductor"), TEXT("Sorry, love — fog's rolled over the Mistvale line. No trains till it lifts.") }, { TEXT("conductor"), TEXT("Good news is they've dug Route 1 out. West gate, end of the road. Walking's good for you!") } });
-		else QSay({ { TEXT("conductor"), TEXT("The 10:15 to Mistvale, love. Rangers ride free — once Dr. Vale signs your licence.") } });
+		else QSay({ { TEXT("conductor"), TEXT("The 10:15 to Mistvale, love. Scribes ride free — once your Codex has a page or two.") } });
 		break;
 	case EKind::Item: PickItem(NearIndex); break;
 	case EKind::Boat: BoardBoat(); break;
@@ -848,8 +840,8 @@ void APBXDirector::Rest()
 	QDo([this] { SaveNow(false); Toast(TEXT("Your team is fully rested. Game saved.")); });
 	if (Step() == EPBXStep::Rest)
 	{
-		QSay({ { TEXT("mom"), TEXT("Oh! A letter came for you while you slept. It's from Dr. Vale.") },
-			   { TEXT("note"), TEXT("\"Ranger — Rho told me everything. Your licence is signed! And good news: the road crews cleared the landslide at dawn. Route 1 is open.\"") },
+		QSay({ { TEXT("mom"), TEXT("Oh! A letter came for you while you slept. It's from Archivist Vale.") },
+			   { TEXT("note"), TEXT("\"Scribe — Rho told me everything. Two pages! And good news: the crews cleared the landslide at dawn. Route 1 is open. — V.\"") },
 			   { TEXT("note"), TEXT("\"Head west to Mistvale. Trainers on the route will test you — and keep your eyes open in the tall grass.\"") },
 			   { TEXT("mom"), TEXT("Your first real journey... Take care out there. And call your mother!") } });
 		QDo([this] { SetStep(EPBXStep::Gate); Splash(TEXT("LICENCE SIGNED"), TEXT("Route 1 is open — head west")); SaveNow(false); });
@@ -875,11 +867,11 @@ void APBXDirector::PickItem(int32 i)
 	Game->State->Picked.Add(Id);
 	if (AActor* A = I.Actor.Get()) { A->SetActorHiddenInGame(true); A->SetActorEnableCollision(false); }
 	FString What;
-	if (I.Item == TEXT("ball")) { Game->State->Balls += I.Count; What = I.Count > 1 ? FString::Printf(TEXT("%d Poké Balls"), I.Count) : FString(TEXT("a Poké Ball")); }
-	else { Game->State->Potions += I.Count; What = I.Count > 1 ? FString::Printf(TEXT("%d Potions"), I.Count) : FString(TEXT("a Potion")); }
+	if (I.Item == TEXT("ball")) { Game->State->Balls += I.Count; What = I.Count > 1 ? FString::Printf(TEXT("%d vials of Binding Ink"), I.Count) : FString(TEXT("a vial of Binding Ink")); }
+	else { Game->State->Potions += I.Count; What = I.Count > 1 ? FString::Printf(TEXT("%d Mending Tea"), I.Count) : FString(TEXT("a Mending Tea")); }
 	if (FX) FX->Burst(I.Pos + FVector(0, 0, 30), FLinearColor(1.f, .85f, .35f), 24, 220.f, 22.f, .9f, -200.f, .7f, 1, 1.5f);
 	Splash(TEXT("FOUND!"), What, 1.6f);
-	Toast(FString::Printf(TEXT("You found %s! (Balls %d · Potions %d)"), *What, Game->State->Balls, Game->State->Potions));
+	Toast(FString::Printf(TEXT("You found %s! (Balls %d · Mending Tea %d)"), *What, Game->State->Balls, Game->State->Potions));
 	SaveNow(false);
 }
 
@@ -888,14 +880,14 @@ void APBXDirector::OpenShop()
 	auto Opt = [](const FString& T, const FString& S, bool bOk, FLinearColor C) { FPBXOption O; O.Title = T; O.Sub = S; O.bEnabled = bOk; O.Color = C; return O; };
 	const int32 C = Game->State->Coins;
 	Menu = EMenu::Confirm;   // menu-style list (the plain choice layout is made for cards)
-	OpenChoice(TEXT("TRADER FENN"), FString::Printf(TEXT("You have %d coins  ·  Poké Balls %d  ·  Potions %d"), C, Game->State->Balls, Game->State->Potions),
-		{ Opt(TEXT("Potion — 100 coins"), TEXT("heals an Echo by 60% (in battle or from the Team menu)"), C >= 100, FLinearColor(.4f, .85f, .5f)),
-		  Opt(TEXT("Poké Ball — 150 coins"), TEXT("binds a weakened wild Echo to a blank card"), C >= 150, FLinearColor(.95f, .3f, .3f)),
+	OpenChoice(TEXT("TRADER FENN"), FString::Printf(TEXT("You have %d coins  ·  Binding Ink %d  ·  Mending Tea %d"), C, Game->State->Balls, Game->State->Potions),
+		{ Opt(TEXT("Mending Tea — 100 coins"), TEXT("heals a Spark by 60% (in battle or from the Team menu)"), C >= 100, FLinearColor(.4f, .85f, .5f)),
+		  Opt(TEXT("Binding Ink — 150 coins"), TEXT("writes a weakened wild Spark into your Codex"), C >= 150, FLinearColor(.95f, .3f, .3f)),
 		  Opt(TEXT("Leave"), TEXT(""), true, FLinearColor(.5f, .5f, .5f)) }, false,
 		[this](int32 i)
 		{
-			if (i == 0 && Game->State->Coins >= 100) { Game->State->Coins -= 100; Game->State->Potions++; Sfx(TEXT("sfx_coin")); Toast(TEXT("Bought a Potion.")); }
-			else if (i == 1 && Game->State->Coins >= 150) { Game->State->Coins -= 150; Game->State->Balls++; Sfx(TEXT("sfx_coin")); Toast(TEXT("Bought a Poké Ball.")); }
+			if (i == 0 && Game->State->Coins >= 100) { Game->State->Coins -= 100; Game->State->Potions++; Sfx(TEXT("sfx_coin")); Toast(TEXT("Bought a Mending Tea.")); }
+			else if (i == 1 && Game->State->Coins >= 150) { Game->State->Coins -= 150; Game->State->Balls++; Sfx(TEXT("sfx_coin")); Toast(TEXT("Bought a vial of Binding Ink.")); }
 			if (i == 2) { CloseChoice(); Menu = EMenu::None; QSay({ { TEXT("trader"), TEXT("Safe travels. Mind the bug kid — he'll talk your ear off.") } }); return; }
 			OpenShop(); if (UI->Options.IsValidIndex(i) && UI->Options[i].bEnabled) UI->Selected = i;
 		});
@@ -910,11 +902,11 @@ void APBXDirector::OpenTeam()
 		const FPBXMon& M = Game->State->Team[i]; const FPBXCardDef* C = PBXData::Card(M.Card);
 		const int32 Mx = MonMaxHP(M); const int32 H = M.HP < 0 ? Mx : M.HP;
 		FPBXOption O; O.Title = FString::Printf(TEXT("%s  Lv %d"), C ? *C->Name : *M.Card.ToString(), M.Lv);
-		O.Sub = FString::Printf(TEXT("%s · HP %d/%d%s"), C ? *C->Type : TEXT("?"), H, Mx, i == 0 ? TEXT(" · walks with you") : H <= 0 ? TEXT(" · fainted") : TEXT(""));
+		O.Sub = FString::Printf(TEXT("%s Ink · HP %d/%d%s"), C ? *PBXData::InkName(C->Type) : TEXT("?"), H, Mx, i == 0 ? TEXT(" · walks with you") : H <= 0 ? TEXT(" · fainted") : TEXT(""));
 		O.Color = C ? PBXData::TypeColor(C->Type) : FLinearColor::Gray; Opts.Add(O);
 	}
 	FPBXOption B; B.Title = TEXT("Back"); B.Color = FLinearColor(.4f, .35f, .3f); Opts.Add(B);
-	OpenChoice(TEXT("TEAM"), FString::Printf(TEXT("%d / %d Echoes  ·  Poké Balls %d  ·  Potions %d  ·  %d coins  ·  card box %d"), Game->State->Team.Num(), UPBXGameSubsystem::TeamMax,
+	OpenChoice(TEXT("TEAM"), FString::Printf(TEXT("%d / %d Sparks  ·  Binding Ink %d  ·  Mending Tea %d  ·  %d coins  ·  archive %d"), Game->State->Team.Num(), UPBXGameSubsystem::TeamMax,
 		Game->State->Balls, Game->State->Potions, Game->State->Coins, Game->State->Box.Num()), Opts, false,
 		[this](int32 i) { if (i >= Game->State->Team.Num()) ShowMenu(EMenu::Pause); else OpenMonActions(i); });
 }
@@ -926,7 +918,7 @@ void APBXDirector::OpenMonActions(int32 i)
 	const int32 Mx = MonMaxHP(M); const int32 H = M.HP < 0 ? Mx : M.HP;
 	auto Opt = [](const FString& T, const FString& S, bool bOk) { FPBXOption O; O.Title = T; O.Sub = S; O.bEnabled = bOk; O.Color = FLinearColor(.4f, .35f, .3f); return O; };
 	OpenChoice(C ? C->Name.ToUpper() : FString(TEXT("ECHO")), FString::Printf(TEXT("Lv %d · HP %d/%d · XP %d/%d"), M.Lv, H, Mx, M.XP, M.Lv * 18),
-		{ Opt(TEXT("Walk with me"), TEXT("make it your lead Echo"), i > 0 && H > 0), Opt(FString::Printf(TEXT("Use a Potion (%d)"), Game->State->Potions), TEXT("heals 60% HP"), Game->State->Potions > 0 && H < Mx && H > 0),
+		{ Opt(TEXT("Walk with me"), TEXT("make it your lead Spark"), i > 0 && H > 0), Opt(FString::Printf(TEXT("Use Mending Tea (%d)"), Game->State->Potions), TEXT("heals 60% HP"), Game->State->Potions > 0 && H < Mx && H > 0),
 		  Opt(TEXT("Back"), TEXT(""), true) }, false,
 		[this, i](int32 k)
 		{
@@ -935,7 +927,7 @@ void APBXDirector::OpenMonActions(int32 i)
 			{
 				FPBXMon& Mo = Game->State->Team[i]; const int32 Mx2 = MonMaxHP(Mo); const int32 H2 = Mo.HP < 0 ? Mx2 : Mo.HP;
 				const int32 NewHP = FMath::Min(Mx2, H2 + FMath::RoundToInt(Mx2 * .6f)); Mo.HP = NewHP >= Mx2 ? -1 : NewHP; Game->State->Potions--;
-				Toast(TEXT("Used a Potion.")); OpenMonActions(i); return;
+				Toast(TEXT("Used a Mending Tea.")); OpenMonActions(i); return;
 			}
 			OpenTeam();
 		});
@@ -947,22 +939,21 @@ void APBXDirector::ChooseStarter()
 	for (FName Id : PBXData::Starters())
 	{
 		const FPBXCardDef* C = PBXData::Card(Id); FPBXOption O; O.Title = C->Name;
-		O.Sub = FString::Printf(TEXT("%s type · %s"), *C->Type, *FPBXBattle::SigOf(C->Type).Name); O.Color = PBXData::TypeColor(C->Type);
-		if (UTexture2D* T = CardTexture(Id)) O.Image = PBXUI::TextureBrush(T, FVector2D(250, 349));
+		O.Sub = FString::Printf(TEXT("%s Ink · Art: %s"), *PBXData::InkName(C->Type), *FPBXBattle::SigOf(C->Type).Name); O.Color = PBXData::TypeColor(C->Type);
 		Opts.Add(O);
 	}
-	OpenChoice(TEXT("Choose your partner"), TEXT("Dr. Vale's three blank-stock cards. Your partner's Echo walks with you."), Opts, true, [this](int32 i)
+	OpenChoice(TEXT("Which Spark do you shield?"), TEXT("Three Sparks hid from the White Page in the Scriptorium. The one you choose writes your Codex's first page."), Opts, true, [this](int32 i)
 	{
 		const FName Id = PBXData::Starters()[i]; const FPBXCardDef* C = PBXData::Card(Id);
 		CloseChoice();
 		Game->AddMon(Id, PBXData::StartLevel(*C));
 		if (TableCards.IsValidIndex(i) && TableCards[i]) TableCards[i]->SetActorHiddenInGame(true);
 		SpawnPartner(true);
-		Splash(C->Name.ToUpper(), TEXT("is your partner!"));
+		Splash(C->Name.ToUpper(), TEXT("is written on your first page!"));
 		QWait(1.2f);
-		QSay({ { TEXT("vale"), FString::Printf(TEXT("%s! A splendid choice. Its Echo already trusts you."), *C->Name) },
-			   { TEXT("vale"), TEXT("Wild Echoes gather in the tall grass by the west road. Weaken one in battle, then throw a Poké Ball to bind it to a blank Lattice card.") },
-			   { TEXT("vale"), TEXT("Catch your first one, Ranger. Then come back and tell me all about it!") } });
+		QSay({ { TEXT("vale"), FString::Printf(TEXT("%s... Look — your Codex wrote its name. The first page of a First Page book."), *C->Name) },
+			   { TEXT("vale"), TEXT("Wild Sparks gather in the tall grass by the west road. Weaken one in a Pact Battle, then use Binding Ink to write it into your Codex.") },
+			   { TEXT("vale"), TEXT("Write your second page, Scribe. Then come back and tell me everything.") } });
 		QDo([this] { SetStep(EPBXStep::Capture); SaveNow(false); });
 	});
 }
@@ -973,53 +964,53 @@ TArray<FPBXLine> APBXDirector::LinesFor(FName Who) const
 	const FString PName = P ? PBXData::Card(Game->State->Team[0].Card)->Name : FString();
 	if (Who == TEXT("mom"))
 	{
-		if (S <= EPBXStep::MeetRho) return { { Who, TEXT("Morning, sleepyhead! Today's the day — your Ranger licence!") }, { Who, TEXT("Dr. Vale is expecting you at Pokébox Labs. The big building with the satellite dish, at the end of the main road.") } };
+		if (S <= EPBXStep::MeetRho) return { { Who, TEXT("You're awake! After yesterday... the white ship, the light... I didn't want to wake you.") }, { Who, TEXT("Archivist Vale sent word. She wants to see your Codex at the Scriptorium — the big building at the end of the main road.") } };
 		if (S == EPBXStep::Rest) return { { Who, TEXT("You look exhausted! Have a lie-down in your bed — it fixes everything.") } };
-		if (P) return { { Who, FString::Printf(TEXT("%s is adorable! Make sure it eats properly. Echoes eat, right?"), *PName) } };
-		return { { Who, TEXT("Go on, Dr. Vale is waiting!") } };
+		if (P) return { { Who, FString::Printf(TEXT("%s is adorable! Make sure it eats properly. Sparks eat, right?"), *PName) } };
+		return { { Who, TEXT("Go on, Archivist Vale is waiting!") } };
 	}
 	if (Who == TEXT("rho"))
 	{
 		switch (S)
 		{
-		case EPBXStep::WakeUp: case EPBXStep::MeetRho: case EPBXStep::GoLab: case EPBXStep::Starter: return { { Who, TEXT("Get your partner from Dr. Vale first. Then you and me — rival battle!") } };
-		case EPBXStep::Capture: return { { Who, TEXT("Catch an Echo in the tall grass first. A Ranger with one Echo is just a person with a pet.") } };
+		case EPBXStep::WakeUp: case EPBXStep::MeetRho: case EPBXStep::GoLab: case EPBXStep::Starter: return { { Who, TEXT("Get your partner from Archivist Vale first. Then you and me — rival battle!") } };
+		case EPBXStep::Capture: return { { Who, TEXT("Write a wild Spark first. A Scribe with one page is just a kid with a notebook.") } };
 		case EPBXStep::RhoBattle: return { { Who, TEXT("You caught one already? Okay, okay. Let's see if it can take a hit.") }, { Who, TEXT("Rival battle!") } };
-		default: return { { Who, S >= EPBXStep::Done ? TEXT("Mistvale's fogged in? Figures. I'll wait for Dr. Vale's signal too. ...From a safe distance.") : TEXT("Not bad, Ranger. Not bad at all. See you on Route 1 — I'll be the one complaining about the hills.") } };
+		default: return { { Who, S >= EPBXStep::Done ? TEXT("White fog in Mistvale? That's Blanking fog. I'll wait for Vale's signal too. ...From a safe distance.") : TEXT("Not bad for a blank book. Not bad at all. See you on Route 1 — I'll be the one complaining about the hills.") } };
 		}
 	}
 	if (Who == TEXT("vale"))
 	{
-		if (S <= EPBXStep::Starter) return { { Who, TEXT("Welcome to Veyra's newest Ranger! Every Lattice card holds an Echo — the trace a Pokémon leaves in a storage relay.") },
-			{ Who, TEXT("Lately the Echoes have started walking out of their cards. They hold the shape of the Pokémon printed on them.") },
-			{ Who, TEXT("You will need a partner. Choose one of these three cards — its Echo will walk with you.") } };
-		if (S == EPBXStep::Capture) return { { Who, TEXT("The tall grass by the west road, Ranger. Weaken a wild Echo, then throw a Poké Ball.") } };
+		if (S <= EPBXStep::Starter) return { { Who, TEXT("So the blank Codex is awake. A First Page — I've only read about them. They don't record words. They write new ones.") },
+			{ Who, TEXT("Since the Blanking, the Sparks around Lumen Harbor are restless. Some have hidden. Some have turned grey.") },
+			{ Who, TEXT("The White Page took our archive, but three Sparks hid in the stacks. One of them will need you to shield it.") } };
+		if (S == EPBXStep::Capture) return { { Who, TEXT("The tall grass by the west road, Scribe. Weaken a wild Spark, then use Binding Ink.") } };
 		if (S == EPBXStep::RhoBattle) return { { Who, TEXT("Rho is waiting for you at the Route 1 gate. Go easy on him... or don't.") } };
-		if (S >= EPBXStep::Route1Clear) return { { Who, TEXT("You saw the fog yourself. The Mistvale relay is pouring out Echoes — far more than it ever stored. Stay ready, Ranger.") } };
-		return { { Who, TEXT("Your licence is signed. Route 1 leads west to Mistvale — the fog there has been acting strange.") } };
+		if (S >= EPBXStep::Route1Clear) return { { Who, TEXT("You saw the fog yourself. Mistvale's Sparks are turning grey — Blanked. The White Page is there. Stay ready, Scribe.") } };
+		return { { Who, TEXT("Two pages already. Route 1 leads west to Mistvale — and the fog there is white.") } };
 	}
-	if (Who == TEXT("aide")) return { { Who, TEXT("The relay hums louder every week. Dr. Vale says that's the Echoes waking up. I say it's the coffee machine.") } };
+	if (Who == TEXT("aide")) return { { Who, TEXT("They took every Codex in the archive. Every. Single. One. I hid under the reading desk. Don't tell anyone.") } };
 	if (Who == TEXT("fisher")) return { { Who, TEXT("Tide brings in odd things lately. Saw a wave shaped like a Lapras last week. Probably nothing.") } };
-	if (Who == TEXT("gardener")) return { { Who, P ? TEXT("Keep your Echo out of my tulips, Ranger. They nibble.") : TEXT("Echoes love my flowerbeds. Little thieves!") } };
-	if (Who == TEXT("merchant")) return { { Who, TEXT("Fresh apples! Well — for Echoes. Rangers pay double.") } };
-	if (Who == TEXT("kid")) return { { Who, P ? FString::Printf(TEXT("Whoa! Is that YOUR %s?! When I grow up I'm gonna have a hundred Echoes!"), *PName) : TEXT("When I grow up I'm gonna be a Ranger and have a hundred Echoes!") } };
+	if (Who == TEXT("gardener")) return { { Who, P ? TEXT("Keep your Spark out of my tulips, Scribe. They nibble.") : TEXT("Sparks love my flowerbeds. Little thieves!") } };
+	if (Who == TEXT("merchant")) return { { Who, TEXT("Fresh apples! Well — for Sparks. Scribes pay double.") } };
+	if (Who == TEXT("kid")) return { { Who, P ? FString::Printf(TEXT("Whoa! Is that YOUR %s?! When I'm eleven my Codex is gonna have a hundred pages!"), *PName) : TEXT("Everyone says your book is blank. I think blank is cool. You can write anything!") } };
 	if (Who == TEXT("guard"))
 	{
-		if (S >= EPBXStep::Gate) return { { Who, TEXT("Road's clear! We hauled the last boulder off at dawn.") }, { Who, TEXT("Word of warning: trainers on Route 1 challenge anyone who meets their eye. Keep your Echoes rested.") } };
-		return { { Who, TEXT("Route 1's shut. Landslide came down on Tuesday and took half the road with it.") }, { Who, TEXT("We'll have it dug out soon. Licensed Rangers first through, mind.") } };
+		if (S >= EPBXStep::Gate) return { { Who, TEXT("Road's clear! We hauled the last boulder off at dawn.") }, { Who, TEXT("Word of warning: trainers on Route 1 challenge anyone who meets their eye. Keep your Sparks rested.") } };
+		return { { Who, TEXT("Route 1's shut. Landslide came down on Tuesday and took half the road with it.") }, { Who, TEXT("We'll have it dug out soon. Scribes with a Spark first through, mind.") } };
 	}
 	if (Who == TEXT("conductor"))
 	{
-		if (S >= EPBXStep::Gate) return { { Who, TEXT("A signed licence! Dr. Vale's handwriting, no mistaking it.") }, { Who, TEXT("Shame about the fog on the line. Route 1's open though — west gate.") } };
-		return { { Who, TEXT("Lumen Station, end of the line! Or the start of it, depends which way you're facing.") }, { Who, TEXT("Mistvale's two hours through the mountain. Rangers ride free with a signed licence.") } };
+		if (S >= EPBXStep::Gate) return { { Who, TEXT("A Codex with pages! Vale's ink, no mistaking it.") }, { Who, TEXT("Shame about the fog on the line. Route 1's open though — west gate.") } };
+		return { { Who, TEXT("Lumen Station, end of the line! Or the start of it, depends which way you're facing.") }, { Who, TEXT("Mistvale's two hours through the mountain. Scribes ride free.") } };
 	}
 	if (Who == TEXT("scout"))
-		return { { Who, TEXT("A new Ranger! Welcome to Route 1. Three things.") },
+		return { { Who, TEXT("A new Scribe! Welcome to Route 1. Three things.") },
 				 { Who, TEXT("One: trainers here battle anyone who meets their eye. Walk past one and they'll come to you.") },
-				 { Who, TEXT("Two: wild Echoes live in the tall grass — each patch has its own. Some say something yellow sparks in a hidden meadow.") },
-				 { Who, TEXT("Three: Ranger Nell runs the rest stop halfway along. Free healing, and Fenn sells supplies.") } };
-	if (Who == TEXT("healer")) return { { Who, TEXT("Welcome to Ranger Rest! Sit by the fire a moment — I'll look after your Echoes.") } };
-	if (Who == TEXT("trader")) return { { Who, TEXT("Potions, Poké Balls, fair prices. Mostly fair. Have a look.") } };
+				 { Who, TEXT("Two: wild Sparks live in the tall grass — each patch has its own. Some say something yellow sparks in a hidden meadow.") },
+				 { Who, TEXT("Three: Nell runs the Scribes' rest stop halfway along. Free healing, and Fenn sells supplies.") } };
+	if (Who == TEXT("healer")) return { { Who, TEXT("Welcome to Scribes' Rest! Sit by the fire a moment — I'll look after your Sparks.") } };
+	if (Who == TEXT("trader")) return { { Who, TEXT("Mending Tea, Binding Ink, fair prices. Mostly fair. Have a look.") } };
 	return { { Who, TEXT("...") } };
 }
 
@@ -1078,7 +1069,7 @@ FVector APBXDirector::ObjectiveTarget(FString& Label) const
 	auto ExitTo = [&](bool bEnd) { for (const FPBXExit& E : Exits) if (E.ToMap.IsEmpty() == bEnd) return E.Pos; return FVector::ZeroVector; };
 	if (!IsTown())
 	{
-		if (Step() >= EPBXStep::Route1Clear) { Label = TEXT("Route 1 cleared! Mistvale is next (wait for Dr. Vale's signal)"); return FVector::ZeroVector; }
+		if (Step() >= EPBXStep::Route1Clear) { Label = TEXT("Route 1 cleared! Mistvale is next (wait for Archivist Vale's signal)"); return FVector::ZeroVector; }
 		int32 Beat = 0; for (const auto& KV : Trainers) if (Game && Game->State->Beaten.Contains(KV.Key)) Beat++;
 		Label = FString::Printf(TEXT("Cross Route 1 west to Mistvale  ·  trainers beaten %d/%d"), Beat, Trainers.Num());
 		return ExitTo(true);
@@ -1088,20 +1079,20 @@ FVector APBXDirector::ObjectiveTarget(FString& Label) const
 	const bool bIn = Inside(); const bool bInLab = bIn && FVector::Dist2D(PlayerLoc(), DoorOf(TEXT("lab"), false)) < 2500.f;
 	switch (Step())
 	{
-	case EPBXStep::WakeUp: Label = TEXT("Head outside — Dr. Vale is expecting you"); return bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
+	case EPBXStep::WakeUp: Label = TEXT("Head outside — Archivist Vale is expecting you"); return bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
 	case EPBXStep::MeetRho: Label = TEXT("Someone is waiting outside"); return NpcLoc(TEXT("rho"));
-	case EPBXStep::GoLab: case EPBXStep::Starter: Label = TEXT("Meet Dr. Vale at Pokébox Labs"); return bInLab ? NpcLoc(TEXT("vale")) : bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
-	case EPBXStep::Capture: Label = TEXT("Catch a wild Echo in the tall grass by the west road"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : (Grass.Num() ? FVector(Grass[0].GetCenter(), 0) : FVector::ZeroVector);
+	case EPBXStep::GoLab: case EPBXStep::Starter: Label = TEXT("Meet Archivist Vale at the Scriptorium"); return bInLab ? NpcLoc(TEXT("vale")) : bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
+	case EPBXStep::Capture: Label = TEXT("Write a wild Spark into your Codex (tall grass, west road)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : (Grass.Num() ? FVector(Grass[0].GetCenter(), 0) : FVector::ZeroVector);
 	case EPBXStep::RhoBattle: Label = TEXT("Rho wants a battle — meet him at the Route 1 gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : NpcLoc(TEXT("rho"));
 	case EPBXStep::Rest: Label = TEXT("Rest your team at home (your bed)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : BedPos) : DoorOf(TEXT("house"), true);
 	case EPBXStep::Gate: case EPBXStep::Done: Label = TEXT("Route 1 is open — head west through the gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : ExitTo(false);
-	default: Label = TEXT("Route 1 cleared! Mistvale is next (wait for Dr. Vale's signal)"); return FVector::ZeroVector;
+	default: Label = TEXT("Route 1 cleared! Mistvale is next (wait for Archivist Vale's signal)"); return FVector::ZeroVector;
 	}
 }
 
 void APBXDirector::UpdateObjective()
 {
-	UI->Chapter = Step() >= EPBXStep::Done ? (ChapterLabel.IsEmpty() ? FString(TEXT("Chapter 2 · Route 1")) : ChapterLabel) : FString(TEXT("Chapter 1 · A Licence to Remember"));
+	UI->Chapter = Step() >= EPBXStep::Done ? (ChapterLabel.IsEmpty() ? FString(TEXT("Chapter 2 · Route 1")) : ChapterLabel) : FString(TEXT("Chapter 1 · The Blank Page"));
 	FString L; const FVector T = ObjectiveTarget(L); UI->Objective = L;
 	if (T.IsZero() || !Player) { UI->bArrow = false; UI->Distance = -1; return; }
 	const FVector P = PlayerLoc();
@@ -1122,8 +1113,8 @@ void APBXDirector::StoryTick(float Dt)
 		{
 			APBXNPC* N = *R; N->FaceTowards(P); Player->FaceTowards(N->GetActorLocation());
 			N->PlayAction(TEXT("Idle_Talking_Loop"), true);
-			QSay({ { TEXT("rho"), TEXT("Hey, neighbour! Big day — you're Lumen Harbor's new Lattice Ranger! I'm Rho: relay courier, tour guide, part-time panic.") },
-				   { TEXT("rho"), TEXT("Dr. Vale is waiting at Pokébox Labs. Big building, satellite dish, can't miss it. Follow the arrow!") },
+			QSay({ { TEXT("rho"), TEXT("Hey! Blank-book! ...Sorry. Rho. Rho Calder. Three pages, remember? You were brave yesterday. Stupid, but brave.") },
+				   { TEXT("rho"), TEXT("Archivist Vale is waiting at the Scriptorium. Big old building with the bell tower. Follow the arrow!") },
 				   { TEXT("rho"), TEXT("Me? I'm off to the Route 1 gate. Come find me once you've got a partner — I want a battle!") } });
 			QDo([this, N] { N->ReturnToIdle(); SetStep(EPBXStep::GoLab); SaveNow(false); });
 		}
@@ -1156,7 +1147,7 @@ void APBXDirector::StoryTick(float Dt)
 			if (WarnT <= 0.f)
 			{
 				WarnT = 3.f;
-				Toast(bGateClosed ? TEXT("Route 1 is buried under a landslide. The crews are still digging.") : P.Z < WaterZ ? TEXT("Too deep! Your Echo can't swim yet.")
+				Toast(bGateClosed ? TEXT("Route 1 is buried under a landslide. The crews are still digging.") : P.Z < WaterZ ? TEXT("Too deep! Your Spark can't swim yet.")
 					: IsTown() ? TEXT("The forest is too thick here — stay near the town.") : TEXT("The woods are too thick — stay near the road."));
 			}
 		}
@@ -1251,7 +1242,7 @@ void APBXDirector::TrainerSpotted(FName Id)
 void APBXDirector::BoardTrain()
 {
 	if (bTrainGo || !Train.Num()) { CompleteChapter(); return; }
-	QSay({ { TEXT("conductor"), TEXT("All aboard for Mistvale! Mind the gap, Ranger.") } });
+	QSay({ { TEXT("conductor"), TEXT("All aboard for Mistvale! Mind the gap, Scribe.") } });
 	QFade(1.f, .5f);
 	QDo([this]
 	{
@@ -1448,7 +1439,7 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	Bt = FBattleCtx(); Bt.bActive = true; Bt.bWild = true; Bt.Foe = W; Bt.Mine = Partner; Music(TEXT("mus_battle"));
 	const int32 Patch = PatchOf(W->GetActorLocation()); const FIntPoint Lv = GrassLv.IsValidIndex(Patch) ? GrassLv[Patch] : FIntPoint(10, 12);
 	const FPBXCardDef* C = PBXData::Card(W->CardId); Bt.FoeLv = FMath::RandRange(Lv.X, Lv.Y);
-	if (Step() == EPBXStep::Capture && Game->State->Balls <= 0) { Game->State->Balls = 5; Toast(TEXT("Dr. Vale sent you 5 more Poké Balls.")); }
+	if (Step() == EPBXStep::Capture && Game->State->Balls <= 0) { Game->State->Balls = 5; Toast(TEXT("Archivist Vale sent you 5 more vials of Binding Ink.")); }
 	FPBXFighter Foe = FPBXFighter::Make(*C, Bt.FoeLv, PBXData::LvMult(Bt.FoeLv));
 	Bt.bStory = Step() == EPBXStep::Capture; if (Bt.bStory) Foe.MinHP = 1;
 	Bt.B.Team[0] = Mine; Bt.B.Team[1] = { Foe }; Bt.B.Act[0] = First;
@@ -1476,7 +1467,7 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	if (Bt.bActive || !Partner) return;
 	TArray<FPBXFighter> Mine; for (const FPBXMon& M : Game->State->Team) Mine.Add(FighterOf(M));
 	int32 First = Mine.IndexOfByPredicate([](const FPBXFighter& F) { return F.HP > 0; });
-	if (First < 0) { QSay({ { Who, TEXT("Your Echoes look wiped out. Go rest first — I'll wait. Probably.") } }); return; }
+	if (First < 0) { QSay({ { Who, TEXT("Your Sparks look wiped out. Go rest first — I'll wait. Probably.") } }); return; }
 	APBXNPC* N = NPCs.FindRef(Who); if (!N) return;
 	Bt = FBattleCtx(); Bt.bActive = true; Bt.bTrainer = true; Bt.Trainer = Who; Bt.Mine = Partner; Music(TEXT("mus_battle"));
 	TArray<FPBXFighter> Foes; const FPBXCardDef* C = nullptr;
@@ -1535,14 +1526,14 @@ void APBXDirector::ShowMoves()
 	Add(2, TEXT("Ultimate"), FString::Printf(TEXT("~%d dmg · 4 energy"), Bt.B.Estimate(Me, Foe, EPBXMove::Ult)), Bt.B.CanUse(Me, EPBXMove::Ult), FLinearColor(1, .7f, .2f));
 	Add(3, TEXT("Guard"), TEXT("halves damage · +1 energy"), true, FLinearColor(.4f, .7f, 1));
 	int32 Alive = 0; for (int32 i = 0; i < Bt.B.Team[0].Num(); i++) if (i != Bt.B.Act[0] && Bt.B.Team[0][i].HP > 0) Alive++;
-	if (Alive) Add(4, TEXT("Switch"), TEXT("send in your next Echo"), true, FLinearColor(.6f, .9f, .6f));
+	if (Alive) Add(4, TEXT("Switch"), TEXT("send in your next Spark"), true, FLinearColor(.6f, .9f, .6f));
 	if (Bt.bWild)
 	{
 		const int32 Balls = Game->State->Balls;
-		Add(5, FString::Printf(TEXT("Poké Ball (%d)"), Balls), Balls > 0 ? FString::Printf(TEXT("%d%% chance · weaken it first"), FMath::RoundToInt(Bt.B.CaptureChance() * 100)) : FString(TEXT("none left — buy more at Ranger Rest")), Balls > 0, FLinearColor(.95f, .3f, .3f));
+		Add(5, FString::Printf(TEXT("Binding Ink (%d)"), Balls), Balls > 0 ? FString::Printf(TEXT("%d%% chance · weaken it first"), FMath::RoundToInt(Bt.B.CaptureChance() * 100)) : FString(TEXT("none left — buy more at Scribes' Rest")), Balls > 0, FLinearColor(.95f, .3f, .3f));
 		Add(6, TEXT("Run"), TEXT("escape"), !Bt.bStory || true, FLinearColor(.7f, .7f, .7f));
 	}
-	if (Game->State->Potions > 0) Add(7, FString::Printf(TEXT("Potion (%d)"), Game->State->Potions), TEXT("heal 60% · uses your turn"), Me.HP < Me.MaxHP, FLinearColor(.4f, .85f, .5f));
+	if (Game->State->Potions > 0) Add(7, FString::Printf(TEXT("Mending Tea (%d)"), Game->State->Potions), TEXT("heal 60% · uses your turn"), Me.HP < Me.MaxHP, FLinearColor(.4f, .85f, .5f));
 	UI->MoveSel = 0; UI->MovesRev++; UI->bMoves = true; SyncPlates();
 	UI->OnMove = [this](int32 i) { PickMove(i); };
 	UI->Log = FString::Printf(TEXT("What will %s do?"), *Me.Name);
@@ -1598,7 +1589,7 @@ void APBXDirector::PickMove(int32 i)
 	{
 		FPBXFighter& Me = Bt.B.Active(0); const int32 H = FMath::Min(Me.MaxHP - Me.HP, FMath::RoundToInt(Me.MaxHP * .6f));
 		Me.HP += H; Game->State->Potions--; SyncPlates();
-		UI->Log = FString::Printf(TEXT("You used a Potion! %s recovered %d HP."), *Me.Name, H);
+		UI->Log = FString::Printf(TEXT("You used a Mending Tea! %s recovered %d HP."), *Me.Name, H);
 		if (APBXEcho* V = Bt.Mine.Get()) { Floater(V->GetActorLocation(), FString::Printf(TEXT("+%d"), H), FLinearColor(.4f, 1, .5f)); if (FX) FX->Burst(V->GetActorLocation() + FVector(0, 0, 30), FLinearColor(.4f, 1.f, .5f), 26, 140.f, 22.f, 1.2f, 220.f, .9f, 1, .8f); }
 		QWait(1.f);
 		QDo([this] { PlayEvents(DoRound(EPBXMove::Switch, -1)); });   // the foe gets its turn
@@ -1699,7 +1690,7 @@ void APBXDirector::TryCapture()
 	const bool bCaught = FMath::FRand() < Chance;
 	Game->State->Balls = FMath::Max(0, Game->State->Balls - 1);
 	const int32 Shakes = bCaught ? 3 : FMath::RandRange(0, 2);
-	UI->Log = FString::Printf(TEXT("You threw a Poké Ball! (%d%%)"), FMath::RoundToInt(Chance * 100));
+	UI->Log = FString::Printf(TEXT("You trace the Binding glyph! (%d%%)"), FMath::RoundToInt(Chance * 100));
 	Player->PlayAction(TEXT("OverhandThrow"), false, .1f);
 	AStaticMeshActor* Ball = GetWorld()->SpawnActor<AStaticMeshActor>(PlayerLoc() + FVector(0, 0, 60), FRotator::ZeroRotator);
 	if (Ball)
@@ -1738,7 +1729,7 @@ void APBXDirector::TryCapture()
 			const FPBXFighter& Foe = Bt.B.Active(1);
 			Sfx(TEXT("sfx_capture"));
 			UI->Log = FString::Printf(TEXT("Gotcha! %s was captured!"), *Foe.Name);
-			Splash(TEXT("GOTCHA!"), FString::Printf(TEXT("%s was bound to a blank Lattice card"), *Foe.Name), 2.4f);
+			Splash(TEXT("WRITTEN!"), FString::Printf(TEXT("%s is a new page in your Codex"), *Foe.Name), 2.4f);
 		});
 		QWait(2.f);
 		QDo([this] { EndBattle(TEXT("caught")); });
@@ -1767,7 +1758,7 @@ void APBXDirector::EndBattle(const FString& Result)
 	if (FX) { FX->SetAmbient(false); FX->ClearBases(); }
 	if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f);
 	const FPBXTrainer* TR = Bt.bTrainer ? Trainers.Find(Bt.Trainer) : nullptr; const int32 Reward = TR ? TR->Reward : 300;
-	if (Result == TEXT("win")) { Splash(TEXT("VICTORY!"), Bt.bTrainer ? FString::Printf(TEXT("+%d coins"), Reward) : FString(TEXT("Your Echo grows stronger")), 2.2f); PBXUI::Confetti(*UI, 160); }
+	if (Result == TEXT("win")) { Splash(TEXT("VICTORY!"), Bt.bTrainer ? FString::Printf(TEXT("+%d coins"), Reward) : FString(TEXT("Your Spark grows stronger")), 2.2f); PBXUI::Confetti(*UI, 160); }
 	UI->bMoves = false;
 	const bool bWin = Result == TEXT("win"), bLose = Result == TEXT("lose"), bCaught = Result == TEXT("caught");
 	const FPBXFighter Foe = Bt.B.Active(1);
@@ -1785,7 +1776,7 @@ void APBXDirector::EndBattle(const FString& Result)
 	if (bCaught)
 	{
 		const bool bTeam = Game->AddMon(Foe.CardId, Bt.FoeLv); Game->State->Captures++;
-		Toast(FString::Printf(TEXT("%s joined %s."), *Foe.Name, bTeam ? TEXT("your team") : TEXT("your card box")));
+		Toast(FString::Printf(TEXT("%s joined %s."), *Foe.Name, bTeam ? TEXT("your team") : TEXT("your Codex archive")));
 	}
 	if (bWin || bCaught) { Music(TEXT("")); Sfx(TEXT("jin_victory")); MusicHold = 3.f; } else { Music(TEXT("")); MusicHold = .5f; }
 	if (bWin && Bt.bTrainer) { Sfx(TEXT("sfx_coin")); Game->State->Coins += Reward; Game->State->Wins++; Toast(FString::Printf(TEXT("You won %d coins!"), Reward)); }
@@ -1806,7 +1797,7 @@ void APBXDirector::EndBattle(const FString& Result)
 	// story
 	if (bCaught && Step() == EPBXStep::Capture)
 	{
-		QSay({ { TEXT("note"), TEXT("Your Lattice card buzzes. A message from Dr. Vale: \"Your first capture! Splendid. Rho is waiting for you at the Route 1 gate.\"") } });
+		QSay({ { TEXT("note"), TEXT("A line of gold ink writes itself across your Codex: \"Your second page! Splendid. Rho is waiting at the Route 1 gate. — V.\"") } });
 		QDo([this] { SetStep(EPBXStep::RhoBattle); SaveNow(false); });
 	}
 	if (bWasTrainer && Trainer == TEXT("rho"))
@@ -1815,7 +1806,7 @@ void APBXDirector::EndBattle(const FString& Result)
 		if (bWin)
 		{
 			QSay({ { TEXT("rho"), TEXT("Ow. Okay. You're good. Annoyingly good.") },
-				   { TEXT("rho"), TEXT("Rule one of being a Ranger: rest your team. Go home, sleep in a real bed — it fixes everything. Trust me, I know.") } });
+				   { TEXT("rho"), TEXT("Rule one of being a Scribe: rest your team. Go home, sleep in a real bed — it fixes everything. Trust me, I know.") } });
 			QDo([this] { if (Step() == EPBXStep::RhoBattle) { SetStep(EPBXStep::Rest); SaveNow(false); } });
 		}
 		else QSay({ { TEXT("rho"), TEXT("Ha! Told you! ...Okay, go rest up and come back. I'm not going anywhere.") } });
@@ -1834,7 +1825,7 @@ void APBXDirector::EndBattle(const FString& Result)
 	{
 		const FPBXSpot* Re = Spots.Find(TEXT("respawn"));
 		QDo([this] { UI->Mode = EPBXUIMode::Explore; });
-		QSay({ { TEXT("note"), Re ? TEXT("Your team is out of energy! You hurry back to Ranger Rest...") : TEXT("Your team is out of energy! You hurry home...") } });
+		QSay({ { TEXT("note"), Re ? TEXT("Your Sparks are spent! You hurry back to Scribes' Rest...") : TEXT("Your team is out of energy! You hurry home...") } });
 		QFade(1.f, .5f);
 		QDo([this, Re]
 		{
@@ -1845,8 +1836,8 @@ void APBXDirector::EndBattle(const FString& Result)
 			SaveNow(false);
 		});
 		QFade(0.f, .5f);
-		if (Re) QSay({ { TEXT("healer"), TEXT("Easy now — sit by the fire. Your Echoes just need a moment. ...There. Good as new.") } });
-		else QSay({ { TEXT("mom"), TEXT("Oh, sweetheart, look at you. Sit down — I'll make tea. Your Echoes are already feeling better.") } });
+		if (Re) QSay({ { TEXT("healer"), TEXT("Easy now — sit by the fire. Your Sparks just need a moment. ...There. Good as new.") } });
+		else QSay({ { TEXT("mom"), TEXT("Oh, sweetheart, look at you. Sit down — I'll make tea. Your Sparks are already feeling better.") } });
 	}
 	(void)bStory;
 }
@@ -1873,21 +1864,21 @@ void APBXDirector::ShowMenu(EMenu M)
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) { Cam->SetActorLocationAndRotation(FVector(4300, -3600, 1900), FRotator(-22, 138, 0)); PC->SetViewTarget(Cam); }
 		UI->Fade = 0.f;
 		const bool bSave = Game->HasSave();
-		OpenChoice(TEXT("POKEBOX NEXT"), TEXT("Chapter 1 · A Licence to Remember"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Start your journey as a Lattice Ranger")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
+		OpenChoice(TEXT("SIGIL & SPARK"), TEXT("Chapter 1 · The Blank Page"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Your Codex is blank. Write it.")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
 			[this](int32 i) { if (i == 0) ContinueGame(); else if (i == 1) ShowMenu(EMenu::Gender); else FPlatformMisc::RequestExit(false); });
 		if (Game->HasSave()) UI->Selected = 0; else UI->Selected = 1;
 		break;
 	}
 	case EMenu::Gender:
-		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Pick how your Ranger looks"), { Opt(TEXT("Ranger · he / him"), TEXT("red cap, red tee, backpack")), Opt(TEXT("Ranger · she / her"), TEXT("bucket hat, red skirt, backpack")), Opt(TEXT("Back"), TEXT("")) }, false,
+		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Choose your Scribe"), { Opt(TEXT("Mateo · he / him"), TEXT("eleven, curious, a blank Codex")), Opt(TEXT("Aoi · she / her"), TEXT("eleven, stubborn, a blank Codex")), Opt(TEXT("Back"), TEXT("")) }, false,
 			[this](int32 i) { if (i == 2) ShowMenu(EMenu::Title); else StartNewGame(i == 0); });
 		break;
 	case EMenu::Pause:
 	{
 		TSet<FName> Owned; for (const FPBXMon& Mo : Game->State->Team) Owned.Add(Mo.Card); for (const FPBXMon& Mo : Game->State->Box) Owned.Add(Mo.Card);
-		OpenChoice(TEXT("PAUSED"), FString::Printf(TEXT("Play time %d min · Binder: %d seen, %d owned · %d coins · Balls %d · Potions %d"), FMath::FloorToInt(Game->State->PlayTime / 60.f),
+		OpenChoice(TEXT("PAUSED"), FString::Printf(TEXT("Play time %d min · Binder: %d seen, %d owned · %d coins · Balls %d · Mending Tea %d"), FMath::FloorToInt(Game->State->PlayTime / 60.f),
 			Game->State->Seen.Num(), Owned.Num(), Game->State->Coins, Game->State->Balls, Game->State->Potions),
-			{ Opt(TEXT("Resume"), TEXT("")), Opt(TEXT("Team"), TEXT("your Echoes, lead, Potions"), Game->HasPartner()), Opt(TEXT("Save game"), TEXT("")), Opt(TEXT("Load last save"), TEXT(""), Game->HasSave()),
+			{ Opt(TEXT("Resume"), TEXT("")), Opt(TEXT("Team"), TEXT("your Sparks, lead, Mending Tea"), Game->HasPartner()), Opt(TEXT("Save game"), TEXT("")), Opt(TEXT("Load last save"), TEXT(""), Game->HasSave()),
 			  Opt(TEXT("Controls"), TEXT("")), Opt(TEXT("Quit to title"), TEXT("")), Opt(TEXT("Quit game"), TEXT("")) }, false,
 			[this](int32 i)
 			{
@@ -1911,7 +1902,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		FString P = Game->HasPartner() ? PBXData::Card(Game->State->Team[0].Card)->Name : FString(TEXT("-"));
 		if (Step() >= EPBXStep::Route1Clear)
 		{
-			OpenChoice(TEXT("ROUTE 1 CLEARED"), FString::Printf(TEXT("The road to Mistvale is washed out — the Warden's crews are clearing it. Rest up, Ranger.\nLead: %s Lv %d · Team %d · Echoes caught: %d · Trainers beaten: %d · Play time: %d min"),
+			OpenChoice(TEXT("ROUTE 1 CLEARED"), FString::Printf(TEXT("The road to Mistvale is washed out — the Warden's crews are clearing it. Rest up, Scribe.\nLead: %s Lv %d · Team %d · Pages written: %d · Trainers beaten: %d · Play time: %d min"),
 				*P, Game->HasPartner() ? Game->State->Team[0].Lv : 0, Game->State->Team.Num(), Game->State->Captures, Game->State->Beaten.Num(), FMath::FloorToInt(Game->State->PlayTime / 60.f)),
 				{ Opt(TEXT("Keep exploring Route 1"), TEXT("your progress is saved")), Opt(TEXT("Quit to title"), TEXT("")) }, false,
 				[this](int32 i)
@@ -1921,7 +1912,7 @@ void APBXDirector::ShowMenu(EMenu M)
 				});
 			break;
 		}
-		OpenChoice(TEXT("CHAPTER 1 COMPLETE"), FString::Printf(TEXT("Route 1 to Mistvale is the next level.\nPartner: %s Lv %d · Echoes caught: %d · Play time: %d min"), *P, Game->HasPartner() ? Game->State->Team[0].Lv : 0, Game->State->Captures, FMath::FloorToInt(Game->State->PlayTime / 60.f)),
+		OpenChoice(TEXT("CHAPTER 1 COMPLETE"), FString::Printf(TEXT("Route 1 to Mistvale is the next level.\nPartner: %s Lv %d · Pages written: %d · Play time: %d min"), *P, Game->HasPartner() ? Game->State->Team[0].Lv : 0, Game->State->Captures, FMath::FloorToInt(Game->State->PlayTime / 60.f)),
 			{ Opt(TEXT("Keep exploring Lumen Harbor"), TEXT("your progress is saved")), Opt(TEXT("Quit to title"), TEXT("")) }, false,
 			[this](int32 i)
 			{
@@ -1972,7 +1963,7 @@ void APBXDirector::PlayIntro()
 	{
 		FPBXCutShot S = Mk(3.f, TEXT("vo_intro_03"), TEXT("Some words carried so much meaning... that they woke up. We call them Sparks."));
 		const FVector P = G(C + R * 1500.f + F * 300.f);
-		CamS(S, P - F * 700.f + R * 140.f + Up * 160.f, P - F * 470.f - R * 90.f + Up * 105.f, P + Up * 80.f, P + Up * 95.f, 42.f);
+		CamS(S, P - F * 1150.f + R * 160.f + Up * 230.f, P - F * 900.f - R * 80.f + Up * 170.f, P + Up * 90.f, P + Up * 100.f, 48.f);   // wide enough for all three (r61: the dragon was cut off)
 		S.OnStart = [this, Spawn, P, F, R]()
 		{
 			for (APBXEcho* E : { Spawn(TEXT("Flying/Dragon"), P - R * 170.f, 95.f), Spawn(TEXT("Flying/Glub"), P, 90.f), Spawn(TEXT("Flying/Armabee"), P + R * 170.f, 80.f) })
@@ -2046,10 +2037,11 @@ void APBXDirector::PlayIntro()
 		FPBXCutShot S = Mk(5.f, TEXT(""), TEXT("The starters, they're loose!"));
 		S.SubSpeaker = TEXT("Scribe Kelvin");
 		const FVector Mid = G(In + Fi * 420.f);
-		CamS(S, In + Fi * 80.f - Ri * 260.f + Up * 260.f, In + Fi * 160.f - Ri * 200.f + Up * 230.f, Mid + Up * 60.f, Mid + Up * 50.f, 60.f);
-		S.OnStart = [this, Spawn, In, Fi, Ri, InYaw, Mid]()
+		CamS(S, In + Fi * 60.f + Up * 185.f, In + Fi * 105.f + Up * 175.f, Mid + Up * 60.f, Mid + Up * 50.f, 62.f);   // r61: any sideways offset at the door puts the camera inside the vestibule wall (a beige frame) → stay on the door axis
+		S.OnStart = [this, Spawn, In, Fi, Ri, InYaw, Mid, Fog]()
 		{
-			TeleportPlayer(In + Fi * 150.f + FVector(0, 0, 95.f), InYaw);
+			Fog(-1.f);   // the rooms are underground: the attack's sea fog turned the Scriptorium into a beige wall (r61)
+			TeleportPlayer(In + Fi * 150.f + Ri * 75.f + FVector(0, 0, 95.f), InYaw);
 			APBXEcho* A = Spawn(TEXT("Flying/Dragon"), Mid - Ri * 190.f, 85.f);
 			APBXEcho* B = Spawn(TEXT("Flying/Glub"), Mid, 80.f);
 			APBXEcho* D = Spawn(TEXT("Blob/Mushnub"), Mid + Ri * 190.f, 75.f);
@@ -2061,7 +2053,7 @@ void APBXDirector::PlayIntro()
 	}
 	{
 		FPBXCutShot S = Mk(4.f, TEXT("vo_intro_14"), TEXT("Some books are blank... because they haven't been written yet."));
-		const FVector Me = In + Fi * 150.f;
+		const FVector Me = In + Fi * 150.f + Ri * 75.f;   // where the lab shot put the player
 		CamS(S, Me + Fi * 230.f + Ri * 60.f + Up * 150.f, Me + Fi * 160.f + Ri * 40.f + Up * 140.f, Me + Up * 110.f, Me + Up * 115.f, 42.f);
 		S.OnStart = [this, Me]() { if (FX) { FX->Burst(Me + FVector(0, 0, 105), FLinearColor(1.f, .8f, .35f), 60, 300.f, 16.f, 1.8f, -40.f, .7f); FX->Ring(Me + FVector(0, 0, 15), FLinearColor(1.f, .8f, .35f), 160.f, 36); } };
 		Sh.Add(S);
@@ -2096,7 +2088,7 @@ void APBXDirector::StartNewGame(bool bMale)
 	QWait(.3f);
 	QDo([this] { Player->PlayAction(TEXT("LayToIdle"), false, .05f); });
 	QFade(0.f, 1.2f);
-	QDo([this] { Splash(TEXT("CHAPTER 1"), TEXT("A Licence to Remember"), 3.f); });
+	QDo([this] { Splash(TEXT("CHAPTER 1"), TEXT("The Blank Page"), 3.f); });
 	QWait(1.5f);
 	PBXLOG("[PBX] new game (%s)", bMale ? TEXT("m") : TEXT("f"));
 }
@@ -2119,7 +2111,7 @@ void APBXDirector::ContinueGame()
 	PlacePlayer(S);
 	RefreshWorld(); SpawnPartner(false);
 	UI->Fade = 1.f; QFade(0.f, .8f);
-	QDo([this] { Toast(FString::Printf(TEXT("Welcome back, Ranger. (saved %s)"), *Game->State->SavedAt)); });
+	QDo([this] { Toast(FString::Printf(TEXT("Welcome back, Scribe. (saved %s)"), *Game->State->SavedAt)); });
 	PBXLOG("[PBX] continue: step %d", (int32)Step());
 }
 
@@ -2327,7 +2319,7 @@ void APBXDirector::AutoTick(float Dt)
 	case 16: if (Bt.bActive && UI->BannerT > 0.f && AutoStepT > .6f) { Shot(TEXT("13_battle_intro")); AutoNext(); } else if (AutoStepT > 6.f && Idle()) { APBXEcho* Best = nullptr; for (APBXEcho* W : Wilds) if (W && !W->IsHidden()) { Best = W; break; } if (Best) TeleportPlayer(Best->GetActorLocation() + FVector(60, 0, 0), 0.f); AutoStepT = 0.f; } break;
 	case 17: if (Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { Shot(TEXT("14_battle_moves")); AutoNext(); } break;
 	case 18: if (Bt.bActive && UI->ShakeT > .05f) { Shot(TEXT("15_battle_hit")); AutoNext(); } else if (!Bt.bActive && AutoStepT > 2.f) AutoNext(); break;
-	case 19: if (UI->BigT > 1.5f && UI->BigTitle == TEXT("GOTCHA!")) { Shot(TEXT("16_gotcha")); AutoNext(); }
+	case 19: if (UI->BigT > 1.5f && UI->BigTitle == TEXT("WRITTEN!")) { Shot(TEXT("16_gotcha")); AutoNext(); }
 		else if (Idle() && Step() == EPBXStep::Capture && AutoStepT > 3.f) { AutoStep = 15; AutoStepT = 0.f; PBXLOG("[PBXAUTO] capture missed — retry"); }
 		else if (Idle() && Step() >= EPBXStep::RhoBattle) AutoNext();
 		break;

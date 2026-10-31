@@ -456,7 +456,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			.BorderImage(White()).BorderBackgroundColor_Lambda([this] { return FSlateColor(FLinearColor(0, 0, 0, .55f * M->SubA)); }).Padding(FMargin(22, 8))
 			[
 				SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->SubSpeaker.IsEmpty() ? M->Subtitle : M->SubSpeaker + TEXT(":  ") + M->Subtitle); })
-				.Font(PBXUI::Font(TEXT("body"), 26, 1)).Justification(ETextJustify::Center).AutoWrapText(true).WrapTextAt(1300.f)
+				.Font(PBXUI::Font(TEXT("body"), 26, 1)).Justification(ETextJustify::Center).WrapTextAt(1150.f)   // fixed width: AutoWrapText collapsed the bar to 3-5 short lines (r61)
 				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->SubA)); })
 			]
 		]
@@ -511,7 +511,7 @@ TSharedRef<SWidget> SPBXHud::MakePlate(int32 Side)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0)
 				[
 					SNew(SBorder).BorderImage(Badge.Get()).BorderBackgroundColor_Lambda([P] { return FSlateColor(PBXData::TypeColor(P().Type)); }).Padding(FMargin(10, 2))
-					[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(P().Type.ToUpper()); }).Font(PBXUI::Font(TEXT("bold"), 17, 1)).ColorAndOpacity(FLinearColor::White)]
+					[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(PBXData::InkName(P().Type).ToUpper()); }).Font(PBXUI::Font(TEXT("bold"), 17, 1)).ColorAndOpacity(FLinearColor::White)]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text_Lambda([P] { return FText::FromString(FString::Printf(TEXT("Lv %d"), P().Lv)); }).Font(PBXUI::Font(TEXT("title"), 28, 2)).ColorAndOpacity(GoldC)]
 			]

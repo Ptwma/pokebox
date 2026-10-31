@@ -81,7 +81,7 @@ private:
 	UPROPERTY() TArray<TObjectPtr<AActor>> Train;
 	void BoardTrain();
 	void TickTrain(float Dt);
-	UPROPERTY() TArray<TObjectPtr<AStaticMeshActor>> TableCards;
+	UPROPERTY() TArray<TObjectPtr<AActor>> TableCards;   // Sigil & Spark: the three starter Sparks on the table
 	UPROPERTY() TArray<TObjectPtr<UTexture2D>> CardTex;
 	UPROPERTY() TObjectPtr<ACameraActor> Cam;
 	UPROPERTY() TObjectPtr<UPBXGameSubsystem> Game;
