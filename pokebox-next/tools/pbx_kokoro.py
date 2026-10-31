@@ -20,7 +20,7 @@ LINES = {
     'intro_10': "And then... there was you.",
     'intro_14': "Some books are blank... because they have not been written. Yet.",
 }
-PAUSE = {',': .55, '.': 1.05, '...': 1.45}   # seconds of silence after each kind of break
+PAUSE = {',': .25, '.': .55, '...': .85}   # seconds of silence after each kind of break (user: shorter — dramatic, not slow)
 
 def phrases(text):
     """split at '...', '.' and ',' → [(phrase, pause after)]"""

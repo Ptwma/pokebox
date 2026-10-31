@@ -124,6 +124,9 @@ Arts as glyph tiles with an ink cool-down sweep, Sync as ink filling a quill nib
 14. Close-up: your blank Codex glows — the first glyph writes itself. — *"Some books are blank… because they haven't been written yet."*
 15. → **Gameplay.**
 
+**Subtitles (user 2026-10-31):** every narrated line and every spoken line in the intro is subtitled at the bottom of the frame
+(white on a soft dark band, timed to the narration wav), skippable with E; the tutorial prompts appear as on-screen hints.
+
 ## 9. Tutorial (gentle, step by step)
 1. **Move** to the fallen Spark (WASD / stick).
 2. **Choose** which starter to shield (Cindril / Glublet / Sporrow) — the bond writes your first page.
