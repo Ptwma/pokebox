@@ -22,7 +22,7 @@ LINES = [
     ('intro_14', "Some books are blank... because they have not been written yet."),
 ]
 
-def deep(path, pitch=0.82, wet=0.28, double=0.35):
+def deep(path, pitch=0.93, wet=0.07, double=0.12):   # user: "more normal" (0.82 / .28 / .35 sounded like a cave)
     """heavy narrator: lower the pitch by resampling (slower too = weightier), a second layer a few % lower for body,
     a low-shelf boost and a dark hall reverb. Not an imitation of any actor — a generic deep, solemn storyteller."""
     import numpy as np
@@ -41,7 +41,7 @@ def deep(path, pitch=0.82, wet=0.28, double=0.35):
     y = y + wet * rev; y /= max(1e-6, np.abs(y).max()) / 0.92
     with wave.open(path, 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes((y * 32767).astype(np.int16).tobytes())
 
-def NARRATE(length_scale=1.0, sentence_silence=0.5, voice=None, suffix='', heavy=True):
+def NARRATE(length_scale=1.05, sentence_silence=0.5, voice=None, suffix='', heavy=True):
     os.makedirs(OUT, exist_ok=True); info = {}
     for lid, text in LINES:
         f = os.path.join(OUT, f'vo_{lid}{suffix}.wav')
