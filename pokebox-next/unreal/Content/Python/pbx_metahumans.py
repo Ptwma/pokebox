@@ -137,6 +137,48 @@ def build(cid):
 def build_all():
     for cid in SPEC: build(cid)
 
+def is_built(cid): return EAL.does_asset_exist(f'{ROOT}/Built/MH_{cid}/BP_MH_{cid}')
+def pending(): return [c for c in SPEC if not is_built(c)]
+
+def _ram():
+    import ctypes
+    class M(ctypes.Structure):
+        _fields_ = [('l', ctypes.c_ulong), ('load', ctypes.c_ulong), ('tot', ctypes.c_ulonglong), ('avail', ctypes.c_ulonglong),
+                    ('tp', ctypes.c_ulonglong), ('ap', ctypes.c_ulonglong), ('tv', ctypes.c_ulonglong), ('av', ctypes.c_ulonglong), ('x', ctypes.c_ulonglong)]
+    m = M(); m.l = ctypes.sizeof(M); ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+    return round(m.avail / 2**30, 1), round(m.ap / 2**30, 1)   # free physical GB, free commit GB
+
+def cap_textures(cid, size=2048):
+    """the build writes 8K virtual-texture body maps — cap them (RTX 2060, 6 GB)"""
+    n = 0
+    for a in EAL.list_assets(f'{ROOT}/Built/MH_{cid}', recursive=True, include_folder=False):
+        d = EAL.find_asset_data(a)
+        if str(d.asset_class_path.asset_name) != 'Texture2D': continue
+        t = d.get_asset()
+        if t.get_editor_property('max_texture_size') != size: t.set_editor_property('max_texture_size', size); n += 1
+    log('capped', cid, n)
+
+def build_save(cid):
+    """one character end to end, then write it to disk and free it — r58 lesson: 16 unsaved builds = out-of-memory crash"""
+    if is_built(cid): log('already built', cid); return True
+    import os
+    sz = os.path.getsize(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()) + f'PBX/MH/Characters/MH_{cid}.uasset')
+    if sz < 40e6: rig(cid); textures(cid)          # not yet rigged / textured (≈10 MB → ≈110 MB once done)
+    build(cid)
+    ok = is_built(cid)
+    if ok:
+        try: cap_textures(cid)
+        except Exception as ex: log('cap failed', cid, ex)
+    save_all(); unreal.SystemLibrary.collect_garbage(); log('ram free', cid, _ram())
+    return ok
+
+def next_builds(n=1):
+    """build the next n pending characters (one queue job per call, so a crash loses at most one)"""
+    for cid in pending()[:n]:
+        try: build_save(cid)
+        except Exception as ex: log('FAILED', cid, ex)
+    log('pending', len(pending()), pending())
+
 def all_steps(skip=()):
     """rig → textures → build for every character (≈2 min each; the Epic sign-in is reused)"""
     for cid in SPEC:
