@@ -272,7 +272,8 @@ void APBXDirector::SpawnNPCs()
 		FString Outfit; O->TryGetStringField(TEXT("outfit"), Outfit);
 		const TArray<TSharedPtr<FJsonValue>>* HC = nullptr; FLinearColor HairC(0, 0, 0, 0);
 		if (O->TryGetArrayField(TEXT("hair_color"), HC) && HC->Num() >= 3) HairC = FLinearColor((*HC)[0]->AsNumber(), (*HC)[1]->AsNumber(), (*HC)[2]->AsNumber(), 1.f);
-		N->ApplyLook(O->GetStringField(TEXT("body")), O->GetStringField(TEXT("hair")), Scale, Outfit, HairC);
+		if (N->ApplyMetaHuman(N->Id.ToString())) N->SetActorScale3D(FVector(1.f));          // phase 5: a MetaHuman when it is built
+		else N->ApplyLook(O->GetStringField(TEXT("body")), O->GetStringField(TEXT("hair")), Scale, Outfit, HairC);
 		N->IdleAnim = O->GetStringField(TEXT("anim")); N->Home = N->GetActorLocation(); N->HomeYaw = Yaw;
 		N->ReturnToIdle();
 		FString BoatTag;
@@ -338,7 +339,8 @@ void APBXDirector::ApplyPlayerLook()
 {
 	const bool bM = Game->State->bMale;
 	// he: the Fab "Free Stylized Boy" (retargeted UAL animations); she: Quaternius body + 3D clothes, cartoon proportions
-	if (bM) Player->ApplyLook(TEXT("boy"), FString(), .92f);
+	if (Player->ApplyMetaHuman(bM ? TEXT("player_m") : TEXT("player_f"))) Player->SetActorScale3D(FVector(1.f));   // phase 5
+	else if (bM) Player->ApplyLook(TEXT("boy"), FString(), .92f);
 	else Player->ApplyLook(TEXT("f"), TEXT("Hair_Long"), .9f, TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Player);

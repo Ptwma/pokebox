@@ -54,3 +54,20 @@ def run(only=None):
                                                                       target_path=OUT + '/Anim', use_source_path=False, include_referenced_assets=False, overwrite_existing_files=True)
         log(tag, 'retargeted', len(res)); made += res
     return made
+
+def run_target(tag_name, target_mesh, suffix, only=None):
+    """2026-10-31 (phase 5): the same retarget onto another skeleton — the MetaHuman body (all MetaHumans share
+    metahuman_base_skel, so one pass serves every character). Clips land in OUT/Anim<suffix> as <UAL name><suffix>."""
+    tgt = ik_rig('IK_' + tag_name, target_mesh)
+    made = []
+    for tag, mesh in SOURCES.items():
+        src = ik_rig('IK_' + tag, mesh)
+        rtg = retargeter(f'RTG_{tag}_to_{tag_name}', src, tgt)
+        folder = mesh.rsplit('/', 1)[0]
+        assets = [EAL.find_asset_data(p) for p in EAL.list_assets(folder, recursive=False)
+                  if str(EAL.find_asset_data(p).asset_class_path.asset_name) == 'AnimSequence' and not p.split('.')[-1].endswith(('_Boy', suffix))]
+        if only: assets = [a for a in assets if any(str(a.asset_name).endswith(o) for o in only)]
+        res = unreal.IKRetargetBatchOperation.duplicate_and_retarget(assets, unreal.load_asset(mesh), unreal.load_asset(target_mesh), rtg, suffix=suffix,
+                                                                      target_path=OUT + '/Anim' + suffix, use_source_path=False, include_referenced_assets=False, overwrite_existing_files=True)
+        log(tag, 'retargeted', len(res), 'to', tag_name); made += res
+    return made

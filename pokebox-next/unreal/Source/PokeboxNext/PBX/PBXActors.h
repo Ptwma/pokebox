@@ -44,6 +44,10 @@ public:
 	virtual void Tick(float Dt) override;
 	bool bMaleLook = true;
 	void StopTurning() { bTurning = false; }
+	/** phase 5 (2026-10-31): a MetaHuman body — id from Content/PBX/Data/mh_manifest.json (pbx_metahumans.manifest()) */
+	bool ApplyMetaHuman(const FString& Id);
+	bool bMetaHuman = false;
+	UPROPERTY(Transient) TArray<TObjectPtr<USceneComponent>> MHParts;
 protected:
 	float TurnYaw = 0.f; bool bTurning = false;
 };

@@ -22,7 +22,8 @@ public class PokeboxNext : ModuleRules
 			"SlateCore",
 			"Json",
 			"JsonUtilities",
-			"AssetRegistry"
+			"AssetRegistry",
+			"HairStrandsCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

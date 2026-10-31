@@ -1,4 +1,12 @@
 #include "PBX/PBXActors.h"
+#include "GroomComponent.h"
+#include "GroomAsset.h"
+#include "GroomBindingAsset.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "PBX/PBXAnim.h"
 #include "PBX/PBXCore.h"
 #include "Components/CapsuleComponent.h"
@@ -61,8 +69,60 @@ APBXCharacterBase::APBXCharacterBase()
 
 UPBXAnimInstance* APBXCharacterBase::Anim() const { return Cast<UPBXAnimInstance>(GetMesh()->GetAnimInstance()); }
 
+bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
+{
+	static TSharedPtr<FJsonObject> Manifest;
+	if (!Manifest.IsValid())
+	{
+		FString Txt;
+		if (FFileHelper::LoadFileToString(Txt, *(FPaths::ProjectContentDir() / TEXT("PBX/Data/mh_manifest.json"))))
+		{
+			TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(Txt); FJsonSerializer::Deserialize(R, Manifest);
+		}
+		if (!Manifest.IsValid()) Manifest = MakeShared<FJsonObject>();
+	}
+	const TSharedPtr<FJsonObject>* E = nullptr;
+	if (!Manifest->TryGetObjectField(Id, E)) { UE_LOG(LogTemp, Warning, TEXT("[PBX] MetaHuman %s not in the manifest"), *Id); return false; }
+	auto LoadPath = [](const FString& P) -> UObject* { const FString N = FPaths::GetBaseFilename(P); return StaticLoadObject(UObject::StaticClass(), nullptr, *(P + TEXT(".") + N)); };
+	USkeletalMesh* Body = Cast<USkeletalMesh>(LoadPath((*E)->GetStringField(TEXT("body"))));
+	if (!Body) { UE_LOG(LogTemp, Warning, TEXT("[PBX] MetaHuman %s body missing"), *Id); return false; }
+	for (USceneComponent* P : MHParts) if (P) P->DestroyComponent();
+	MHParts.Reset();
+	GetMesh()->SetSkeletalMesh(Body); GetMesh()->EmptyOverrideMaterials();
+	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint); GetMesh()->SetAnimInstanceClass(UPBXAnimInstance::StaticClass());
+	GetMesh()->SetRelativeScale3D(FVector(1.f));
+	for (USkeletalMeshComponent* X : { Eyes.Get(), Brows.Get(), Hair.Get(), Clothes.Get() }) { X->SetSkeletalMesh(nullptr); X->SetVisibility(false); }
+	USkeletalMeshComponent* Face = nullptr;
+	for (const TSharedPtr<FJsonValue>& V : (*E)->GetArrayField(TEXT("parts")))
+	{
+		const TSharedPtr<FJsonObject> O = V->AsObject();
+		USkeletalMesh* M = Cast<USkeletalMesh>(LoadPath(O->GetStringField(TEXT("mesh")))); if (!M) continue;
+		USkeletalMeshComponent* C = NewObject<USkeletalMeshComponent>(this, FName(*(TEXT("MH_") + O->GetStringField(TEXT("name")))));
+		C->SetupAttachment(GetMesh()); C->RegisterComponent(); C->SetSkeletalMesh(M); C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetLeaderPoseComponent(GetMesh());          // follows the body (the face keeps its neutral expression: JOINTS_ONLY rig, no face anim)
+		MHParts.Add(C);
+		if (O->GetBoolField(TEXT("face"))) Face = C;
+	}
+	for (const TSharedPtr<FJsonValue>& V : (*E)->GetArrayField(TEXT("grooms")))
+	{
+		const TSharedPtr<FJsonObject> O = V->AsObject();
+		UGroomAsset* G = Cast<UGroomAsset>(LoadPath(O->GetStringField(TEXT("groom")))); if (!G) continue;
+		UGroomComponent* GC = NewObject<UGroomComponent>(this, FName(*(TEXT("MHG_") + O->GetStringField(TEXT("name")))));
+		GC->SetupAttachment(Face ? Face : GetMesh());
+		if (UGroomBindingAsset* B = Cast<UGroomBindingAsset>(LoadPath(O->GetStringField(TEXT("binding"))))) GC->SetBindingAsset(B);
+		GC->SetGroomAsset(G); GC->RegisterComponent(); GC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MHParts.Add(GC);
+	}
+	bMetaHuman = true;
+	if (UPBXAnimInstance* A = Anim()) { A->SetSuffix(TEXT("_MH")); A->Style = FPBXStyle(); }
+	return true;
+}
+
 void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairName, float Scale, const FString& Outfit, FLinearColor HairColor)
 {
+	// "mh:<id>": a MetaHuman (phase 5). Falls back to the old stylized look if that character isn't built yet.
+	if (BodyKind.StartsWith(TEXT("mh:")) && ApplyMetaHuman(BodyKind.Mid(3))) { SetActorScale3D(FVector(1.f)); return; }
+	bMetaHuman = false;
 	const bool bBoy = BodyKind == TEXT("boy");
 	const bool bMale = BodyKind != TEXT("f");
 	bMaleLook = bMale;
