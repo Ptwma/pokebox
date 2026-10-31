@@ -51,6 +51,9 @@ public:
 	bool bMetaHuman = false;
 	bool bKidMH = false; float MHHeight = 0.f;
 	UPROPERTY(Transient) TArray<TObjectPtr<USceneComponent>> MHParts;
+	/** Sigil & Spark (dark, 2026-11-01): a Blanked person — chalk-white overlay over every mesh part, frozen in place */
+	void SetBlanked(bool bOn);
+	bool bBlanked = false;
 protected:
 	float TurnYaw = 0.f; bool bTurning = false;
 };

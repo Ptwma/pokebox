@@ -1,4 +1,14 @@
-# SIGIL & SPARK — story, systems and intro (v1 draft, 2026-10-31)
+# SIGIL & SPARK — story, systems and intro (v2, 2026-11-01 — DARK)
+
+> **v2 decisions (user 2026-11-01):** cards are GONE completely (pure gameplay game, nothing kept from the card game);
+> new hero names (Asta-like but original) → **Rook** (he) / **Vesna** (she), **16**; tone = **adventure with darkness,
+> blood, alone** (Expedition 33 mood: loss, melancholy, a cost to every victory). Rho is 16 too.
+> What changed in the story: the Blanking is not a threat any more, it HAPPENED — the night of the Rite half of Lumen
+> Harbor was Blanked (alive, white, wordless): your mother Grace, little Omari, Sunita, Zuri. Rho's parents too; the
+> Erasers tore two pages out of his Codex and he blames your blank book. Vale is wounded. You set out alone.
+> In game (r62): Blanked people = chalk-white overlay (M_PBX_Blanked), frozen, they don't turn or answer (narrated
+> lines); blood bursts on every hit and a pool on a KO; a closing intro shot + narration (vo_intro_15); all ch.1
+> dialogue rewritten in this tone.
 
 > Replaces the Pokébox / Pokémon-card story. Same world (Veyra, Lumen Harbor, the lighthouse island, Route 1 → Mistvale), same
 > MetaHuman cast, same 41 creatures (Quaternius CC0) — new story, names, battle, UI, intro and tutorial. All names and designs
@@ -14,7 +24,7 @@
 The world was *written*. Every wave, stone and living thing is a word in the **Script**, a language older than memory.
 Some words became so full of meaning that they woke up: the **Sparks**. People learned to bond with them in a **Codex**,
 half spellbook, half instrument, whose pages write themselves when a bond is made.
-On the day every eleven-year-old receives a Codex, yours opens **blank**. That same day the **White Page** comes to Lumen
+On the day every sixteen-year-old receives a Codex, yours opens **blank**. That same day the **White Page** comes to Lumen
 Harbor to erase the Script. Your blank book is not broken: it is a **First Page**, the only kind of book that can write *new*
 words.
 
@@ -36,13 +46,13 @@ once and drowned the town of Hollowmere. Its only survivor, **Mother Blanc**, fo
 ## 3. Cast (the existing MetaHumans, re-cast)
 | Model | Character | Role |
 |---|---|---|
-| player_m / player_f | **Mateo / Aoi** (you choose), 11 | the hero with the blank Codex |
-| rho | **Rho Calder**, 12 | rival-friend: three pages on day one, loud, secretly scared of failing |
-| mom | **Grace** | your mother, harbour lantern-keeper; knows more about your father's Codex than she says |
+| player_m / player_f | **Rook / Vesna** (you choose), 16 | the harbour lantern-keeper's child with the blank Codex; mother Blanked; alone |
+| rho | **Rho Calder**, 16 | rival: three pages on day one — two torn out by the Erasers, parents Blanked; blames you, fights you for your book, leaves alone |
+| mom | **Grace** | your mother — **Blanked** on the first night; pours tea for no one; the reason you go on |
 | vale | **Archivist Vivian Vale** | keeper of the **Scriptorium** (the old lab); runs the Rite of Pages |
 | aide | **Scribe Kelvin** | Vale's assistant, comic relief, terrified of Sparks |
 | fisher | **Old Walter "Gus"** | saw the White Page ships 30 years ago; the first to warn |
-| kid | **Omari**, 9 | the village kid who follows you everywhere |
+| kid | **Omari**, 9 | the village kid who said "blank is cool" — **Blanked** |
 | merchant / gardener / conductor / guard | Zuri, Sunita, Jelena, **Captain Bruce** (harbour watch) | village life, side quests |
 | crew_* | the **Pelling** fishing family, **Wren** and **Pip** (sailing) | the living harbour |
 | (new) | **Mother Blanc** + **Erasers** | the White Page (white robes; masks later) |
@@ -95,7 +105,7 @@ The card ids stay (saves store them); names, Inks, models and Art names are new.
 | Eevee_MEW_133 (Rho) | Alpuff | Gale | Flying/Alpaking |
 | Route 1: Pidgey/Pidgeotto/Rattata/Caterpie/Metapod/Weedle/Kakuna/NidoranF/NidoranM/Oddish/Pikachu (MEW) | Duskwing, Stormbill, Frostub, Mossle, Pricklet, Burrhook, Pebblit, Glimmo, Sparkcluck, Croakra, Zumblet | Dusk, Volt, Stone, Bloom, Bloom, Stone, Stone, Wisp, Volt, Tide, Volt | Flying/Pigeon, Big/Birb, Blob/Yeti, Blob/GreenBlob, Blob/Cactoro, Blob/GreenSpikyBlob, Flying/Goleling, Blob/Alien, Blob/Chicken, Big/Frog, Flying/Armabee |
 Arts: Cinder Script, Undertow, Rootdrink, Static Sigil, Hush, Rockbreak, Nightquill, Bulwark, Wyrmfire, Gust Rune.
-Items: Poké Ball → **Binding Ink**, Potion → **Mending Tea**. Player = **Scribe** (Mateo / Aoi). Lab = **the Scriptorium**.
+Items: Poké Ball → **Binding Ink**, Potion → **Mending Tea**. Player = **Scribe** (Rook / Vesna). Lab = **the Scriptorium**.
 Dialogue rewritten for the day after the intro (the Blanking happened yesterday; Vale reads your First Page; you shield a starter).
 
 ## 6. Pact Battle (replaces turn-based card battles)
@@ -126,7 +136,7 @@ Arts as glyph tiles with an ink cool-down sweep, Sync as ink filling a quill nib
 
 **Part II — Lumen Harbor, dawn**
 7. Dawn flight over the bay; the fishing boats head out (the real harbour simulation). — *"Lumen Harbor. Thirty years without a Blanking."*
-8. Across the roofs and the turning windmills to the plaza. Caption: *The Rite of Pages.* — *"Today, every eleven-year-old receives a Codex."*
+8. Across the roofs and the turning windmills to the plaza. Caption: *The Rite of Pages.* — *"Today, every sixteen-year-old receives a Codex."*
 9. Rho's Codex flares gold, pages flutter. Vale: *"Rho Calder — three pages on the first day!"*
 10. Your Codex opens… blank. A murmur. — *"And then there was you."*
 
@@ -135,6 +145,7 @@ Arts as glyph tiles with an ink cool-down sweep, Sync as ink filling a quill nib
 12. White light pulses on the pier; Sparks flee across the plaza; Gus shouts *"Not again…"*
 13. In the Scriptorium the three starter Sparks break free; a white beam hits one; it falls at your feet.
 14. Close-up: your blank Codex glows — the first glyph writes itself. — *"Some books are blank… because they haven't been written yet."*
+14b. (v2) White wipe over black. — *"By morning, half of Lumen Harbor had forgotten its own name. Only you were left… unwritten."*
 15. → **Gameplay.**
 
 **Subtitles (user 2026-10-31):** every narrated line and every spoken line in the intro is subtitled at the bottom of the frame
@@ -158,8 +169,6 @@ Arts as glyph tiles with an ink cool-down sweep, Sync as ink filling a quill nib
 Limits: MetaHuman faces have no expressions / lip-sync (JOINTS_ONLY rig) → the intro avoids talking close-ups; clothes still
 the default garment until an outfit pack is added.
 
-## 11. Open questions for the user
-- Hero names: keep **Mateo / Aoi**, or let the player type a name?
-- Starters: Cindril / Glublet / Sporrow OK?
-- Tone: hopeful-adventurous (my pick) or darker?
-- Anything from Pokébox to keep (e.g. the card binder as a collectible "Glyph cards")?
+## 11. Answered (2026-11-01)
+- Hero names → **Rook / Vesna** (16). Starters Cindril / Glublet / Sporrow kept. Tone → **dark adventure, blood, alone**.
+- Cards → **nothing kept**.

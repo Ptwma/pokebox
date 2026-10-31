@@ -20,12 +20,13 @@ SPEC = {
     # 2026-10-31 (user: "story based ... kids close to the game's age"): the hero, the rival and the village kids are
     # 10–12 year olds (Pokémon-Red age). MetaHuman has no child body: the height floor is 135.7 cm, so kids = 136–146 cm,
     # slim, low muscle, near-neutral sex; the C++ also enlarges their head a little (KIDS → manifest "kid").
-    'player_m':  ('Mateo',   0.0, 142, -.4, -.7, 'Hair_S_Messy', None, (.85, .62, .1)),
-    'player_f':  ('Aoi',     0.6, 140, -.4, -.8, 'Hair_L_Straight', None, (.85, .62, .1)),
+    # 2026-11-01 (user: dark adventure, blood, alone — Expedition 33 tone): the hero (Rook / Vesna) and Rho are 16 now
+    'player_m':  ('Mateo',   0.0, 168, -.3, -.2, 'Hair_S_Messy', None, (.85, .62, .1)),
+    'player_f':  ('Aoi',     0.7, 163, -.3, -.4, 'Hair_L_Straight', None, (.85, .62, .1)),
     'mom':       ('Grace',   0.9, 166, .45, .3, 'Hair_S_UpdoBuns', None, (.55, .25, .3)),
     'vale':      ('Vivian',  0.9, 171, .3, .25, 'Hair_M_BobSlick', None, (.9, .9, .92)),
     'aide':      ('Kelvin',  0.1, 178, .35, .35, 'Hair_S_SideSweptFringe', None, (.3, .45, .7)),
-    'rho':       ('Trey',    0.0, 146, -.3, -.5, 'Hair_S_BuzzCut', None, (.15, .2, .45)),
+    'rho':       ('Trey',    0.0, 172, -.2, -.1, 'Hair_S_Messy', None, (.15, .2, .45)),   # BuzzCut built no hair cards
     'fisher':    ('Walter',  0.0, 174, .55, .5, 'Hair_S_BaldingStubble', 'Beard_L_Full', (.9, .75, .1)),
     'gardener':  ('Sunita',  0.9, 163, .5, .4, 'Hair_S_LowPonytail', None, (.35, .55, .25)),
     'merchant':  ('Zuri',    0.95, 168, .4, .3, 'Hair_S_Coil', None, (.75, .35, .15)),
@@ -39,7 +40,7 @@ SPEC = {
     'crew_sail': ('Lani',    0.95, 167, .25, .35, 'Hair_M_Layered', None, (.85, .85, .8)),
     'crew_kid':  ('Mikel',   0.0, 136, -.4, -.8, 'Hair_S_CurlyFade', None, (.85, .3, .2)),
 }
-KIDS = {'player_m', 'player_f', 'rho', 'kid', 'crew_kid'}
+KIDS = {'kid', 'crew_kid'}   # 2026-11-01: hero + rival are 16
 # hair colour for the hair CARDS material (the MetaHuman hair shader only draws through the groom renderer — r61)
 HAIR_COLOR = {'player_m': (.05, .03, .02), 'player_f': (.02, .015, .012), 'mom': (.09, .05, .03), 'vale': (.55, .42, .28),
               'aide': (.04, .03, .02), 'rho': (.02, .015, .01), 'fisher': (.55, .55, .55), 'gardener': (.03, .02, .015),
@@ -49,6 +50,30 @@ HAIR_COLOR = {'player_m': (.05, .03, .02), 'player_f': (.02, .015, .012), 'mom':
 
 class builtins_flag: done = False
 HAIR_DEFAULT_TEX = '/MetaHumanCharacter/Optional/Grooms/GroomAssets/Hair/Hair_S_Messy/Hair_S_Messy_RootUVSeedCoverage'
+
+def blanked_material():
+    """M_PBX_Blanked: the overlay for people the Blanking took — translucent chalk white, a little brighter at the rim"""
+    path = '/Game/PBX/Materials/M_PBX_Blanked'
+    MEL = unreal.MaterialEditingLibrary
+    if EAL.does_asset_exist(path):
+        m = unreal.load_asset(path)
+        if not m.get_editor_property('used_with_skeletal_mesh'):   # r62: without the flag → "Default Material will be used in game" (no white)
+            m.set_editor_property('used_with_skeletal_mesh', True); MEL.recompile_material(m); EAL.save_loaded_asset(m); log('blanked: skeletal usage set')
+        return m
+    m = unreal.AssetToolsHelpers.get_asset_tools().create_asset('M_PBX_Blanked', '/Game/PBX/Materials', unreal.Material, unreal.MaterialFactoryNew())
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_TRANSLUCENT)
+    m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property('used_with_skeletal_mesh', True)
+    fr = MEL.create_material_expression(m, unreal.MaterialExpressionFresnel, -600, 100)
+    op = MEL.create_material_expression(m, unreal.MaterialExpressionLinearInterpolate, -300, 100)
+    op.set_editor_property('const_a', .78); op.set_editor_property('const_b', .95)
+    MEL.connect_material_expressions(fr, '', op, 'Alpha')
+    col = MEL.create_material_expression(m, unreal.MaterialExpressionConstant3Vector, -600, -150)
+    col.set_editor_property('constant', unreal.LinearColor(.82, .82, .86, 1))
+    MEL.connect_material_property(col, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    MEL.connect_material_property(op, '', unreal.MaterialProperty.MP_OPACITY)
+    MEL.recompile_material(m); EAL.save_loaded_asset(m); log('blanked material')
+    return m
 
 def hair_master():
     """M_PBX_HairCards: masked, two-sided, coverage from the groom's RooUVSeedCoverage atlas (alpha), colour per character"""

@@ -221,6 +221,7 @@ void APBXDirector::SpawnWorld()
 	}
 	SetupLife();
 	SpawnNPCs();
+	ApplyBlanked(true);
 	// readable signs (comic lettering on both faces of the board)
 	for (int32 i = 0; i < Signs.Num(); i++)
 	{
@@ -802,11 +803,19 @@ void APBXDirector::UseDoor(const FPBXDoor& D, bool bFromOutside)
 	if (!bFromOutside && D.Id == TEXT("house") && Step() == EPBXStep::WakeUp) QDo([this] { SetStep(EPBXStep::MeetRho); });
 }
 
+void APBXDirector::ApplyBlanked(bool bOn)
+{
+	static const FName Taken[] = { TEXT("mom"), TEXT("kid"), TEXT("gardener"), TEXT("merchant") };
+	for (const FName& Id : Taken) if (APBXNPC* N = NPCs.FindRef(Id)) { if (!bOn) N->SetBlanked(false); else { N->ReturnToIdle(); N->SetBlanked(true); } }
+}
+
 void APBXDirector::TalkTo(APBXNPC* N)
 {
 	if (!N) return;
 	const FName Id = N->Id;
-	Player->FaceTowards(N->GetActorLocation(), false); N->FaceTowards(PlayerLoc(), false);
+	Player->FaceTowards(N->GetActorLocation(), false);
+	if (N->bBlanked) { QSay(LinesFor(Id)); return; }   // they don't turn, they don't answer
+	N->FaceTowards(PlayerLoc(), false);
 	N->PlayAction(TEXT("Idle_Talking_Loop"), true, .3f);
 	const EPBXStep S = Step();
 	if (const FPBXTrainer* T = Trainers.Find(Id))
@@ -845,11 +854,11 @@ void APBXDirector::Rest()
 	QDo([this] { SaveNow(false); Toast(TEXT("Your team is fully rested. Game saved.")); });
 	if (Step() == EPBXStep::Rest)
 	{
-		QSay({ { TEXT("mom"), TEXT("Oh! A letter came for you while you slept. It's from Archivist Vale.") },
-			   { TEXT("note"), TEXT("\"Scribe — Rho told me everything. Two pages! And good news: the crews cleared the landslide at dawn. Route 1 is open. — V.\"") },
-			   { TEXT("note"), TEXT("\"Head west to Mistvale. Trainers on the route will test you — and keep your eyes open in the tall grass.\"") },
-			   { TEXT("mom"), TEXT("Your first real journey... Take care out there. And call your mother!") } });
-		QDo([this] { SetStep(EPBXStep::Gate); Splash(TEXT("LICENCE SIGNED"), TEXT("Route 1 is open — head west")); SaveNow(false); });
+		QSay({ { TEXT("note"), TEXT("When you wake, a letter lies on your chest. Your mother is still at the table, pouring tea for no one.") },
+			   { TEXT("note"), TEXT("\"Rho is gone — east, alone. The watch cleared the landslide at dawn. Route 1 is open. — V.\"") },
+			   { TEXT("note"), TEXT("\"Go west, to Mistvale. Whatever the White Page is writing there, unwrite it. Trust no one in white.\"") },
+			   { TEXT("note"), TEXT("You kiss your mother's cold forehead. She smiles politely, the way you'd smile at a stranger.") } });
+		QDo([this] { SetStep(EPBXStep::Gate); Splash(TEXT("ALONE"), TEXT("Route 1 is open — head west")); SaveNow(false); });
 	}
 }
 
@@ -956,9 +965,9 @@ void APBXDirector::ChooseStarter()
 		SpawnPartner(true);
 		Splash(C->Name.ToUpper(), TEXT("is written on your first page!"));
 		QWait(1.2f);
-		QSay({ { TEXT("vale"), FString::Printf(TEXT("%s... Look — your Codex wrote its name. The first page of a First Page book."), *C->Name) },
+		QSay({ { TEXT("vale"), FString::Printf(TEXT("%s. Your Codex wrote its name in your blood, not ink. ...That's never happened before."), *C->Name) },
 			   { TEXT("vale"), TEXT("Wild Sparks gather in the tall grass by the west road. Weaken one in a Pact Battle, then use Binding Ink to write it into your Codex.") },
-			   { TEXT("vale"), TEXT("Write your second page, Scribe. Then come back and tell me everything.") } });
+			   { TEXT("vale"), TEXT("Write your second page, Scribe. And if a White Page Eraser finds you first — run.") } });
 		QDo([this] { SetStep(EPBXStep::Capture); SaveNow(false); });
 	});
 }
@@ -969,40 +978,43 @@ TArray<FPBXLine> APBXDirector::LinesFor(FName Who) const
 	const FString PName = P ? PBXData::Card(Game->State->Team[0].Card)->Name : FString();
 	if (Who == TEXT("mom"))
 	{
-		if (S <= EPBXStep::MeetRho) return { { Who, TEXT("You're awake! After yesterday... the white ship, the light... I didn't want to wake you.") }, { Who, TEXT("Archivist Vale sent word. She wants to see your Codex at the Scriptorium — the big building at the end of the main road.") } };
-		if (S == EPBXStep::Rest) return { { Who, TEXT("You look exhausted! Have a lie-down in your bed — it fixes everything.") } };
-		if (P) return { { Who, FString::Printf(TEXT("%s is adorable! Make sure it eats properly. Sparks eat, right?"), *PName) } };
-		return { { Who, TEXT("Go on, Archivist Vale is waiting!") } };
+		if (S <= EPBXStep::MeetRho) return { { TEXT("note"), TEXT("Your mother stands at the table, white as chalk. Two cups. She pours tea for someone who isn't there.") },
+			{ TEXT("note"), TEXT("You say her name. She looks straight through you, polite, the way you'd look at a stranger.") },
+			{ TEXT("note"), TEXT("Pinned to the door, in gold ink that is still wet: \"Come to the Scriptorium. Bring the book. — V.\"") } };
+		if (S == EPBXStep::Rest) return { { TEXT("note"), TEXT("She hums a song without words. You used to fall asleep to it. Your bed is still made.") } };
+		if (P) return { { TEXT("note"), FString::Printf(TEXT("%s presses against her hand. For a heartbeat her fingers close around it. Then nothing."), *PName) } };
+		return { { TEXT("note"), TEXT("She doesn't know your name. Somewhere in that book of yours, maybe it's still written.") } };
 	}
 	if (Who == TEXT("rho"))
 	{
 		switch (S)
 		{
-		case EPBXStep::WakeUp: case EPBXStep::MeetRho: case EPBXStep::GoLab: case EPBXStep::Starter: return { { Who, TEXT("Get your partner from Archivist Vale first. Then you and me — rival battle!") } };
-		case EPBXStep::Capture: return { { Who, TEXT("Write a wild Spark first. A Scribe with one page is just a kid with a notebook.") } };
-		case EPBXStep::RhoBattle: return { { Who, TEXT("You caught one already? Okay, okay. Let's see if it can take a hit.") }, { Who, TEXT("Rival battle!") } };
-		default: return { { Who, S >= EPBXStep::Done ? TEXT("White fog in Mistvale? That's Blanking fog. I'll wait for Vale's signal too. ...From a safe distance.") : TEXT("Not bad for a blank book. Not bad at all. See you on Route 1 — I'll be the one complaining about the hills.") } };
+		case EPBXStep::WakeUp: case EPBXStep::MeetRho: case EPBXStep::GoLab: case EPBXStep::Starter: return { { Who, TEXT("Go see Vale. She's bleeding all over the Scriptorium and she still only asks about YOUR book.") } };
+		case EPBXStep::Capture: return { { Who, TEXT("One page. Great. They tore two out of mine and I've still got more than you.") } };
+		case EPBXStep::RhoBattle: return { { Who, TEXT("They came for your book. Not mine — YOURS. And my whole street paid for it.") }, { Who, TEXT("Give it to me. ...Fine. Then take it from me.") } };
+		default: return { { Who, S >= EPBXStep::Done ? TEXT("White fog in Mistvale. That's where they went. Don't follow me.") : TEXT("Don't wait for me on Route 1. I don't walk with anyone anymore.") } };
 		}
 	}
 	if (Who == TEXT("vale"))
 	{
-		if (S <= EPBXStep::Starter) return { { Who, TEXT("So the blank Codex is awake. A First Page — I've only read about them. They don't record words. They write new ones.") },
-			{ Who, TEXT("Since the Blanking, the Sparks around Lumen Harbor are restless. Some have hidden. Some have turned grey.") },
-			{ Who, TEXT("The White Page took our archive, but three Sparks hid in the stacks. One of them will need you to shield it.") } };
+		if (S <= EPBXStep::Starter) return { { Who, TEXT("Close the door. ...Don't look at the floor, it's mostly ink. Mostly.") },
+			{ Who, TEXT("Half the harbour was Blanked last night. Your mother. The Okafor boy. They breathe, they walk, and there's nothing written in them anymore.") },
+			{ Who, TEXT("Your Codex didn't fail. It's a First Page: it can't be erased, because there's nothing in it yet. That's why they came.") },
+			{ Who, TEXT("Three Sparks survived in the stacks. One of them will bleed for you. Choose.") } };
 		if (S == EPBXStep::Capture) return { { Who, TEXT("The tall grass by the west road, Scribe. Weaken a wild Spark, then use Binding Ink.") } };
-		if (S == EPBXStep::RhoBattle) return { { Who, TEXT("Rho is waiting for you at the Route 1 gate. Go easy on him... or don't.") } };
-		if (S >= EPBXStep::Route1Clear) return { { Who, TEXT("You saw the fog yourself. Mistvale's Sparks are turning grey — Blanked. The White Page is there. Stay ready, Scribe.") } };
-		return { { Who, TEXT("Two pages already. Route 1 leads west to Mistvale — and the fog there is white.") } };
+		if (S == EPBXStep::RhoBattle) return { { Who, TEXT("Rho is at the Route 1 gate. He lost everyone. Be careful what you say to him.") } };
+		if (S >= EPBXStep::Route1Clear) return { { Who, TEXT("Mistvale is drowning in white. If they finish there, there won't be a word left on this island. Go. Alone, if you must.") } };
+		return { { Who, TEXT("Two pages. It isn't much. It's more than anyone else has left.") } };
 	}
-	if (Who == TEXT("aide")) return { { Who, TEXT("They took every Codex in the archive. Every. Single. One. I hid under the reading desk. Don't tell anyone.") } };
-	if (Who == TEXT("fisher")) return { { Who, TEXT("Tide brings in odd things lately. Saw a wave shaped like a Lapras last week. Probably nothing.") } };
-	if (Who == TEXT("gardener")) return { { Who, P ? TEXT("Keep your Spark out of my tulips, Scribe. They nibble.") : TEXT("Sparks love my flowerbeds. Little thieves!") } };
-	if (Who == TEXT("merchant")) return { { Who, TEXT("Fresh apples! Well — for Sparks. Scribes pay double.") } };
-	if (Who == TEXT("kid")) return { { Who, P ? FString::Printf(TEXT("Whoa! Is that YOUR %s?! When I'm eleven my Codex is gonna have a hundred pages!"), *PName) : TEXT("Everyone says your book is blank. I think blank is cool. You can write anything!") } };
+	if (Who == TEXT("aide")) return { { Who, TEXT("I hid under the reading desk while they Blanked the others. I could hear them stop screaming one by one. Please don't tell anyone.") } };
+	if (Who == TEXT("fisher")) return { { Who, TEXT("Thirty years I told them the white ships would come back. Nobody listened. Now nobody remembers I said it.") } };
+	if (Who == TEXT("gardener")) return { { TEXT("note"), TEXT("Sunita kneels in her flowerbed. Every flower around her has gone as white as she has.") } };
+	if (Who == TEXT("merchant")) return { { TEXT("note"), TEXT("Zuri holds out an apple to no one. The smile on her face doesn't belong to anybody.") } };
+	if (Who == TEXT("kid")) return { { TEXT("note"), TEXT("Omari sits in the dirt, drawing the same circle again and again. Yesterday he told you blank was cool.") } };
 	if (Who == TEXT("guard"))
 	{
-		if (S >= EPBXStep::Gate) return { { Who, TEXT("Road's clear! We hauled the last boulder off at dawn.") }, { Who, TEXT("Word of warning: trainers on Route 1 challenge anyone who meets their eye. Keep your Sparks rested.") } };
-		return { { Who, TEXT("Route 1's shut. Landslide came down on Tuesday and took half the road with it.") }, { Who, TEXT("We'll have it dug out soon. Scribes with a Spark first through, mind.") } };
+		if (S >= EPBXStep::Gate) return { { Who, TEXT("Road's open. We cleared it with what's left of the watch.") }, { Who, TEXT("Word of warning: trainers on Route 1 challenge anyone who meets their eye. Keep your Sparks rested.") } };
+		return { { Who, TEXT("Route 1's shut. Landslide — and something with white eyes was seen in the rocks. Nobody passes.") }, { Who, TEXT("I lost four of my watch last night. I'm not losing a kid with a blank book too.") } };
 	}
 	if (Who == TEXT("conductor"))
 	{
@@ -1088,7 +1100,7 @@ FVector APBXDirector::ObjectiveTarget(FString& Label) const
 	case EPBXStep::MeetRho: Label = TEXT("Someone is waiting outside"); return NpcLoc(TEXT("rho"));
 	case EPBXStep::GoLab: case EPBXStep::Starter: Label = TEXT("Meet Archivist Vale at the Scriptorium"); return bInLab ? NpcLoc(TEXT("vale")) : bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
 	case EPBXStep::Capture: Label = TEXT("Write a wild Spark into your Codex (tall grass, west road)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : (Grass.Num() ? FVector(Grass[0].GetCenter(), 0) : FVector::ZeroVector);
-	case EPBXStep::RhoBattle: Label = TEXT("Rho wants a battle — meet him at the Route 1 gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : NpcLoc(TEXT("rho"));
+	case EPBXStep::RhoBattle: Label = TEXT("Rho is waiting at the Route 1 gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : NpcLoc(TEXT("rho"));
 	case EPBXStep::Rest: Label = TEXT("Rest your team at home (your bed)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : BedPos) : DoorOf(TEXT("house"), true);
 	case EPBXStep::Gate: case EPBXStep::Done: Label = TEXT("Route 1 is open — head west through the gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : ExitTo(false);
 	default: Label = TEXT("Route 1 cleared! Mistvale is next (wait for Archivist Vale's signal)"); return FVector::ZeroVector;
@@ -1118,9 +1130,9 @@ void APBXDirector::StoryTick(float Dt)
 		{
 			APBXNPC* N = *R; N->FaceTowards(P); Player->FaceTowards(N->GetActorLocation());
 			N->PlayAction(TEXT("Idle_Talking_Loop"), true);
-			QSay({ { TEXT("rho"), TEXT("Hey! Blank-book! ...Sorry. Rho. Rho Calder. Three pages, remember? You were brave yesterday. Stupid, but brave.") },
-				   { TEXT("rho"), TEXT("Archivist Vale is waiting at the Scriptorium. Big old building with the bell tower. Follow the arrow!") },
-				   { TEXT("rho"), TEXT("Me? I'm off to the Route 1 gate. Come find me once you've got a partner — I want a battle!") } });
+			QSay({ { TEXT("rho"), TEXT("You're alive. Of course YOU'RE alive.") },
+				   { TEXT("rho"), TEXT("My parents are standing in our kitchen like furniture. They tore two pages out of my Codex while I watched.") },
+				   { TEXT("rho"), TEXT("Vale wants you at the Scriptorium. Go. ...I'll be at the west gate. We're not done.") } });
 			QDo([this, N] { N->ReturnToIdle(); SetStep(EPBXStep::GoLab); SaveNow(false); });
 		}
 		return;
@@ -1647,7 +1659,7 @@ void APBXDirector::PlayEvents(const TArray<FPBXEvent>& Ev)
 			QDo([this, E, EchoOf, ShowHP, Sim]
 			{
 				const int32 T = 1 - E.Side; int32& H = Sim->HP[T][Sim->Act[T]]; H = FMath::Max(Bt.B.Team[T][Sim->Act[T]].MinHP, H - E.Dmg); ShowHP(T);
-				if (APBXEcho* V = EchoOf(T)) { V->Hurt(); V->Flash(PBXData::TypeColor(E.Type), 4.f); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), E.bCrit ? FLinearColor(1, .85f, .1f) : E.bEff ? FLinearColor(1, .45f, .3f) : FLinearColor::White); }
+				if (APBXEcho* V = EchoOf(T)) { V->Hurt(); V->Flash(PBXData::TypeColor(E.Type), 4.f); if (FX) FX->Burst(V->GetActorLocation() + FVector(0, 0, 55), FLinearColor(.32f, .01f, .01f), E.bCrit ? 26 : 14, E.bCrit ? 380.f : 280.f, 7.f, .9f, -980.f, .45f, 0, .8f);   /* dark tone (2026-11-01): blood */ Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), E.bCrit ? FLinearColor(1, .85f, .1f) : E.bEff ? FLinearColor(1, .45f, .3f) : FLinearColor::White); }
 				HitFX(T, E);
 				if (E.bCrit) BattleBanner(TEXT("Critical hit!"), FLinearColor(.85f, .55f, .05f, .92f), 1.f);
 				else if (E.bEff) BattleBanner(TEXT("Super effective!"), FLinearColor(.75f, .15f, .1f, .92f), 1.f);
@@ -1669,7 +1681,7 @@ void APBXDirector::PlayEvents(const TArray<FPBXEvent>& Ev)
 		case FPBXEvent::Burn: QDo([this, E, EchoOf, ShowHP, Who, Sim] { Sim->HP[E.Side][Sim->Act[E.Side]] -= E.Dmg; ShowHP(E.Side); UI->Log = FString::Printf(TEXT("%s is hurt by its burn!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side)) { V->Hurt(); Floater(V->GetActorLocation(), FString::Printf(TEXT("-%d"), E.Dmg), FLinearColor(1, .5f, .2f)); if (FX) FX->TypedHit(V->GetActorLocation() + FVector(0, 0, 50), TEXT("Fire"), .6f); } }); QWait(.8f); break;
 		case FPBXEvent::Cure: QDo([this, E, Who, Sim] { UI->Log = FString::Printf(TEXT("%s recovered from its %s."), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name), *E.St.ToString()); }); QWait(.6f); break;
 		case FPBXEvent::KO: QDo([this, E, EchoOf, Who, Sim] { Sfx(TEXT("sfx_faint")); UI->Log = FString::Printf(TEXT("%s fainted!"), *Who(E.Side, Bt.B.Team[E.Side][Sim->Act[E.Side]].Name)); if (APBXEcho* V = EchoOf(E.Side))
-			{ V->SetFaint(true); if (FX) { FX->Burst(V->GetActorLocation() + FVector(0, 0, 40), FLinearColor(.55f, .52f, .58f), 30, 260.f, 60.f, 1.1f, 60.f, .6f, 0, 2.f); FX->Burst(V->GetActorLocation() + FVector(0, 0, 80), FLinearColor(1, 1, 1), 16, 500.f, 26.f, .6f, -300.f, .4f, 1); } Bt.Punch = 1.f; UI->ShakeT = .5f; } }); QWait(1.2f); break;
+			{ V->SetFaint(true); if (FX) { FX->Burst(V->GetActorLocation() + FVector(0, 0, 40), FLinearColor(.28f, .0f, .01f), 40, 330.f, 9.f, 1.2f, -980.f, .5f, 0, .7f); FX->Burst(V->GetActorLocation() + FVector(0, 0, 40), FLinearColor(.55f, .52f, .58f), 30, 260.f, 60.f, 1.1f, 60.f, .6f, 0, 2.f); FX->Burst(V->GetActorLocation() + FVector(0, 0, 80), FLinearColor(1, 1, 1), 16, 500.f, 26.f, .6f, -300.f, .4f, 1); } Bt.Punch = 1.f; UI->ShakeT = .5f; } }); QWait(1.2f); break;
 		case FPBXEvent::Switch:
 			QDo([this, E, EchoOf, ShowHP, Who, Sim]
 			{
@@ -1802,7 +1814,7 @@ void APBXDirector::EndBattle(const FString& Result)
 	// story
 	if (bCaught && Step() == EPBXStep::Capture)
 	{
-		QSay({ { TEXT("note"), TEXT("A line of gold ink writes itself across your Codex: \"Your second page! Splendid. Rho is waiting at the Route 1 gate. — V.\"") } });
+		QSay({ { TEXT("note"), TEXT("Gold ink bleeds across your Codex: \"Your second page. Rho is at the west gate — he wants your book. Don't let him take it. — V.\"") } });
 		QDo([this] { SetStep(EPBXStep::RhoBattle); SaveNow(false); });
 	}
 	if (bWasTrainer && Trainer == TEXT("rho"))
@@ -1810,11 +1822,11 @@ void APBXDirector::EndBattle(const FString& Result)
 		APBXNPC* N = NPCs.FindRef(Trainer); if (N) { N->FaceTowards(PlayerLoc()); Player->FaceTowards(N->GetActorLocation()); }
 		if (bWin)
 		{
-			QSay({ { TEXT("rho"), TEXT("Ow. Okay. You're good. Annoyingly good.") },
-				   { TEXT("rho"), TEXT("Rule one of being a Scribe: rest your team. Go home, sleep in a real bed — it fixes everything. Trust me, I know.") } });
+			QSay({ { TEXT("rho"), TEXT("...Keep it, then. Keep your stupid blank book.") },
+				   { TEXT("rho"), TEXT("I'm going after them. Alone. Go home and sleep — you look like you're about to fall over.") } });
 			QDo([this] { if (Step() == EPBXStep::RhoBattle) { SetStep(EPBXStep::Rest); SaveNow(false); } });
 		}
-		else QSay({ { TEXT("rho"), TEXT("Ha! Told you! ...Okay, go rest up and come back. I'm not going anywhere.") } });
+		else QSay({ { TEXT("rho"), TEXT("Pathetic. Go rest. When you come back, I'm taking that book.") } });
 	}
 	if (TR)
 	{
@@ -1842,7 +1854,7 @@ void APBXDirector::EndBattle(const FString& Result)
 		});
 		QFade(0.f, .5f);
 		if (Re) QSay({ { TEXT("healer"), TEXT("Easy now — sit by the fire. Your Sparks just need a moment. ...There. Good as new.") } });
-		else QSay({ { TEXT("mom"), TEXT("Oh, sweetheart, look at you. Sit down — I'll make tea. Your Sparks are already feeling better.") } });
+		else QSay({ { TEXT("note"), TEXT("You sit beside your mother until your hands stop shaking. She hums her wordless song. Your Sparks sleep.") } });
 	}
 	(void)bStory;
 }
@@ -1875,7 +1887,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		break;
 	}
 	case EMenu::Gender:
-		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Choose your Scribe"), { Opt(TEXT("Mateo · he / him"), TEXT("eleven, curious, a blank Codex")), Opt(TEXT("Aoi · she / her"), TEXT("eleven, stubborn, a blank Codex")), Opt(TEXT("Back"), TEXT("")) }, false,
+		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Choose your Scribe"), { Opt(TEXT("Rook · he / him"), TEXT("sixteen, the harbour's lantern-boy, a blank Codex")), Opt(TEXT("Vesna · she / her"), TEXT("sixteen, the harbour's lantern-girl, a blank Codex")), Opt(TEXT("Back"), TEXT("")) }, false,
 			[this](int32 i) { if (i == 2) ShowMenu(EMenu::Title); else StartNewGame(i == 0); });
 		break;
 	case EMenu::Pause:
@@ -1935,6 +1947,7 @@ void APBXDirector::ShowMenu(EMenu M)
 
 void APBXDirector::PlayIntro()
 {
+	ApplyBlanked(false);   // the intro shows the harbour the day BEFORE the Blanking
 	UWorld* W = GetWorld();
 	const FPBXDoor* Lab = nullptr; for (const FPBXDoor& D : Doors) if (D.Id == TEXT("lab")) Lab = &D;
 	const float Yaw = Lab ? Lab->Outside.Yaw : 0.f;
@@ -1986,7 +1999,7 @@ void APBXDirector::PlayIntro()
 		Sh.Add(S);
 	}
 	{
-		FPBXCutShot S = Mk(5.f, TEXT("vo_intro_08"), TEXT("Today, every eleven-year-old on the island receives a Codex."));
+		FPBXCutShot S = Mk(5.f, TEXT("vo_intro_08"), TEXT("Today, every sixteen-year-old on the island receives a Codex."));
 		S.Caption = TEXT("THE RITE OF PAGES");
 		CamS(S, C - F * 2600.f + R * 1500.f + Up * 1400.f, C + F * 1000.f + R * 750.f + Up * 420.f, C, C + F * 420.f + Up * 90.f);
 		S.OnStart = [this, Put, ValeP, RhoP, YouP, KidP, Yaw]()
@@ -2063,8 +2076,13 @@ void APBXDirector::PlayIntro()
 		S.OnStart = [this, Me]() { if (FX) { FX->Burst(Me + FVector(0, 0, 105), FLinearColor(1.f, .8f, .35f), 60, 300.f, 16.f, 1.8f, -40.f, .7f); FX->Ring(Me + FVector(0, 0, 15), FLinearColor(1.f, .8f, .35f), 160.f, 36); } };
 		Sh.Add(S);
 	}
+	{	// dark tone (2026-11-01): the cost — and the hero is alone
+		FPBXCutShot S = Mk(7.f, TEXT("vo_intro_15"), TEXT("By morning, half of Lumen Harbor had forgotten its own name. Only you were left... unwritten."), 5);
+		Sh.Add(S);
+	}
 	QCut(Sh, TEXT("c1_intro"), [this, Fog]()
 	{
+		ApplyBlanked(true);
 		for (AActor* A : IntroActors) if (A) A->Destroy();
 		IntroActors.Reset(); bIntroShip = false; Fog(-1.f);
 		for (const TPair<FName, TObjectPtr<APBXNPC>>& It : NPCs) if (APBXNPC* N = It.Value) if (!N->GetAttachParentActor())

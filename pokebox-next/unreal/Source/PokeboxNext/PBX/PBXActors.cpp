@@ -287,6 +287,16 @@ void APBXNPC::WalkTo(const FVector& G, TFunction<void()> Done)
 	StopAction(.2f); bWalking = true; WalkGoal = G; WalkDone = MoveTemp(Done); WalkT = 0.f;
 }
 
+void APBXCharacterBase::SetBlanked(bool bOn)
+{
+	bBlanked = bOn;
+	// no static cache: once every overlay is cleared (the intro) the material can be garbage-collected → a dangling pointer crashed r62
+	UMaterialInterface* Over = bOn ? LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Blanked.M_PBX_Blanked")) : nullptr;
+	TArray<UMeshComponent*> Ms; GetComponents<UMeshComponent>(Ms);
+	for (UMeshComponent* M : Ms) if (M) M->SetOverlayMaterial(bOn ? Over : nullptr);
+	if (USkeletalMeshComponent* B = GetMesh()) B->bPauseAnims = bOn;   // the leader-pose parts follow the body
+}
+
 void APBXNPC::Tick(float Dt)
 {
 	Super::Tick(Dt);

@@ -18,9 +18,11 @@ LINES = {
     'intro_04': "And people learned to write beside them, in books that remember every bond.",
     'intro_05': "But there are those who believe that every word is a wound, waiting to open. They call themselves the White Page.",
     'intro_07': "Lumen Harbor. Thirty years without a Blanking.",
-    'intro_08': "Today, every eleven-year-old on the island receives a Codex.",
+    'intro_08': "Today, every sixteen-year-old on the island receives a Codex.",
     'intro_10': "And then... there was you.",
     'intro_14': "Some books are blank... because they haven't been written yet.",
+    # dark tone (user 2026-11-01: "adventure with darkness, blood, alone")
+    'intro_15': "By morning, half of Lumen Harbor had forgotten its own name. Only you were left... unwritten.",
 }
 PAUSE_SENTENCE = 0.42      # seconds between sentences (an ellipsis inside a sentence is voiced by the model itself)
 VOICE_DEFAULT = 'am_michael*0.7+am_onyx*0.3'
@@ -55,4 +57,6 @@ if __name__ == '__main__':
         audio = np.concatenate(parts); audio = audio / max(1e-6, np.abs(audio).max()) * 0.9   # even loudness
         f = os.path.join(out, f'vo_{i}{suffix}.wav'); sf.write(f, audio, sr)
         info[i] = {'secs': round(len(audio) / sr, 2), 'text': LINES[i]}; print('vo', i, info[i]['secs'])
-    if not suffix: json.dump(info, open(os.path.join(out, 'vo_lines.json'), 'w'), indent=1)
+    if not suffix:   # merge (a run for a few ids must not drop the others)
+        jp = os.path.join(out, 'vo_lines.json'); old = json.load(open(jp)) if os.path.exists(jp) else {}
+        old.update(info); json.dump(old, open(jp, 'w'), indent=1)

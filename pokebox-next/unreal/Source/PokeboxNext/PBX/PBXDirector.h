@@ -125,6 +125,8 @@ private:
 	void QCut(const TArray<FPBXCutShot>& Shots, const FString& AutoShot = FString(), TFunction<void()> OnEnd = nullptr);
 	/** the Sigil & Spark opening (SIGIL_AND_SPARK.md section 8): ink myth → Lumen Harbor at dawn → the White Page */
 	void PlayIntro();
+	/** Sigil & Spark (dark): the people the Blanking took — white, frozen, wordless (off during the intro's "before") */
+	void ApplyBlanked(bool bOn);
 	bool bIntroShip = false; float IntroShipT0 = 0.f;
 	UPROPERTY() TArray<TObjectPtr<AActor>> IntroActors;
 	void CheckCutscenes();   // first visits: the lighthouse island, the Lamplighters' Rest
