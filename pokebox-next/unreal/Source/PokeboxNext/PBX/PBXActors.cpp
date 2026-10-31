@@ -108,14 +108,24 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 	{
 		const TSharedPtr<FJsonObject> O = V->AsObject();
 		UGroomAsset* G = Cast<UGroomAsset>(LoadPath(O->GetStringField(TEXT("groom")))); if (!G) continue;
-		UGroomComponent* GC = NewObject<UGroomComponent>(this, FName(*(TEXT("MHG_") + O->GetStringField(TEXT("name")))));
-		GC->SetupAttachment(Face ? Face : GetMesh());
-		// groom FIRST, then the binding: SetBindingAsset checks compatibility with the current groom (r60: hair missing)
-		UGroomBindingAsset* B = Cast<UGroomBindingAsset>(LoadPath(O->GetStringField(TEXT("binding"))));
-		GC->SetGroomAsset(G, B);
-		GC->RegisterComponent(); GC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s groom %s binding %s -> %s"), *Id, *G->GetName(), B ? *B->GetName() : TEXT("none"), GC->BindingAsset ? TEXT("bound") : TEXT("UNBOUND"));
-		MHParts.Add(GC);
+		// r60: strand grooms never drew in -game (bound to the face OR rigid on the head) → the build's hair CARDS meshes,
+		// rigid on the body's head bone. The cards are authored in character space around this character's head, so they
+		// are offset by the inverse of the head bone's reference pose; they turn with the head (and grow with a kid's head).
+		FTransform HeadRef = FTransform::Identity;
+		const FReferenceSkeleton& RS = Body->GetRefSkeleton();
+		for (int32 Bi = RS.FindBoneIndex(TEXT("head")); Bi != INDEX_NONE; Bi = RS.GetParentIndex(Bi)) HeadRef = HeadRef * RS.GetRefBonePose()[Bi];
+		const TArray<TSharedPtr<FJsonValue>>* Cards = nullptr; int32 NC = 0;
+		if (O->TryGetArrayField(TEXT("cards"), Cards))
+			for (const TSharedPtr<FJsonValue>& CV : *Cards)
+			{
+				const TSharedPtr<FJsonObject> CO = CV->AsObject();
+				UStaticMesh* CM = Cast<UStaticMesh>(LoadPath(CO->GetStringField(TEXT("mesh")))); if (!CM) continue;
+				UStaticMeshComponent* SC = NewObject<UStaticMeshComponent>(this);
+				SC->SetupAttachment(GetMesh(), TEXT("head")); SC->SetStaticMesh(CM); SC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				if (UMaterialInterface* MI = Cast<UMaterialInterface>(LoadPath(CO->GetStringField(TEXT("material"))))) for (int32 k = 0; k < SC->GetNumMaterials(); k++) SC->SetMaterial(k, MI);
+				SC->RegisterComponent(); SC->SetRelativeTransform(HeadRef.Inverse()); MHParts.Add(SC); NC++;
+			}
+		UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s %s: %d hair cards meshes"), *Id, *G->GetName(), NC);
 	}
 	bMetaHuman = true;
 	// kids (manifest "kid"): MetaHuman has no child body (height floor 1.36 m) → a slightly larger head reads younger;

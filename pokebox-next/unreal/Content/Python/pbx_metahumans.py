@@ -263,6 +263,16 @@ def manifest():
             if g: e['grooms'].append({'name': c.get_name(), 'groom': g.get_path_name().split('.')[0], 'binding': b.get_path_name().split('.')[0] if b else '',
                                       'parent': c.get_attach_parent().get_name() if c.get_attach_parent() else ''})
         e['height'] = SPEC[cid][2]; e['kid'] = cid in KIDS
+        # hair CARDS (static meshes the build makes from each groom): strand grooms never drew in -game (r60), cards do and
+        # are far cheaper on the RTX 2060 → per groom the LOD1 cards meshes (all groups) + the cards material
+        for g in e['grooms']:
+            gd = g['groom'].rsplit('/', 1)[0]; gn = g['groom'].rsplit('/', 1)[1]; cards = []
+            names = [p.split('.')[0] for p in EAL.list_assets(gd, recursive=False)]
+            for lod in ('LOD1', 'LOD0', 'LOD2'):
+                cards = [n for n in names if n.split('/')[-1].startswith(gn + '_CardsMesh_') and n.endswith('_' + lod)]
+                if cards: break
+            mat = next((n for n in names if n.split('/')[-1] == f'MI_WI_{gn}_Hair_Cards'), '') or next((n for n in names if n.endswith('_Cards') and n.split('/')[-1].startswith('MI_')), '')
+            g['cards'] = [{'mesh': c, 'material': mat} for c in cards]
         EAS.destroy_actor(a); out[cid] = e; log('manifest', cid, e['body'] is not None, len(e['parts']), len(e['grooms']))
     path = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()) + 'PBX/Data/mh_manifest.json'
     open(path, 'w', encoding='utf-8').write(json.dumps(out, indent=1)); log('manifest ->', path)

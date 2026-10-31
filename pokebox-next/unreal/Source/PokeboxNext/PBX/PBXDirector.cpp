@@ -742,6 +742,7 @@ void APBXDirector::UpdatePrompt()
 
 void APBXDirector::Interact()
 {
+	if (bBoating && NearKind != EKind::Dock) return;   // from the boat you can only step ashore (r60: a click talked to Gus and dropped you out of the boat)
 	switch (NearKind)
 	{
 	case EKind::NPC: if (TObjectPtr<APBXNPC>* N = NPCs.Find(NearNPC)) TalkTo(*N); break;
