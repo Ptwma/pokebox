@@ -28,6 +28,7 @@ namespace PBXAssets
 		{
 			TArray<FAssetData> All = Scan(TEXT("/Game/PBX/Characters/Anim"));
 			All.Append(Scan(TEXT("/Game/PBX/Characters/Retarget/Anim")));   // the same clips retargeted to the Fab boy ("<name>_Boy", tools: pbx_retarget.py)
+			All.Append(Scan(TEXT("/Game/PBX/Characters/Retarget/Anim_MH")));  // ... and to the MetaHuman body ("<name>_MH", pbx_retarget.run_target)
 			for (const FAssetData& A : All)
 			{
 				if (A.AssetClassPath.GetAssetName() != FName(TEXT("AnimSequence"))) continue;

@@ -17,7 +17,9 @@ def _fresh(name, cls, factory):
     if EAL.does_asset_exist(full): EAL.delete_asset(full)
     return AT.create_asset(name, OUT, cls, factory)
 
-def ik_rig(name, mesh_path):
+def ik_rig(name, mesh_path, reuse=False):
+    full = f'{OUT}/{name}'
+    if reuse and EAL.does_asset_exist(full): return unreal.load_asset(full)   # referenced by another retargeter: deleting it would pop the modal overwrite dialog
     rig = _fresh(name, unreal.IKRigDefinition, unreal.IKRigDefinitionFactory())
     c = unreal.IKRigController.get_controller(rig)
     c.set_skeletal_mesh(unreal.load_asset(mesh_path))
@@ -58,10 +60,10 @@ def run(only=None):
 def run_target(tag_name, target_mesh, suffix, only=None):
     """2026-10-31 (phase 5): the same retarget onto another skeleton — the MetaHuman body (all MetaHumans share
     metahuman_base_skel, so one pass serves every character). Clips land in OUT/Anim<suffix> as <UAL name><suffix>."""
-    tgt = ik_rig('IK_' + tag_name, target_mesh)
+    tgt = ik_rig('IK_' + tag_name, target_mesh, reuse=True)
     made = []
     for tag, mesh in SOURCES.items():
-        src = ik_rig('IK_' + tag, mesh)
+        src = ik_rig('IK_' + tag, mesh, reuse=True)
         rtg = retargeter(f'RTG_{tag}_to_{tag_name}', src, tgt)
         folder = mesh.rsplit('/', 1)[0]
         assets = [EAL.find_asset_data(p) for p in EAL.list_assets(folder, recursive=False)
