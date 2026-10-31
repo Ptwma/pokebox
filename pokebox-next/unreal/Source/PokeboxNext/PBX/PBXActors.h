@@ -108,7 +108,7 @@ public:
 	bool bCreature = false, bFly = false; FString CreatureKey;
 	/** where to look when standing still (battle: the opponent); zero = the camera */
 	FVector FaceAt = FVector::ZeroVector;
-	void PlayClip(FName Role, bool bLoop, float Lock = 0.f);
+	void PlayClip(FName ClipRole, bool bLoop, float Lock = 0.f);
 
 	enum class EMode : uint8 { Idle, Follow, Wander, Stage };
 	EMode Mode = EMode::Idle;

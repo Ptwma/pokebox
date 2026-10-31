@@ -110,8 +110,11 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 		UGroomAsset* G = Cast<UGroomAsset>(LoadPath(O->GetStringField(TEXT("groom")))); if (!G) continue;
 		UGroomComponent* GC = NewObject<UGroomComponent>(this, FName(*(TEXT("MHG_") + O->GetStringField(TEXT("name")))));
 		GC->SetupAttachment(Face ? Face : GetMesh());
-		if (UGroomBindingAsset* B = Cast<UGroomBindingAsset>(LoadPath(O->GetStringField(TEXT("binding"))))) GC->SetBindingAsset(B);
-		GC->SetGroomAsset(G); GC->RegisterComponent(); GC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		// groom FIRST, then the binding: SetBindingAsset checks compatibility with the current groom (r60: hair missing)
+		UGroomBindingAsset* B = Cast<UGroomBindingAsset>(LoadPath(O->GetStringField(TEXT("binding"))));
+		GC->SetGroomAsset(G, B);
+		GC->RegisterComponent(); GC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s groom %s binding %s -> %s"), *Id, *G->GetName(), B ? *B->GetName() : TEXT("none"), GC->BindingAsset ? TEXT("bound") : TEXT("UNBOUND"));
 		MHParts.Add(GC);
 	}
 	bMetaHuman = true;
@@ -359,13 +362,13 @@ bool APBXEcho::SetupCreature(const FPBXCardDef* C, float Height)
 	return true;
 }
 
-void APBXEcho::PlayClip(FName Role, bool bLoop, float Lock)
+void APBXEcho::PlayClip(FName ClipRole, bool bLoop, float Lock)
 {
 	if (!bCreature) return;
-	TObjectPtr<UAnimSequence>* A = Clips.Find(Role);
-	if (!A || !*A) { if (Role != TEXT("idle")) PlayClip(TEXT("idle"), true); return; }
-	if (CurClip == Role && bLoop && Lock <= 0.f) return;
-	Body->PlayAnimation(*A, bLoop); CurClip = Role; ClipLock = Lock;
+	TObjectPtr<UAnimSequence>* A = Clips.Find(ClipRole);
+	if (!A || !*A) { if (ClipRole != TEXT("idle")) PlayClip(TEXT("idle"), true); return; }
+	if (CurClip == ClipRole && bLoop && Lock <= 0.f) return;
+	Body->PlayAnimation(*A, bLoop); CurClip = ClipRole; ClipLock = Lock;
 }
 
 bool APBXEcho::Setup(FName Card, float Height)

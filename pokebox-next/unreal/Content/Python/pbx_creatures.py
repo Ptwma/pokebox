@@ -55,6 +55,21 @@ def import_all(only=None):
         log('imported', k, len(t.get_editor_property('imported_object_paths') or []))
     log('import done', done)
 
+def fix_textures():
+    """the pack's colour atlas is a 32 x 32 palette: mip-maps + trilinear filtering average the swatches into grey
+    (r60: grey creatures) → nearest filter, no mips, uncompressed"""
+    n = 0
+    for p in EAL.list_assets(DEST, recursive=True):
+        if 'Atlas' not in p: continue
+        t = unreal.load_asset(p)
+        if not isinstance(t, unreal.Texture2D): continue
+        t.set_editor_property('filter', unreal.TextureFilter.TF_NEAREST)
+        t.set_editor_property('mip_gen_settings', unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+        t.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_VECTOR_DISPLACEMENTMAP)
+        t.set_editor_property('srgb', True)
+        EAL.save_loaded_asset(t); n += 1
+    log('atlas textures fixed', n)
+
 def manifest():
     """Content/PBX/Data/creatures.json: per creature the skeletal mesh, its height (cm) and the clip for each role;
     per type the small / big pools"""

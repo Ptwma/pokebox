@@ -2253,6 +2253,7 @@ void APBXDirector::AutoTick(float Dt)
 		if (AutoStepT - Dt <= 0.f)
 		{
 			RunYaw = Player->GetActorRotation().Yaw;
+			if (APBXNPC* J = NPCs.FindRef(TEXT("joey"))) RunYaw = (J->Home - Player->GetActorLocation()).Rotation().Yaw;   // along the road (r60: ran into a fence)
 			LogMHHeights();
 		}
 		const FVector Dir = FRotator(0.f, RunYaw, 0.f).Vector();

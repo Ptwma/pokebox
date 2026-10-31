@@ -213,6 +213,13 @@ def restyle(cid):
     if EAL.does_directory_exist(d): EAL.delete_directory(d)     # → pending() rebuilds it
     log('restyled', cid, h); return True
 
+def recreate(cid):
+    """height / build changes do NOT reach a character that is already auto-rigged (r60: the kids kept their old
+    heights) → start again from the preset: create (body + grooms), then build_save() rigs, textures and builds it"""
+    d = f'{ROOT}/Built/MH_{cid}'
+    if EAL.does_directory_exist(d): EAL.delete_directory(d)
+    return create(cid)
+
 def restyle_all():
     for cid in SPEC:
         try: restyle(cid)
