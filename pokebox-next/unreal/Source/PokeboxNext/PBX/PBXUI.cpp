@@ -321,6 +321,29 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, FMath::Clamp(M->BigT, 0.f, 1.f))); })]
 		]
 
+		// ---------------- cutscene letterbox + caption (phase 6)
+		+ SOverlay::Slot().VAlign(VAlign_Top)
+		[
+			SNew(SBox).Visibility(EVisibility::HitTestInvisible).HeightOverride_Lambda([this] { return FOptionalSize(M->ViewSize.Y * .11f * M->Letterbox); })[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, 1))]
+		]
+		+ SOverlay::Slot().VAlign(VAlign_Bottom)
+		[
+			SNew(SBox).Visibility(EVisibility::HitTestInvisible).HeightOverride_Lambda([this] { return FOptionalSize(M->ViewSize.Y * .11f * M->Letterbox); })[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, 1))]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 150)
+		[
+			SNew(SVerticalBox).Visibility_Lambda([this] { return M->CaptionA > 0.f ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Caption); }).Font(PBXUI::Font(TEXT("title"), 64, 3))
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, .96f, .88f, M->CaptionA)); })]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6, 0, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->CaptionSub); }).Font(PBXUI::Font(TEXT("body"), 26, 2))
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, .9f * M->CaptionA)); })]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(0, 0, 40, 30)
+		[
+			SNew(STextBlock).Visibility_Lambda([this] { return M->Letterbox > .9f ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			.Text(FText::FromString(TEXT("E  skip"))).Font(PBXUI::Font(TEXT("bold"), 18)).ColorAndOpacity(FLinearColor(1, 1, 1, .55f))
+		]
+
 		// ---------------- fade
 		+ SOverlay::Slot()
 		[

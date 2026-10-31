@@ -48,6 +48,7 @@ struct FPBXUIModel
 	float MovesIn = 0.f;                                                                     // 0..1 slide-in of the move panel
 	float FlashT = 0.f; FLinearColor FlashColor = FLinearColor::White;     // full-screen flash on big hits
 	float IntroT = 0.f; FString IntroA, IntroB; FLinearColor IntroColA = FLinearColor(.9f, .3f, .2f), IntroColB = FLinearColor(.2f, .45f, .9f);
+	float Letterbox = 0.f; FString Caption, CaptionSub; float CaptionA = 0.f;   // cutscenes (phase 6)
 	TArray<FPBXSpark> Sparks; FVector2D ViewSize = FVector2D(1920, 1080); float Time = 0.f;
 };
 

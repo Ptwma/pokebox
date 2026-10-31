@@ -450,6 +450,49 @@ void APBXDirector::QFade(float To, float Secs)
 	TSharedPtr<float> From = MakeShared<float>(-1.f);
 	Q([this, To, Secs, From](float T) { if (*From < 0.f) *From = UI->Fade; UI->Fade = FMath::Lerp(*From, To, FMath::Clamp(T / Secs, 0.f, 1.f)); return T >= Secs; });
 }
+void APBXDirector::QCut(const TArray<FPBXCutShot>& Shots, const FString& AutoShot)
+{
+	TSharedPtr<bool> bShotDone = MakeShared<bool>(false);
+	Q([this, Shots, AutoShot, bShotDone](float T)
+	{
+		float Total = 0.f; for (const FPBXCutShot& S : Shots) Total += S.Dur;
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		auto End = [this, PC]() { UI->Letterbox = 0.f; UI->Caption.Empty(); UI->CaptionSub.Empty(); UI->CaptionA = 0.f; bConfirm = false;
+			if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f); if (PC && Player) PC->SetViewTarget(Player); if (Player) Player->SnapCamera(); return true; };
+		if (!Cam || Shots.Num() == 0) return End();
+		if (T > .3f && bConfirm) return End();                  // skip
+		bConfirm = false;
+		if (T >= Total) return End();
+		UI->Mode = EPBXUIMode::None; UI->Prompt.Empty();
+		UI->Letterbox = FMath::Min(1.f, T * 2.f) * FMath::Min(1.f, (Total - T) * 2.f);
+		float Acc = 0.f; int32 i = 0;
+		while (i < Shots.Num() - 1 && T > Acc + Shots[i].Dur) { Acc += Shots[i].Dur; i++; }
+		const FPBXCutShot& S = Shots[i]; const float a = FMath::Clamp((T - Acc) / S.Dur, 0.f, 1.f), e = a * a * (3.f - 2.f * a);
+		const FVector Eye = FMath::Lerp(S.A0, S.A1, e), At = FMath::Lerp(S.L0, S.L1, e);
+		Cam->SetActorLocationAndRotation(Eye, (At - Eye).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(S.Fov);
+		if (PC && PC->GetViewTarget() != Cam) PC->SetViewTarget(Cam);
+		UI->Caption = S.Caption; UI->CaptionSub = S.Sub;
+		UI->CaptionA = S.Caption.IsEmpty() ? 0.f : FMath::Clamp(FMath::Min((T - Acc) - .4f, S.Dur - (T - Acc) - .2f) * 2.f, 0.f, 1.f);
+		if (bAuto && !AutoShot.IsEmpty() && !*bShotDone && i == Shots.Num() / 2 && a > .5f) { *bShotDone = true; Shot(AutoShot); }
+		return false;
+	});
+}
+
+// first visits play a short cutscene once (stored with the picked-up items, so it survives saves)
+void APBXDirector::CheckCutscenes()
+{
+	if (!IsTown() || !Player || Busy() || bBoating || !Game || !Game->State) return;
+	const FVector P = PlayerLoc();
+	auto Once = [this](const TCHAR* Id) { const FName N(Id); if (Game->State->Picked.Contains(N)) return false; Game->State->Picked.Add(N); return true; };
+	// the Lamplighters' Rest (Blender (-90, -165)): the graves in the clearing, the ledger on the table
+	if (FVector::Dist2D(P, FVector(-9000, 16500, 0)) < 1500.f && Once(TEXT("cut_rest")))
+	{
+		const float Z = P.Z;
+		QCut({ { FVector(-8000, 15200, Z + 450), FVector(-8600, 15600, Z + 260), FVector(-9050, 17000, Z), FVector(-9000, 17050, Z - 40), 5.f, 55.f, TEXT("THE LAMPLIGHTERS' REST"), TEXT("Someone still leaves pebbles on the stones.") },
+		       { FVector(-9500, 15900, Z + 120), FVector(-9300, 16100, Z + 100), FVector(-9350, 16350, Z - 20), FVector(-9350, 16350, Z - 20), 3.5f, 45.f, TEXT(""), TEXT("") } }, TEXT("c3_rest"));
+	}
+}
+
 void APBXDirector::QSay(const TArray<FPBXLine>& Lines)
 {
 	for (const FPBXLine& L : Lines)
@@ -503,7 +546,7 @@ void APBXDirector::Tick(float Dt)
 			else { Player->Boom->TargetArmLength = OutdoorArm; if (Player->Camera) Player->Camera->SetFieldOfView(75.f); }
 		}
 	}
-	if (MusicName.IsEmpty() && MusicHold <= 0.f && !Bt.bActive) Music(MapMusic());   // map theme (also after jingles)
+	if (MusicHold <= 0.f && !Bt.bActive) { const TCHAR* W = MapMusic(); if (MusicName != W) Music(W); }   // place theme (also after jingles)
 	// script queue
 	if (Queue.Num())
 	{
@@ -551,7 +594,7 @@ void APBXDirector::Tick(float Dt)
 	if (Player && Menu == EMenu::None && !Bt.bActive)
 	{
 		if (bBoating) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) UI->Mode = EPBXUIMode::Explore; TickBoat(Busy() ? 0.f : Dt); UpdatePrompt(); }
-		else if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); StoryTick(Dt); UpdateWilds(Dt); }
+		else if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); StoryTick(Dt); UpdateWilds(Dt); CheckCutscenes(); }
 		UpdateObjective();
 	}
 	if (Game && Game->HasPartner())
@@ -1211,16 +1254,27 @@ void APBXDirector::Sfx(const TCHAR* Name, float Vol)
 	if (USoundBase* S = Snd(Name)) UGameplayStatics::PlaySound2D(this, S, .55f * Vol);
 }
 
+const TCHAR* APBXDirector::MapMusic() const
+{
+	if (!IsTown()) return TEXT("mus_route");
+	if (Inside()) return TEXT("mus_home");
+	const FVector P = PlayerLoc();
+	if (-P.Y > 110000.f) return TEXT("mus_island");                         // Blender y > 1100 m: the lighthouse island
+	if (bBoating || -P.Y > 3800.f) return TEXT("mus_harbour");              // the beach, the piers, out on the bay
+	return TEXT("mus_town");
+}
+
 void APBXDirector::Music(const TCHAR* Name)
 {
 	if (MusicName == Name) return;
+	const bool bPlace = !MusicName.IsEmpty() && *Name && FString(Name).StartsWith(TEXT("mus_")) && MusicName != TEXT("mus_battle") && FString(Name) != TEXT("mus_battle");
 	MusicName = Name;
-	if (MusicComp) { MusicComp->FadeOut(.5f, 0.f); MusicComp = nullptr; }
+	if (MusicComp) { MusicComp->FadeOut(bPlace ? 2.5f : .5f, 0.f); MusicComp = nullptr; }   // walking between places: a slow crossfade
 	if (!*Name) return;
 	if (USoundBase* S = Snd(Name))
 	{
 		MusicComp = UGameplayStatics::SpawnSound2D(this, S, .32f, 1.f, 0.f, nullptr, false, false);
-		if (MusicComp) MusicComp->FadeIn(.7f, .32f);
+		if (MusicComp) MusicComp->FadeIn(bPlace ? 2.5f : .7f, .32f);
 	}
 }
 
@@ -1834,7 +1888,13 @@ void APBXDirector::StartNewGame(bool bMale)
 	ApplyPlayerLook();
 	PlacePlayer(NewGameSpot);
 	RefreshWorld();
-	QWait(.4f);
+	// phase 6: the opening flyover — the bay, the harbour, down over the roofs to home (skippable)
+	QFade(0.f, 1.f);
+	QCut({ { FVector(-9000, -32000, 5200), FVector(-3000, -17000, 2600), FVector(0, -2000, 600), FVector(0, 0, 400), 6.f, 55.f, TEXT("LUMEN HARBOR"), TEXT("A harbour town under the Alps") },
+	       { FVector(-3200, -7600, 700), FVector(2800, -7000, 550), FVector(-1200, -5000, 0), FVector(1500, -5200, 0), 5.f, 55.f, TEXT(""), TEXT("") },
+	       { FVector(-1500, 3200, 1700), FVector(-1500, 1300, 650), FVector(-1500, -300, 300), FVector(-1500, -400, 250), 4.5f, 55.f, TEXT(""), TEXT("") } }, TEXT("c1_intro"));
+	QFade(1.f, .6f);
+	QWait(.3f);
 	QDo([this] { Player->PlayAction(TEXT("LayToIdle"), false, .05f); });
 	QFade(0.f, 1.2f);
 	QDo([this] { Splash(TEXT("CHAPTER 1"), TEXT("A Licence to Remember"), 3.f); });
@@ -2398,6 +2458,13 @@ void APBXDirector::LeaveBoat(int32 DockI)
 	Player->SetActorEnableCollision(true);
 	Player->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	PlacePlayer(Dk.Land); LastSafe = Dk.Land.Pos + FVector(0, 0, 100);
+	if (DockI == 1 && Game && Game->State && !Game->State->Picked.Contains(FName(TEXT("cut_island"))))
+	{
+		Game->State->Picked.Add(FName(TEXT("cut_island")));   // first landing: the lighthouse reveal (Blender (333, 1382))
+		const FVector L(33300, -138200, 900), J = Dk.Land.Pos;
+		QCut({ { J + FVector(-400, 600, 250), J + FVector(-200, -400, 380), J + FVector(0, -3000, 300), L + FVector(0, 0, 400), 4.5f, 55.f, TEXT("LIGHTHOUSE ISLAND"), TEXT("The lamp the keepers built, finished the night of the storm.") },
+		       { L + FVector(-3200, 2600, 600), L + FVector(-2400, -2600, 1400), L + FVector(0, 0, 900), L + FVector(0, 0, 1300), 6.f, 50.f, TEXT(""), TEXT("") } }, TEXT("c2_island"));
+	}
 	if (Partner) { Partner->SetActorHiddenInGame(false); Partner->PlaceAt(Dk.Land.Pos - FRotator(0, Dk.Land.Yaw, 0).Vector() * 120.f); }
 	Sfx(TEXT("sfx_confirm"));
 }

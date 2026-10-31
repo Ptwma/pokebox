@@ -26,6 +26,8 @@ struct FPBXExit { FString Id, Label, ToMap, ToSpot; FVector Pos = FVector::ZeroV
 struct FPBXTrainer { FName Id; float Sight = 900.f; TArray<TPair<FName, int32>> Team; int32 Reward = 200; TArray<FString> Intro, Win, After; };
 struct FPBXItem { FString Id, Item; int32 Count = 1; FVector Pos = FVector::ZeroVector; TWeakObjectPtr<AActor> Actor; };
 struct FPBXLine { FName Who; FString Text; };
+/** one camera move of a cutscene (phase 6): eye A0 -> A1 looking at L0 -> L1, eased, with an optional caption */
+struct FPBXCutShot { FVector A0, A1, L0, L1; float Dur = 4.f, Fov = 60.f; FString Caption, Sub; };
 
 UCLASS()
 class APBXDirector : public AActor
@@ -113,6 +115,9 @@ private:
 	void QWait(float S);
 	void QSay(const TArray<FPBXLine>& Lines);
 	void QFade(float To, float Secs = .35f);
+	/** a skippable letterboxed cutscene in the script queue (confirm skips); AutoShot = screenshot name in the autotest */
+	void QCut(const TArray<FPBXCutShot>& Shots, const FString& AutoShot = FString());
+	void CheckCutscenes();   // first visits: the lighthouse island, the Lamplighters' Rest
 	bool Busy() const { return Queue.Num() > 0; }
 
 	// ---- interactions
@@ -207,7 +212,9 @@ private:
 	USoundBase* Snd(const TCHAR* Name);
 	void Sfx(const TCHAR* Name, float Vol = 1.f);
 	void Music(const TCHAR* Name);
-	const TCHAR* MapMusic() const { return IsTown() ? TEXT("mus_town") : TEXT("mus_route"); }
+	/** 2026-10-31 (phase 7): orchestral CC0 themes by place — home interior, village, harbour (on the water / by the
+	 *  piers), the lighthouse island, Route 1 */
+	const TCHAR* MapMusic() const;
 	// fixed "player-truth" beauty cams (council 2026-10-16): same poses every run, guarded, captions in Saved/pbx_auto/beauty.txt
 	int32 BeautyIdx = -1, BeautyPhase = 0; float BeautyT = 0.f; FPBXSpot BeautyBack; TArray<FString> BeautyDone;
 	bool BeautyPass(float Dt);   // true once every cam of the current map has been shot
