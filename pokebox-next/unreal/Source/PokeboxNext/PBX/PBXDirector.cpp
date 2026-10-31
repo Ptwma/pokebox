@@ -535,6 +535,19 @@ void APBXDirector::Tick(float Dt)
 		}
 	}
 	MusicHold = FMath::Max(0.f, MusicHold - Dt);
+	// indoors (the rooms sit 60 m under the town): auto-exposure opened the dim rooms up until the walls burned white
+	// (r59 shots) → darker exposure bias + a lower brightness ceiling while the player is inside
+	if (Player && Player->Camera)
+	{
+		const bool bIn = Player->GetActorLocation().Z < -3000.f;
+		FPostProcessSettings& PP = Player->Camera->PostProcessSettings;
+		if (PP.bOverride_AutoExposureBias != bIn)
+		{
+			PP.bOverride_AutoExposureBias = bIn; PP.AutoExposureBias = -1.0f;
+			PP.bOverride_AutoExposureMinBrightness = bIn; PP.AutoExposureMinBrightness = 4.5f;   // EV100 floor: don't brighten a lamp-lit room like a cave
+			Player->Camera->PostProcessBlendWeight = 1.f;
+		}
+	}
 	// indoors: a shorter, higher camera so the boom never presses the lens against the small rooms' walls (council S4)
 	if (Player && Player->Boom)
 	{
@@ -608,6 +621,19 @@ void APBXDirector::Tick(float Dt)
 
 // =================================================================== input
 bool APBXDirector::WantsCursor() const { return Menu != EMenu::None || UI->Mode == EPBXUIMode::Choice || (Bt.bActive && UI->bMoves); }
+
+void APBXDirector::LogMHHeights()
+{
+	// effective standing height of every MetaHuman (head bone above the capsule bottom + ~12 cm to the crown)
+	auto One = [](const FString& Id, APBXCharacterBase* C)
+	{
+		if (!C || !C->bMetaHuman) return;
+		const float Feet = C->GetActorLocation().Z - C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		PBXLOG("[PBXAUTO] mh height %s %.0f cm (spec %.0f%s)", *Id, C->GetMesh()->GetSocketLocation(TEXT("head")).Z - Feet + 12.f, C->MHHeight, C->bKidMH ? TEXT(", kid") : TEXT(""));
+	};
+	One(TEXT("player"), Player);
+	for (const TPair<FName, TObjectPtr<APBXNPC>>& It : NPCs) One(It.Key.ToString(), It.Value);
+}
 
 void APBXDirector::InMove(FVector2D V)
 {
@@ -2107,7 +2133,7 @@ void APBXDirector::AutoTick(float Dt)
 	case 0: if (AutoT > 4.f) { Shot(TEXT("01_title")); AutoNext(); } break;
 	case 1: if (AutoStepT > 1.f) { ShowMenu(EMenu::Gender); AutoNext(); } break;
 	case 2: if (AutoStepT > 2.f) { if (ShotFirst(TEXT("02_gender"))) break; StartNewGame(true); AutoNext(); } break;
-	case 3: if (AutoStepT > 4.5f && Idle()) { if (ShotFirst(TEXT("03_house"))) break; if (APBXNPC* N = NPCs.FindRef(TEXT("mom"))) { TeleportPlayer(N->GetActorLocation() + N->GetActorForwardVector() * 150.f, 0); TalkTo(N); } AutoNext(); } break;
+	case 3: if (AutoStepT > 4.5f && Idle()) { static bool bH = false; if (!bH) { bH = true; LogMHHeights(); } if (ShotFirst(TEXT("03_house"))) break; if (APBXNPC* N = NPCs.FindRef(TEXT("mom"))) { TeleportPlayer(N->GetActorLocation() + N->GetActorForwardVector() * 150.f, 0); TalkTo(N); } AutoNext(); } break;
 	case 4: if (AutoStepT > 1.2f && UI->Mode == EPBXUIMode::Dialogue && UI->Visible >= UI->Line.Len()) { Shot(TEXT("04_dialogue_mum")); AutoNext(); } break;
 	case 5: if (Idle()) { if (const FPBXDoor* D = DoorById(TEXT("house"))) UseDoor(*D, false); AutoNext(); } break;
 	case 6: if (UI->Mode == EPBXUIMode::Dialogue && UI->Visible >= UI->Line.Len() && AutoStepT > 1.5f) { Shot(TEXT("05_rho_greets")); AutoNext(); } break;
@@ -2216,7 +2242,37 @@ void APBXDirector::AutoTick(float Dt)
 	case 27: if (AutoStepT > 20.f) Fail(TEXT("route 1 did not load")); break;
 	// ---------------------------------------------------------------- Route 1 (L_Route1)
 	case 28: AutoStep = 100; AutoStepT = 0.f; break;
-	case 100: if (Idle() && AutoStepT > 3.f) { Shot(TEXT("23_route1_arrive")); if (Step() != EPBXStep::Done) Fail(TEXT("expected chapter 2 (Done) on Route 1")); else AutoNext(); } break;
+	case 100: if (Idle() && AutoStepT > 3.f) { Shot(TEXT("23_route1_arrive")); if (Step() != EPBXStep::Done) Fail(TEXT("expected chapter 2 (Done) on Route 1")); else { AutoStep = 170; AutoStepT = 0.f; } } break;
+	case 170:   // 2026-10-31 locomotion check (user: "does running work, and its animations"): walk 2 s, run 2.5 s, side camera
+	{
+		static float RunYaw = 0.f;
+		if (!Player) { AutoStep = 101; AutoStepT = 0.f; break; }
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		if (AutoStepT - Dt <= 0.f)
+		{
+			RunYaw = Player->GetActorRotation().Yaw;
+			LogMHHeights();
+		}
+		const FVector Dir = FRotator(0.f, RunYaw, 0.f).Vector();
+		if (PC) PC->SetControlRotation(FRotator(-8.f, RunYaw - 90.f, 0.f));   // camera from the side of the path
+		Player->SetRunning(AutoStepT > 2.f);
+		Player->AddMovementInput(Dir, 1.f);
+		const float T1 = AutoStepT, T0 = AutoStepT - Dt; auto At = [&](float T) { return T0 < T && T1 >= T; };
+		auto Log = [&](const TCHAR* Tag)
+		{
+			const UPBXAnimInstance* A = Cast<UPBXAnimInstance>(Player->GetMesh()->GetAnimInstance());
+			PBXLOG("[PBXAUTO] loco %s speed %.0f cm/s max %.0f | w idle %.2f walk %.2f jog %.2f sprint %.2f | rate walk %.2f jog %.2f sprint %.2f | stride %.2f mh %d",
+				Tag, Player->GetVelocity().Size2D(), Player->GetCharacterMovement()->MaxWalkSpeed,
+				A ? A->State[0].Weight : -1.f, A ? A->State[1].Weight : -1.f, A ? A->State[2].Weight : -1.f, A ? A->State[3].Weight : -1.f,
+				A ? A->State[1].Rate : -1.f, A ? A->State[2].Rate : -1.f, A ? A->State[3].Rate : -1.f, A ? A->StrideScale : -1.f, Player->bMetaHuman ? 1 : 0);
+		};
+		if (At(1.6f)) { Log(TEXT("walk")); Shot(TEXT("40_walk")); }
+		if (At(1.75f)) Shot(TEXT("40b_walk"));
+		if (At(4.0f)) { Log(TEXT("run")); Shot(TEXT("41_run")); }
+		if (At(4.12f)) Shot(TEXT("41b_run"));
+		if (At(4.24f)) Shot(TEXT("41c_run"));
+		if (AutoStepT > 4.5f) { Player->SetRunning(false); if (Player->GetVelocity().Size2D() < 50.f) PBXLOG("[PBXAUTO] WARN loco: the player did not move"); AutoStep = 101; AutoStepT = 0.f; }
+	} break;
 	case 101:
 		if (APBXNPC* J = NPCs.FindRef(TEXT("joey"))) { TeleportPlayer(J->Home + FRotator(0, J->HomeYaw, 0).Vector() * 520.f, J->HomeYaw + 180.f); AutoNext(); }
 		else Fail(TEXT("no joey")); break;

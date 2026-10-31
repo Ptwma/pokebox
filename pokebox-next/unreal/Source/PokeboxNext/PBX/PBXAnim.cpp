@@ -103,7 +103,8 @@ void UPBXAnimInstance::NativeUpdateAnimation(float Dt)
 	else if (Speed < 380.f) { const float k = (Speed - 160.f) / 220.f; W[1] = 1.f - k; W[2] = k; }
 	else if (Speed < 620.f) { const float k = (Speed - 380.f) / 240.f; W[2] = 1.f - k; W[3] = k; }
 	else W[3] = 1.f;
-	const float Rates[4] = { 1.f, FMath::Clamp(Speed / 140.f, .7f, 1.4f), FMath::Clamp(Speed / 380.f, .75f, 1.35f), FMath::Clamp(Speed / 600.f, .8f, 1.3f) };
+	const float Sv = Speed / FMath::Max(.5f, StrideScale);   // speed in "clip body" units
+	const float Rates[4] = { 1.f, FMath::Clamp(Sv / 140.f, .7f, 1.6f), FMath::Clamp(Sv / 380.f, .75f, 1.6f), FMath::Clamp(Sv / 600.f, .8f, 1.6f) };
 	FallW = FMath::FInterpTo(FallW, bFalling ? 1.f : 0.f, Dt, bFalling ? 8.f : 14.f);
 	// action layer
 	float& AW = State[5].Weight;

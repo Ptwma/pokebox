@@ -201,6 +201,7 @@ private:
 	void AutoTick(float Dt);
 	void Shot(const FString& Name);
 	bool ShotFirst(const TCHAR* Name);   // true = shot requested, come back next tick; false = shot done, carry on
+	void LogMHHeights();
 	int32 ShotWait = 0; FString ShotPendingName, ShotDoneName;
 	void AutoNext() { AutoStep++; AutoStepT = 0.f; }
 	void TeleportPlayer(const FVector& P, float Yaw);

@@ -47,6 +47,7 @@ public:
 	/** phase 5 (2026-10-31): a MetaHuman body — id from Content/PBX/Data/mh_manifest.json (pbx_metahumans.manifest()) */
 	bool ApplyMetaHuman(const FString& Id);
 	bool bMetaHuman = false;
+	bool bKidMH = false; float MHHeight = 0.f;
 	UPROPERTY(Transient) TArray<TObjectPtr<USceneComponent>> MHParts;
 protected:
 	float TurnYaw = 0.f; bool bTurning = false;

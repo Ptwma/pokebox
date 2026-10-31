@@ -72,6 +72,9 @@ public:
 	FPBXAnimLayer State[FPBXAnimProxy::NumLayers];
 	/** body proportions (set by APBXCharacterBase::ApplyLook) */
 	FPBXStyle Style;
+	/** body height / the height the clips were authored for: a 1.4 m kid takes shorter steps, so the same ground speed
+	    needs a faster cycle (else the feet slide). Set by ApplyMetaHuman from the manifest height. */
+	float StrideScale = 1.f;
 
 protected:
 	virtual void NativeInitializeAnimation() override;

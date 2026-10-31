@@ -114,7 +114,17 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 		MHParts.Add(GC);
 	}
 	bMetaHuman = true;
-	if (UPBXAnimInstance* A = Anim()) { A->SetSuffix(TEXT("_MH")); A->Style = FPBXStyle(); }
+	// kids (manifest "kid"): MetaHuman has no child body (height floor 1.36 m) → a slightly larger head reads younger;
+	// shorter bodies step faster at the same speed (StrideScale; the _MH clips were retargeted on a 1.36–1.4 m body)
+	double Hgt = 170.0; (*E)->TryGetNumberField(TEXT("height"), Hgt);
+	bool bKid = false; (*E)->TryGetBoolField(TEXT("kid"), bKid);
+	bKidMH = bKid; MHHeight = (float)Hgt;
+	if (UPBXAnimInstance* A = Anim())
+	{
+		A->SetSuffix(TEXT("_MH")); A->Style = FPBXStyle();
+		if (bKid) { A->Style.Head = 1.09f; A->Style.Hand = .96f; }
+		A->StrideScale = (float)Hgt / 172.f;
+	}
 	return true;
 }
 

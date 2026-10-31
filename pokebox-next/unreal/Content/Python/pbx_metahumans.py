@@ -17,16 +17,19 @@ def log(*a): print('[mh]', *a)
 # id: (sex 0 = masculine .. 1 = feminine, height cm, fat 0..1, muscularity 0..1, skin (u, v), hair slot keyword, outfit colour)
 # id: (preset face from the Optional Content, sex 0 masc..1 fem, height cm, fat, muscularity, hair groom, beard groom or None, outfit colour)
 SPEC = {
-    'player_m':  ('Mateo',   0.05, 158, .25, .35, 'Hair_S_Messy', None, (.85, .62, .1)),
-    'player_f':  ('Aoi',     0.95, 155, .25, .3, 'Hair_L_Straight', None, (.85, .62, .1)),
+    # 2026-10-31 (user: "story based ... kids close to the game's age"): the hero, the rival and the village kids are
+    # 10–12 year olds (Pokémon-Red age). MetaHuman has no child body: the height floor is 135.7 cm, so kids = 136–146 cm,
+    # slim, low muscle, near-neutral sex; the C++ also enlarges their head a little (KIDS → manifest "kid").
+    'player_m':  ('Mateo',   0.0, 142, -.4, -.7, 'Hair_S_Messy', None, (.85, .62, .1)),
+    'player_f':  ('Aoi',     0.6, 140, -.4, -.8, 'Hair_L_Straight', None, (.85, .62, .1)),
     'mom':       ('Grace',   0.9, 166, .45, .3, 'Hair_S_UpdoBuns', None, (.55, .25, .3)),
     'vale':      ('Vivian',  0.9, 171, .3, .25, 'Hair_M_BobSlick', None, (.9, .9, .92)),
     'aide':      ('Kelvin',  0.1, 178, .35, .35, 'Hair_S_SideSweptFringe', None, (.3, .45, .7)),
-    'rho':       ('Trey',    0.05, 160, .2, .45, 'Hair_S_BuzzCut', None, (.15, .2, .45)),
+    'rho':       ('Trey',    0.0, 146, -.3, -.5, 'Hair_S_BuzzCut', None, (.15, .2, .45)),
     'fisher':    ('Walter',  0.0, 174, .55, .5, 'Hair_S_BaldingStubble', 'Beard_L_Full', (.9, .75, .1)),
     'gardener':  ('Sunita',  0.9, 163, .5, .4, 'Hair_S_LowPonytail', None, (.35, .55, .25)),
     'merchant':  ('Zuri',    0.95, 168, .4, .3, 'Hair_S_Coil', None, (.75, .35, .15)),
-    'kid':       ('Omari',   0.15, 132, .2, .2, 'Hair_S_Casual', None, (.25, .6, .9)),
+    'kid':       ('Omari',   0.0, 136, -.4, -.8, 'Hair_S_Casual', None, (.25, .6, .9)),
     'conductor': ('Jelena',  0.9, 170, .35, .35, 'Hair_S_Updo', None, (.12, .18, .35)),
     'guard':     ('Bruce',   0.0, 186, .4, .7, 'Hair_S_BrushCut', 'Beard_S_Stubble', (.3, .3, .32)),
     'crew_jon':  ('Jorge',   0.0, 180, .45, .6, 'Hair_S_Clean', 'Mustache_L_Full', (.9, .75, .1)),
@@ -34,8 +37,9 @@ SPEC = {
     'crew_ben':  ('Dominic', 0.0, 177, .6, .5, 'Hair_S_RecedeMessy', 'Beard_M_Curly', (.25, .3, .2)),
     'crew_old':  ('Victor',  0.0, 169, .5, .3, 'Hair_S_HairLoss', 'Beard_L_Messy', (.6, .55, .45)),
     'crew_sail': ('Lani',    0.95, 167, .25, .35, 'Hair_M_Layered', None, (.85, .85, .8)),
-    'crew_kid':  ('Mikel',   0.1, 128, .15, .2, 'Hair_S_CurlyFade', None, (.85, .3, .2)),
+    'crew_kid':  ('Mikel',   0.0, 136, -.4, -.8, 'Hair_S_CurlyFade', None, (.85, .3, .2)),
 }
+KIDS = {'player_m', 'player_f', 'rho', 'kid', 'crew_kid'}
 
 def S(): return unreal.get_editor_subsystem(unreal.MetaHumanCharacterEditorSubsystem)
 
@@ -77,13 +81,8 @@ def create(cid):
         s.set_body_constraints(ch, list(m.values())); s.commit_body_state(ch)
     finally:
         if s.is_object_added_for_editing(ch): s.remove_object_to_edit(ch)
-    for slot, name in (('Hair', hair), ('Beard', beard)):
-        wi = _groom(name) if name else None
-        if not wi: continue
-        try:
-            k = ch.internal_collection.try_add_item_from_wardrobe_item(slot, wi)
-            ch.internal_collection.default_instance.try_add_slot_selection(unreal.MetaHumanPipelineSlotSelection(slot_name=slot, selected_item=k))
-        except Exception as ex: log('groom', cid, slot, ex)
+    try: _set_grooms(ch, cid)
+    except Exception as ex: log('groom', cid, ex)
     EAL.save_loaded_asset(ch); log('created', cid, 'from', preset); return ch
 
 def create_all():
@@ -179,6 +178,47 @@ def next_builds(n=1):
         except Exception as ex: log('FAILED', cid, ex)
     log('pending', len(pending()), pending())
 
+def _set_grooms(ch, cid):
+    """the Epic presets ship their own hair/beard/mustache: REPLACE every facial-hair slot (r59 bug: the old create()
+    only added a 2nd Hair item → the preset's beard stayed on the girl and the kids, and two Hair picks built no hair)"""
+    _, _, _, _, _, hair, beard, _ = SPEC[cid]
+    col = ch.internal_collection; inst = col.default_instance
+    want = {'Hair': hair, 'Beard': None, 'Mustache': None}
+    if beard: want['Mustache' if beard.startswith('Mustache') else 'Beard'] = beard
+    for slot, name in want.items():
+        key = unreal.MetaHumanPaletteItemKey()          # empty key = nothing in this slot
+        if name:
+            wi = _groom(name)
+            if not wi: log('groom missing', cid, name); continue
+            keys = [k for k in col.get_item_keys_for_wardrobe_item(wi) if str(col.get_item_slot_name(k)) == slot]
+            key = keys[0] if keys else col.try_add_item_from_wardrobe_item(slot, wi)
+        inst.set_single_slot_selection(slot, key)
+    log('grooms', cid, want)
+
+def restyle(cid):
+    """body (height / fat / muscle / sex) + facial hair on the EXISTING character (keeps the rig and the textures)"""
+    ch = unreal.load_asset(f'{ROOT}/Characters/MH_{cid}'); s = S()
+    _, sex, h, fat, mus, _, _, _ = SPEC[cid]
+    if not s.try_add_object_to_edit(ch): log('busy', cid); return False
+    try:
+        cons = s.get_body_constraints(ch); m = {str(c.name).lower().replace(' ', '_'): c for c in cons}
+        for k, v in (('height', h), ('masculine/feminine', sex), ('fat', fat), ('muscularity', mus)):
+            if k in m: m[k].is_active = True; m[k].target_measurement = float(v)
+        s.set_body_constraints(ch, list(m.values())); s.commit_body_state(ch)
+    finally:
+        if s.is_object_added_for_editing(ch): s.remove_object_to_edit(ch)
+    _set_grooms(ch, cid)
+    EAL.save_loaded_asset(ch)
+    d = f'{ROOT}/Built/MH_{cid}'
+    if EAL.does_directory_exist(d): EAL.delete_directory(d)     # → pending() rebuilds it
+    log('restyled', cid, h); return True
+
+def restyle_all():
+    for cid in SPEC:
+        try: restyle(cid)
+        except Exception as ex: log('restyle FAILED', cid, ex)
+    log('pending', pending())
+
 def all_steps(skip=()):
     """rig → textures → build for every character (≈2 min each; the Epic sign-in is reused)"""
     for cid in SPEC:
@@ -215,6 +255,7 @@ def manifest():
             g = c.get_editor_property('groom_asset'); b = c.get_editor_property('binding_asset')
             if g: e['grooms'].append({'name': c.get_name(), 'groom': g.get_path_name().split('.')[0], 'binding': b.get_path_name().split('.')[0] if b else '',
                                       'parent': c.get_attach_parent().get_name() if c.get_attach_parent() else ''})
+        e['height'] = SPEC[cid][2]; e['kid'] = cid in KIDS
         EAS.destroy_actor(a); out[cid] = e; log('manifest', cid, e['body'] is not None, len(e['parts']), len(e['grooms']))
     path = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()) + 'PBX/Data/mh_manifest.json'
     open(path, 'w', encoding='utf-8').write(json.dumps(out, indent=1)); log('manifest ->', path)
