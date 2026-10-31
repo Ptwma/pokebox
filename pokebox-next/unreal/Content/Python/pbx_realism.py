@@ -202,6 +202,22 @@ def _water_common(m, flow_uv=False):
     MEL.connect_material_expressions(B._scalar(m, 'PhaseG', .1, 100, 800), '', out, 'PhaseG')
     return out
 
+NBOATS = 8
+HULL_MASK = r"""
+float2 q = WP.xy / 100.0; float keep = 1.0;
+float4 bs[8] = { B0, B1, B2, B3, B4, B5, B6, B7 };
+for (int i = 0; i < 8; i++)
+{
+    float4 b = bs[i]; if (b.w < 0.5) continue;
+    float2 d = q - b.xy; float c = cos(b.z), s = sin(b.z);
+    float lx = (d.x * c + d.y * s) / (b.w * 0.93), ly = (-d.x * s + d.y * c) / (b.w * 0.30);
+    // a hull-ish outline: an ellipse that narrows to the bow (+x) and stays full at the transom
+    float taper = lx > 0.0 ? (1.0 - 0.55 * lx * lx) : 1.0;
+    if (abs(lx) < 1.0 && abs(ly) < max(0.05, taper) * sqrt(max(0.0, 1.0 - 0.35 * lx * lx))) keep = 0.0;
+}
+return keep;
+"""
+
 def sea_mpc():
     """MPC_PBX_Sea.Swell: the sea state (1 = normal swell, up to ~2.4 in a set of big waves) — written by APBXDirector"""
     path = G + '/Materials/MPC_PBX_Sea'
@@ -209,7 +225,11 @@ def sea_mpc():
     if not c:
         c = unreal.AssetToolsHelpers.get_asset_tools().create_asset('MPC_PBX_Sea', G + '/Materials', unreal.MaterialParameterCollection, unreal.MaterialParameterCollectionFactoryNew())
     p = unreal.CollectionScalarParameter(); p.set_editor_property('parameter_name', 'Swell'); p.set_editor_property('default_value', 1.0)
-    c.set_editor_property('scalar_parameters', [p]); EAL.save_loaded_asset(c)
+    c.set_editor_property('scalar_parameters', [p])
+    vs = []
+    for i in range(NBOATS):   # B<i> = (x m, y m, yaw rad, half length m; 0 = unused) — the hulls the sea must not draw inside
+        v = unreal.CollectionVectorParameter(); v.set_editor_property('parameter_name', f'B{i}'); v.set_editor_property('default_value', unreal.LinearColor(0, 0, 0, 0)); vs.append(v)
+    c.set_editor_property('vector_parameters', vs); EAL.save_loaded_asset(c)
     return c
 
 def master_sea():
@@ -228,6 +248,16 @@ def master_sea():
         c = E(m, unreal.MaterialExpressionConstant, -1400, y + 300); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
         nodes.append(cu)
     MEL.connect_material_property(nodes[0], '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    # 2026-10-31: no water INSIDE the boats (a rowboat's floorboards sit below the waterline; bigger swell washed over the
+    # sail boat's cockpit) → masked: pixels inside the hulls the C++ reports (MPC B0..B7) are not drawn
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_MASKED)
+    hm = _custom(m, HULL_MASK, ['WP'] + [f'B{i}' for i in range(NBOATS)], -700, -400, unreal.CustomMaterialOutputType.CMOT_FLOAT1)
+    MEL.connect_material_expressions(wp, '', hm, 'WP')
+    for i in range(NBOATS):
+        bp = E(m, unreal.MaterialExpressionCollectionParameter, -1000, -600 + 60 * i)
+        bp.set_editor_property('collection', sea_mpc()); bp.set_editor_property('parameter_name', f'B{i}')
+        MEL.connect_material_expressions(bp, '', hm, f'B{i}')
+    MEL.connect_material_property(hm, '', unreal.MaterialProperty.MP_OPACITY_MASK)
     # detail ripples (two scrolling samples of the tileable normal) bent around the swell normal, plus shore foam
     tex = unreal.load_asset(G + '/Tex/T_WaterNormal')
     o = E(m, unreal.MaterialExpressionTextureObjectParameter, -1200, 800); o.set_editor_property('parameter_name', 'RippleTex')

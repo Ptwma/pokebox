@@ -2590,6 +2590,8 @@ void APBXDirector::SetupLife()
 		const FVector L = A->GetActorLocation(); B.XY = FVector2D(L.X, L.Y); B.Yaw = A->GetActorRotation().Yaw; B.Z0 = L.Z + 120.f;
 		B.Phase = FMath::FRandRange(0.f, 6.28f);
 		const FBox Bx = A->GetComponentsBoundingBox(); B.Len = FMath::Max(200.f, (Bx.Max - Bx.Min).GetMax() * .8f); B.Beam = B.Len * .3f;
+		if (const UStaticMeshComponent* SC = A->FindComponentByClass<UStaticMeshComponent>()) if (const UStaticMesh* SM = SC->GetStaticMesh())
+			B.HalfLen = SM->GetBoundingBox().GetSize().X * .5f * SC->GetComponentScale().X;   // local +X = the bow
 		if (B.Mode == 2)
 		{
 			const FVector Cc = JVec(O, TEXT("center")); B.C = FVector2D(Cc.X, Cc.Y);
@@ -2684,6 +2686,19 @@ void APBXDirector::TickLife(float Dt)
 		auto Spring = [Ds](float& X, float& V, float Tg, float K, float C) { V += (K * (Tg - X) - C * V) * Ds; X += V * Ds; };
 		Spring(B.Hz, B.Vz, TZ, 10.f, 3.4f); Spring(B.Pt, B.Vp, TP, 7.f, 2.4f); Spring(B.Ro, B.Vr, TR, 4.5f, 1.3f);
 		A->SetActorLocationAndRotation(FVector(P.X, P.Y, B.Hz), FRotator(B.Pt, Yaw, B.Ro));
+	}
+	// the sea must not be drawn inside the hulls (masked water material): hull outlines to MPC_PBX_Sea B0..B7
+	if (UMaterialParameterCollection* M = Cast<UMaterialParameterCollection>(SeaMPC))
+	{
+		int32 i = 0;
+		for (const FSeaBoat& B : SeaBoats)
+		{
+			const AActor* A = B.A.Get(); if (!A || i >= 8) continue;
+			const FVector L = A->GetActorLocation();
+			UKismetMaterialLibrary::SetVectorParameterValue(this, M, FName(*FString::Printf(TEXT("B%d"), i++)),
+				FLinearColor(L.X / 100.f, L.Y / 100.f, FMath::DegreesToRadians(A->GetActorRotation().Yaw), B.HalfLen / 100.f));
+		}
+		for (; i < 8; i++) UKismetMaterialLibrary::SetVectorParameterValue(this, M, FName(*FString::Printf(TEXT("B%d"), i)), FLinearColor(0, 0, 0, 0));
 	}
 }
 

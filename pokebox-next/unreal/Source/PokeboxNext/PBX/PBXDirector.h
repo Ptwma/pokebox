@@ -136,7 +136,7 @@ private:
 	{
 		TWeakObjectPtr<AActor> A; int32 Mode = 0; FVector2D XY = FVector2D::ZeroVector, C = FVector2D::ZeroVector; float Yaw = 0.f, Z0 = 0.f, Phase = 0.f, Rx = 0.f, Ry = 0.f, Period = 300.f, Len = 400.f, Beam = 150.f;
 		// 2026-10-31 hull dynamics: heave / pitch / roll chase the wave surface through damped springs (inertia, overshoot)
-		float Hz = 0.f, Vz = 0.f, Pt = 0.f, Vp = 0.f, Ro = 0.f, Vr = 0.f; bool bDyn = false;
+		float Hz = 0.f, Vz = 0.f, Pt = 0.f, Vp = 0.f, Ro = 0.f, Vr = 0.f; bool bDyn = false; float HalfLen = 200.f;
 		// Mode 3 = a fishing boat's working day: berth → out to the grounds → fish → back → a crew member sells the catch
 		int32 St = 0, PathI = 0, Sub = 0; float StT = 0.f, Wait = 60.f, Spd = 0.f, BerthYaw = 0.f, PierX = 0.f; TArray<FVector2D> Path;
 		FVector2D Berth = FVector2D::ZeroVector, Ground = FVector2D::ZeroVector; TWeakObjectPtr<class APBXNPC> Seller; FVector SeatRel = FVector::ZeroVector; float SeatYaw = 0.f; int32 Trips = 0;
