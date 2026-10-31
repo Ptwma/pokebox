@@ -265,6 +265,11 @@ void APBXDirector::SpawnNPCs()
 		APBXNPC* N = W->SpawnActor<APBXNPC>(APBXNPC::StaticClass(), FVector(P.X, P.Y, Z + 92.f * Scale), FRotator(0, Yaw, 0), SP);
 		if (!N) continue;
 		N->Id = FName(*O->GetStringField(TEXT("id"))); N->DisplayName = O->GetStringField(TEXT("name"));
+		{	// Sigil & Spark cast names (SIGIL_AND_SPARK.md §3) over the old town data
+			static const TMap<FName, FString> Cast = { {TEXT("vale"), TEXT("Archivist Vale")}, {TEXT("aide"), TEXT("Scribe Kelvin")}, {TEXT("fisher"), TEXT("Old Gus")},
+				{TEXT("gardener"), TEXT("Sunita")}, {TEXT("merchant"), TEXT("Zuri")}, {TEXT("kid"), TEXT("Omari")}, {TEXT("conductor"), TEXT("Jelena")}, {TEXT("guard"), TEXT("Captain Bruce")} };
+			if (const FString* CN = Cast.Find(N->Id)) N->DisplayName = *CN;
+		}
 		FString Outfit; O->TryGetStringField(TEXT("outfit"), Outfit);
 		const TArray<TSharedPtr<FJsonValue>>* HC = nullptr; FLinearColor HairC(0, 0, 0, 0);
 		if (O->TryGetArrayField(TEXT("hair_color"), HC) && HC->Num() >= 3) HairC = FLinearColor((*HC)[0]->AsNumber(), (*HC)[1]->AsNumber(), (*HC)[2]->AsNumber(), 1.f);
@@ -2036,17 +2041,17 @@ void APBXDirector::PlayIntro()
 	{
 		FPBXCutShot S = Mk(5.f, TEXT(""), TEXT("The starters, they're loose!"));
 		S.SubSpeaker = TEXT("Scribe Kelvin");
-		const FVector Mid = G(In + Fi * 420.f);
-		CamS(S, In + Fi * 60.f + Up * 185.f, In + Fi * 105.f + Up * 175.f, Mid + Up * 60.f, Mid + Up * 50.f, 62.f);   // r61: any sideways offset at the door puts the camera inside the vestibule wall (a beige frame) → stay on the door axis
+		FVector Mid = In + Fi * 420.f; Mid.Z = PBXWorld::GroundZ(W, Mid, 60.f, 400.f, In.Z);   // r61: G() traced from 6 m up and landed on the ROOF of the underground room → the camera stared at the ceiling (the beige frame)
+		CamS(S, In + Fi * 40.f + Up * 190.f, In + Fi * 80.f + Up * 180.f, Mid + Up * 60.f, Mid + Up * 50.f, 72.f);   // r61: any sideways offset at the door puts the camera inside the vestibule wall (a beige frame) → stay on the door axis
 		S.OnStart = [this, Spawn, In, Fi, Ri, InYaw, Mid, Fog]()
 		{
 			Fog(-1.f);   // the rooms are underground: the attack's sea fog turned the Scriptorium into a beige wall (r61)
 			TeleportPlayer(In + Fi * 150.f + Ri * 75.f + FVector(0, 0, 95.f), InYaw);
-			APBXEcho* A = Spawn(TEXT("Flying/Dragon"), Mid - Ri * 190.f, 85.f);
+			APBXEcho* A = Spawn(TEXT("Flying/Dragon"), Mid - Ri * 150.f, 85.f);
 			APBXEcho* B = Spawn(TEXT("Flying/Glub"), Mid, 80.f);
-			APBXEcho* D = Spawn(TEXT("Blob/Mushnub"), Mid + Ri * 190.f, 75.f);
-			for (APBXEcho* E : { A, B, D }) if (E) { E->Mode = APBXEcho::EMode::Stage; E->FaceAt = In; }
-			if (FX && B) FX->Beam(In + Fi * 40.f + FVector(0, 0, 180), B->GetActorLocation() + FVector(0, 0, 60), FLinearColor(1, 1, 1), .7f, 26.f);
+			APBXEcho* D = Spawn(TEXT("Blob/Mushnub"), Mid + Ri * 150.f, 75.f);
+			for (APBXEcho* E : { A, B, D }) if (E) { const FVector Q = E->GetActorLocation(); E->SetActorLocation(FVector(Q.X, Q.Y, Mid.Z)); E->Mode = APBXEcho::EMode::Stage; E->FaceAt = In; }
+			if (FX && B) FX->Beam(Mid + Fi * 320.f + Ri * 120.f + FVector(0, 0, 230), B->GetActorLocation() + FVector(0, 0, 60), FLinearColor(1, 1, 1), .7f, 26.f);   // r61: from the door it started INSIDE the camera (the beige frame)
 			if (B) B->SetFaint(true);
 		};
 		Sh.Add(S);
