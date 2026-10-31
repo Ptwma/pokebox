@@ -14,6 +14,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequence.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
@@ -303,6 +304,58 @@ APBXEcho::APBXEcho()
 	Paper->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Paper->SetRelativeRotation(FRotator(0, -90.f, 0));   // SM_EchoCard faces +Y -> turn it to face +X (the pivot looks at the camera)
 	Paper->bRenderCustomDepth = false;
+	Body = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Body")); Body->SetupAttachment(Pivot);
+	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision); Body->SetVisibility(false);
+	Body->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	Body->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+}
+
+bool APBXEcho::SetupCreature(const FPBXCardDef* C, float Height)
+{
+	static TSharedPtr<FJsonObject> Man;
+	if (!Man.IsValid())
+	{
+		FString Txt; Man = MakeShared<FJsonObject>();
+		if (FFileHelper::LoadFileToString(Txt, *(FPaths::ProjectContentDir() / TEXT("PBX/Data/creatures.json"))))
+		{ TSharedPtr<FJsonObject> J; const TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(Txt); if (FJsonSerializer::Deserialize(R, J) && J.IsValid()) Man = J; }
+	}
+	const TSharedPtr<FJsonObject>* Types = nullptr; const TSharedPtr<FJsonObject>* Cre = nullptr;
+	if (!C || !Man->TryGetObjectField(TEXT("types"), Types) || !Man->TryGetObjectField(TEXT("creatures"), Cre)) return false;
+	const TSharedPtr<FJsonObject>* Pool = nullptr;
+	if (!(*Types)->TryGetObjectField(C->Type, Pool)) (*Types)->TryGetObjectField(TEXT("Colorless"), Pool);
+	if (!Pool) return false;
+	// strong cards take the big / evolved form; the same card always gets the same creature
+	const bool bBig = C->HP >= 90 || C->Rarity >= 3;
+	TArray<FString> Keys; (*Pool)->TryGetStringArrayField(bBig ? TEXT("big") : TEXT("small"), Keys);
+	if (!Keys.Num()) (*Pool)->TryGetStringArrayField(bBig ? TEXT("small") : TEXT("big"), Keys);
+	TArray<FString> Ok; for (const FString& K : Keys) if ((*Cre)->HasField(K)) Ok.Add(K);
+	if (!Ok.Num()) return false;
+	const FString Key = Ok[GetTypeHash(C->Id) % Ok.Num()];
+	const TSharedPtr<FJsonObject> E = (*Cre)->GetObjectField(Key);
+	auto LoadP = [](const FString& P) -> UObject* { const FString N = FPaths::GetBaseFilename(P); return StaticLoadObject(UObject::StaticClass(), nullptr, *(P + TEXT(".") + N)); };
+	USkeletalMesh* SM = Cast<USkeletalMesh>(LoadP(E->GetStringField(TEXT("mesh"))));
+	if (!SM) return false;
+	Clips.Reset();
+	const TSharedPtr<FJsonObject>* An = nullptr;
+	if (E->TryGetObjectField(TEXT("anims"), An))
+		for (const auto& KV : (*An)->Values) if (UAnimSequence* S = Cast<UAnimSequence>(LoadP(KV.Value->AsString()))) Clips.Add(FName(*KV.Key), S);
+	CreatureKey = Key; bFly = E->GetBoolField(TEXT("fly"));
+	const float MeshH = FMath::Max(10.f, (float)E->GetNumberField(TEXT("height")));
+	const float S = Height * (bFly ? .8f : 1.f) / MeshH;
+	Body->SetSkeletalMesh(SM); Body->SetVisibility(true); Paper->SetVisibility(false);
+	Body->SetRelativeScale3D(FVector(S)); Body->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));   // glTF front (+Y after import) → actor +X
+	Body->SetRelativeLocation(FVector(0.f, 0.f, bFly ? Height * .45f : 0.f));                      // flyers hover
+	bCreature = true; CurClip = NAME_None; ClipLock = 0.f; PlayClip(TEXT("idle"), true);
+	return true;
+}
+
+void APBXEcho::PlayClip(FName Role, bool bLoop, float Lock)
+{
+	if (!bCreature) return;
+	TObjectPtr<UAnimSequence>* A = Clips.Find(Role);
+	if (!A || !*A) { if (Role != TEXT("idle")) PlayClip(TEXT("idle"), true); return; }
+	if (CurClip == Role && bLoop && Lock <= 0.f) return;
+	Body->PlayAnimation(*A, bLoop); CurClip = Role; ClipLock = Lock;
 }
 
 bool APBXEcho::Setup(FName Card, float Height)
@@ -313,6 +366,8 @@ bool APBXEcho::Setup(FName Card, float Height)
 	const FPBXCardDef* C = PBXData::Card(Card);
 	UTexture2D* Tex = C ? LoadObject<UTexture2D>(nullptr, *C->EchoTexturePath()) : nullptr;
 	if (!M || !Mat || !Tex) { GPBXMissingAssets++; UE_LOG(LogTemp, Error, TEXT("[PBX] echo assets missing for %s (mesh %d mat %d tex %d)"), *Card.ToString(), M != nullptr, Mat != nullptr, Tex != nullptr); }
+	if (SetupCreature(C, Height)) return true;
+	bCreature = false; Body->SetVisibility(false); Paper->SetVisibility(true);
 	if (M) Paper->SetStaticMesh(M);
 	if (Mat) { MID = UMaterialInstanceDynamic::Create(Mat, this); if (Tex) MID->SetTextureParameterValue(TEXT("Tex"), Tex); Paper->SetMaterial(0, MID); }
 	// visible-art normalisation (council S9): cut-outs have transparent margins of every size, so a wide Rattata read small
@@ -353,10 +408,10 @@ void APBXEcho::PlaceAt(const FVector& P)
 }
 
 void APBXEcho::Flash(const FLinearColor& C, float S) { FlashT = .35f; FlashCol = C; FlashStrength = S; }
-void APBXEcho::Lunge(const FVector& Dir, float Dist) { LungeT = 0.f; LungeDir = Dir.GetSafeNormal2D(); LungeDist = Dist; }
-void APBXEcho::Hurt() { HurtT = 0.f; Flash(FLinearColor(1, .25f, .2f), 2.5f); }
-void APBXEcho::SetFaint(bool b) { bFaint = b; if (!b) FaintK = 0.f; }
-void APBXEcho::PopIn() { PopT = 0.f; }
+void APBXEcho::Lunge(const FVector& Dir, float Dist) { LungeT = 0.f; LungeDir = Dir.GetSafeNormal2D(); LungeDist = Dist; PlayClip(TEXT("attack"), false, .9f); }
+void APBXEcho::Hurt() { HurtT = 0.f; Flash(FLinearColor(1, .25f, .2f), 2.5f); PlayClip(TEXT("hit"), false, .55f); }
+void APBXEcho::SetFaint(bool b) { bFaint = b; if (!b) { FaintK = 0.f; ClipLock = 0.f; CurClip = NAME_None; } else PlayClip(TEXT("death"), false, 1e6f); }
+void APBXEcho::PopIn() { PopT = 0.f; PlayClip(TEXT("happy"), false, 1.1f); }
 
 void APBXEcho::Tick(float Dt)
 {
@@ -399,6 +454,27 @@ void APBXEcho::Tick(float Dt)
 		}
 	}
 	SetActorLocation(Loc);
+	if (bCreature)
+	{
+		// a creature: turns to where it walks (else to its opponent / the camera), animation clip from the state
+		const FVector V = (Loc - PrevLoc) / FMath::Max(Dt, 1e-3f); PrevLoc = Loc; const float Sp = V.Size2D();
+		float Want = CurYaw;
+		if (Sp > 20.f) Want = V.Rotation().Yaw;
+		else if (Mode == EMode::Stage && !FaceAt.IsZero()) Want = (FaceAt - Loc).Rotation().Yaw;
+		else if (APlayerCameraManager* PC = UGameplayStatics::GetPlayerCameraManager(this, 0)) Want = (PC->GetCameraLocation() - Loc).Rotation().Yaw;
+		CurYaw = FMath::FixedTurn(CurYaw, Want, 360.f * Dt);
+		ClipLock -= Dt;
+		if (!bFaint && ClipLock <= 0.f) PlayClip(Sp > 330.f ? TEXT("run") : Sp > 25.f ? TEXT("walk") : TEXT("idle"), true);
+		FVector Off(0, 0, bFly ? 10.f * FMath::Sin(T * 2.2f) : 0.f);
+		if (LungeT >= 0.f) { LungeT += Dt; const float k = LungeT / .45f; if (k >= 1.f) LungeT = -1.f; else Off += LungeDir * LungeDist * FMath::Sin(k * PI); }
+		if (HurtT >= 0.f) { HurtT += Dt; if (HurtT > .35f) HurtT = -1.f; else Off += FVector(FMath::Sin(HurtT * 90.f) * 5.f, FMath::Cos(HurtT * 77.f) * 5.f, 0); }
+		PopT = FMath::Min(1.f, PopT + Dt / .4f);
+		const float Pop = PopT >= 1.f ? 1.f : FMath::Sin(PopT * PI * .5f) * (1.f + .2f * FMath::Sin(PopT * PI));
+		Pivot->SetRelativeLocation(Off);
+		Pivot->SetWorldRotation(FRotator(0.f, CurYaw, 0.f));
+		Pivot->SetRelativeScale3D(FVector(Pop));
+		return;
+	}
 
 	// face the camera (a paper figure turning to look at you)
 	if (APlayerCameraManager* PC = UGameplayStatics::GetPlayerCameraManager(this, 0))

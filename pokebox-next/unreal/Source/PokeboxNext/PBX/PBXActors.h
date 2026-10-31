@@ -10,6 +10,8 @@ extern int32 GPBXMissingAssets;
 class USkeletalMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
+class UAnimSequence;
+class USkeletalMeshComponent;
 class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UTextRenderComponent;
@@ -99,6 +101,13 @@ public:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<USceneComponent> Pivot;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Paper;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> MID;
+	// 2026-10-31: an original 3D creature (Quaternius Ultimate Monsters, CC0) instead of the paper cut-out — Content/PBX/Data/creatures.json
+	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Body;
+	UPROPERTY(Transient) TMap<FName, TObjectPtr<UAnimSequence>> Clips;
+	bool bCreature = false, bFly = false; FString CreatureKey;
+	/** where to look when standing still (battle: the opponent); zero = the camera */
+	FVector FaceAt = FVector::ZeroVector;
+	void PlayClip(FName Role, bool bLoop, float Lock = 0.f);
 
 	enum class EMode : uint8 { Idle, Follow, Wander, Stage };
 	EMode Mode = EMode::Idle;
@@ -120,4 +129,6 @@ private:
 	FVector LungeDir = FVector::ZeroVector; float LungeDist = 0.f;
 	FLinearColor FlashCol = FLinearColor::White; float FlashStrength = 0.f;
 	float CurYaw = 0.f;
+	FName CurClip; float ClipLock = 0.f; FVector PrevLoc = FVector::ZeroVector;
+	bool SetupCreature(const struct FPBXCardDef* C, float Height);
 };

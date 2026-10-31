@@ -164,13 +164,13 @@ def _ph(n): return {'BaseTex': f'{TEX}/PH_{n}_diff', 'NormalTex': f'{TEX}/PH_{n}
 # ------------------------------------------------------------------ water (2026-10-23): Single Layer Water shading (real
 # absorption / scattering, Lumen reflections), Gerstner swell moving the sea mesh, rippled normals, shore foam.
 # WAVES must stay identical to APBXBoat's buoyancy (C++): (direction deg in UE XY, wavelength m, amplitude m)
-WAVES = [(84.0, 23.0, .20), (101.0, 13.5, .11), (70.0, 7.8, .055), (115.0, 4.6, .025)]
+WAVES = [(84.0, 26.0, .30), (101.0, 14.0, .15), (70.0, 8.0, .07), (115.0, 4.6, .03)]   # 2026-10-31: a livelier sea (C++ PBXWaves must match)
 GERSTNER = r"""
 float3 o = 0; float2 sl = 0;
 float2 q = WP.xy / 100.0;
 // calmer water near the shore (APBXDirector::ShoreDamp must match)
 float dcst = -q.y - (45.0 + max(0.0, abs(q.x) - 110.0) * 0.55);
-Amp *= lerp(0.25, 1.0, smoothstep(5.0, 150.0, dcst));
+Amp *= lerp(0.35, 1.0, smoothstep(5.0, 150.0, dcst)) * Sw;   // Sw = MPC_PBX_Sea.Swell (swell sets, set by the C++ every frame)
 WAVEBODY
 return Mode > 0.5 ? normalize(float3(-sl.x, -sl.y, 1.0)) : o * 100.0;
 """
@@ -202,17 +202,29 @@ def _water_common(m, flow_uv=False):
     MEL.connect_material_expressions(B._scalar(m, 'PhaseG', .1, 100, 800), '', out, 'PhaseG')
     return out
 
+def sea_mpc():
+    """MPC_PBX_Sea.Swell: the sea state (1 = normal swell, up to ~2.4 in a set of big waves) — written by APBXDirector"""
+    path = G + '/Materials/MPC_PBX_Sea'
+    c = unreal.load_asset(path) if EAL.does_asset_exist(path) else None
+    if not c:
+        c = unreal.AssetToolsHelpers.get_asset_tools().create_asset('MPC_PBX_Sea', G + '/Materials', unreal.MaterialParameterCollection, unreal.MaterialParameterCollectionFactoryNew())
+    p = unreal.CollectionScalarParameter(); p.set_editor_property('parameter_name', 'Swell'); p.set_editor_property('default_value', 1.0)
+    c.set_editor_property('scalar_parameters', [p]); EAL.save_loaded_asset(c)
+    return c
+
 def master_sea():
     m = B._fresh('M_PBX_Sea', G + '/Materials'); E = B._e
     _water_common(m)
     m.set_editor_property('tangent_space_normal', False)
     wp = E(m, unreal.MaterialExpressionWorldPosition, -1600, 0); tm = E(m, unreal.MaterialExpressionTime, -1600, 120)
     amp = B._scalar(m, 'WaveAmp', 1.0, -1600, 220)
-    ins = ['WP', 'T', 'Amp', 'Mode']
+    sw = E(m, unreal.MaterialExpressionCollectionParameter, -1600, 320)
+    sw.set_editor_property('collection', sea_mpc()); sw.set_editor_property('parameter_name', 'Swell')
+    ins = ['WP', 'T', 'Amp', 'Mode', 'Sw']
     nodes = []
     for mode, y in ((0, 0), (1, 400)):
         cu = _custom(m, _gerstner_code(), ins, -1200, y)
-        MEL.connect_material_expressions(wp, '', cu, 'WP'); MEL.connect_material_expressions(tm, '', cu, 'T'); MEL.connect_material_expressions(amp, '', cu, 'Amp')
+        MEL.connect_material_expressions(wp, '', cu, 'WP'); MEL.connect_material_expressions(tm, '', cu, 'T'); MEL.connect_material_expressions(amp, '', cu, 'Amp'); MEL.connect_material_expressions(sw, '', cu, 'Sw')
         c = E(m, unreal.MaterialExpressionConstant, -1400, y + 300); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
         nodes.append(cu)
     MEL.connect_material_property(nodes[0], '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
@@ -230,12 +242,14 @@ float3 n = normalize(Swell);
 float3 t = normalize(cross(float3(0, 1, 0), n)); float3 bt = cross(n, t);
 float3 N = normalize(t * d.x + bt * d.y + n * d.z);
 float depth = max(0.0, SD - PD);
-float foam = (1.0 - smoothstep(4.0, 38.0, depth)) * saturate(0.35 + 0.6 * (a.x * b.y));
+float sw = max(0.0, Sw - 1.0);   // swell sets: the surf line widens and whitens
+float foam = (1.0 - smoothstep(4.0, 38.0 + 70.0 * sw, depth)) * saturate(0.35 + 0.6 * (a.x * b.y) + 0.55 * sw);
 return Mode > 0.5 ? float3(foam, depth, 0) : N;
 """
     cn = []
     for mode, y in ((0, 800), (1, 1200)):
-        cu = _custom(m, code, ['WP', 'T', 'Rip', 'RipStr', 'Swell', 'SD', 'PD', 'Mode'], -700, y)
+        cu = _custom(m, code, ['WP', 'T', 'Rip', 'RipStr', 'Swell', 'SD', 'PD', 'Mode', 'Sw'], -700, y)
+        MEL.connect_material_expressions(sw, '', cu, 'Sw')
         MEL.connect_material_expressions(wp, '', cu, 'WP'); MEL.connect_material_expressions(tm, '', cu, 'T'); MEL.connect_material_expressions(o, '', cu, 'Rip')
         MEL.connect_material_expressions(B._scalar(m, 'RippleStrength', .32, -1000, y + 200), '', cu, 'RipStr')
         MEL.connect_material_expressions(nodes[1], '', cu, 'Swell'); MEL.connect_material_expressions(sd, '', cu, 'SD'); MEL.connect_material_expressions(pd, '', cu, 'PD')

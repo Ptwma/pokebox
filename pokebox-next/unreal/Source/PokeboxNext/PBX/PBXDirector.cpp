@@ -28,6 +28,8 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/FileHelper.h"
 #include "Misc/App.h"
@@ -1419,9 +1421,9 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	Bt.B.Team[0] = Mine; Bt.B.Team[1] = { Foe }; Bt.B.Act[0] = First;
 	Game->State->Seen.AddUnique(W->CardId);
 	SetupStage(W->GetActorLocation());
-	W->Mode = APBXEcho::EMode::Stage; W->PlaceAt(Bt.Bp); W->SetActorScale3D(FVector(StageFoeScale)); W->Flash(FLinearColor(1, 1, 1), 3.f);
+	W->Mode = APBXEcho::EMode::Stage; W->PlaceAt(Bt.Bp); W->FaceAt = Bt.A; W->SetActorScale3D(FVector(StageFoeScale)); W->Flash(FLinearColor(1, 1, 1), 3.f);
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
-	Partner->PlaceAt(Bt.A); Partner->PopIn(); Partner->SetActorScale3D(FVector(1.f));
+	Partner->PlaceAt(Bt.A); Partner->FaceAt = Bt.Bp; Partner->PopIn(); Partner->SetActorScale3D(FVector(1.f));
 	ClearStage({ W }); Partner->SetActorScale3D(FVector(1.f));
 	if (FX) { FX->SetBase(0, Bt.A, 110.f, PBXData::TypeColor(Mine[First].Type)); FX->SetBase(1, Bt.Bp, 140.f, PBXData::TypeColor(C->Type)); }
 	UI->Mode = EPBXUIMode::Battle; UI->Log = FString(); UI->bMoves = false;
@@ -1453,13 +1455,13 @@ void APBXDirector::StartTrainerBattle(FName Who)
 	Bt.B.Team[0] = Mine; Bt.B.Team[1] = Foes; Bt.B.Act[0] = First;
 	SetupStage(N->GetActorLocation());
 	APBXEcho* E = GetWorld()->SpawnActor<APBXEcho>(APBXEcho::StaticClass(), FTransform(Bt.Bp));
-	if (E) { E->Setup(C->Id, 95.f * C->Size); E->PlaceAt(Bt.Bp); E->SetActorScale3D(FVector(StageFoeScale)); E->Mode = APBXEcho::EMode::Stage; E->PopIn(); }
+	if (E) { E->Setup(C->Id, 95.f * C->Size); E->PlaceAt(Bt.Bp); E->FaceAt = Bt.A; E->SetActorScale3D(FVector(StageFoeScale)); E->Mode = APBXEcho::EMode::Stage; E->PopIn(); }
 	Bt.Foe = E; Bt.bOwnsFoe = true;
 	const FVector RhoAt = Bt.Bp + Bt.D * 230.f + Bt.Side * 120.f;
 	N->SetActorLocation(FVector(RhoAt.X, RhoAt.Y, PBXWorld::GroundZ(GetWorld(), RhoAt, 300.f, 1500.f, RhoAt.Z) + 92.f), false, nullptr, ETeleportType::TeleportPhysics);
 	N->FaceTowards(PlayerLoc(), true); N->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
 	Partner->Mode = APBXEcho::EMode::Stage; if (Mine[First].CardId != Partner->CardId) { const FPBXCardDef* PC2 = PBXData::Card(Mine[First].CardId); Partner->Setup(Mine[First].CardId, 95.f * PC2->Size); }
-	Partner->PlaceAt(Bt.A); Partner->PopIn(); Partner->SetActorScale3D(FVector(1.f));
+	Partner->PlaceAt(Bt.A); Partner->FaceAt = Bt.Bp; Partner->PopIn(); Partner->SetActorScale3D(FVector(1.f));
 	ClearStage({ E, N }); Partner->SetActorScale3D(FVector(1.f));
 	if (FX) { FX->SetBase(0, Bt.A, 110.f, PBXData::TypeColor(Mine[First].Type)); FX->SetBase(1, Bt.Bp, 140.f, PBXData::TypeColor(C->Type)); }
 	Player->PlayAction(TEXT("Spell_Simple_Idle_Loop"), true);
@@ -2462,12 +2464,12 @@ bool APBXDirector::InExtra(const FVector& Q) const
 
 // =================================================================== the rowboat (2026-10-23)
 // WAVES must match pbx_realism.WAVES (the sea material): (direction deg, wavelength m, amplitude m). Heights in cm.
-namespace PBXWaves { struct W { float Deg, Lam, Amp; }; static const W List[4] = { { 84.f, 23.f, .20f }, { 101.f, 13.5f, .11f }, { 70.f, 7.8f, .055f }, { 115.f, 4.6f, .025f } }; }
+namespace PBXWaves { struct W { float Deg, Lam, Amp; }; static const W List[4] = { { 84.f, 26.f, .30f }, { 101.f, 14.f, .15f }, { 70.f, 8.f, .07f }, { 115.f, 4.6f, .03f } }; }
 float APBXDirector::ShoreDamp(const FVector2D& XY)
 {
 	const float Bx = XY.X / 100.f, By = -XY.Y / 100.f;            // Blender metres (south = +)
 	const float Dc = By - (45.f + FMath::Max(0.f, FMath::Abs(Bx) - 110.f) * .55f);
-	return FMath::Lerp(.25f, 1.f, FMath::SmoothStep(5.f, 150.f, Dc));
+	return FMath::Lerp(.35f, 1.f, FMath::SmoothStep(5.f, 150.f, Dc));
 }
 float APBXDirector::WaveZ(const FVector2D& XY, float T) const
 {
@@ -2478,7 +2480,7 @@ float APBXDirector::WaveZ(const FVector2D& XY, float T) const
 		const FVector2D D(FMath::Cos(A), FMath::Sin(A));
 		Z += W.Amp * FMath::Sin(K * (FVector2D::DotProduct(D, Q) - C * T));
 	}
-	return -120.f + Z * 100.f * ShoreDamp(XY);
+	return -120.f + Z * 100.f * ShoreDamp(XY) * Swell;
 }
 float APBXDirector::BoatGroundZ(const FVector2D& XY) const
 {
@@ -2594,7 +2596,37 @@ void APBXDirector::SetupLife()
 			B.Rx = O->GetNumberField(TEXT("rx")); B.Ry = O->GetNumberField(TEXT("ry")); B.Period = O->GetNumberField(TEXT("period"));
 		}
 		if (A == Boat) { BoatXY = B.XY; BoatYaw = B.Yaw; }
+		// 2026-10-31 (user: fishing boats that go out, catch, come back and sell): the two fishing boats work a day cycle
+		if (Tag == FName(TEXT("PBX_Bob_1")))
+		{
+			B.Mode = 3; B.St = 0; B.Wait = 45.f; B.Berth = B.XY; B.BerthYaw = B.Yaw; B.PierX = -2500.f;   // the west pier (Blender x -25)
+			B.Ground = FVector2D(FMath::FRandRange(-6000.f, -3000.f), FMath::FRandRange(-21000.f, -17000.f));
+		}
+		else if (Tag == FName(TEXT("PBX_Bob_4")))
+		{
+			B.Mode = 3; B.St = 2; B.Wait = 150.f; B.Ground = B.XY;                                        // starts out at its grounds
+			B.Berth = FVector2D(630.f, -4500.f); B.BerthYaw = 90.f; B.PierX = 900.f;                   // west side of the main pier
+		}
 		SeaBoats.Add(B);
+	}
+	SeaMPC = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/PBX/Materials/MPC_PBX_Sea.MPC_PBX_Sea"));
+	// the fish stall on the quay behind the west pier, where the catch is sold
+	{
+		const FVector2D Q(-1900.f, -3300.f);
+		FHitResult H; float Z = 60.f;
+		if (W->LineTraceSingleByChannel(H, FVector(Q.X, Q.Y, 5000.f), FVector(Q.X, Q.Y, -2000.f), ECC_Visibility)) Z = H.ImpactPoint.Z;
+		StallPos = FVector(Q.X, Q.Y, Z);
+		if (UStaticMesh* SM = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Fantastic_Village_Pack/meshes/props/construction/SM_PROP_market_v01_01.SM_PROP_market_v01_01")))
+		{
+			AStaticMeshActor* St = W->SpawnActor<AStaticMeshActor>(StallPos, FRotator(0.f, 90.f, 0.f));
+			St->GetStaticMeshComponent()->SetStaticMesh(SM); St->SetActorScale3D(FVector(1.f));
+		}
+		if (UStaticMesh* Cr = Cast<UStaticMesh>(PBXAssets::FindByName(TEXT("/Game/PBX/PH/wooden_crate_01"), TEXT("wooden_crate_01"), UStaticMesh::StaticClass())))
+			for (int32 i = 0; i < 3; i++)
+			{
+				AStaticMeshActor* C = W->SpawnActor<AStaticMeshActor>(StallPos + FVector(-170.f + 60.f * i, 260.f + 25.f * (i % 2), 0.f), FRotator(0.f, 17.f * i, 0.f));
+				C->GetStaticMeshComponent()->SetStaticMesh(Cr);
+			}
 	}
 	PBXLOG("[PBX] life: %d windmill sails, %d boats", Sails.Num(), SeaBoats.Num());
 }
@@ -2606,28 +2638,148 @@ void APBXDirector::TickLife(float Dt)
 	const float Gust = 1.f + .18f * FMath::Sin(T * .21f) + .08f * FMath::Sin(T * .77f + 1.3f);
 	for (FSail& S : Sails) if (USceneComponent* C = S.C.Get())
 		C->AddLocalRotation(FQuat(FVector::YAxisVector, FMath::DegreesToRadians(S.Rate * Gust * Dt)));
+	// sea state: a moderate swell, and every ~3 minutes a set of bigger waves rolls in for ~40 s and breaks on the shore
+	{
+		const float Cyc = FMath::Fmod(T + 40.f, 185.f);
+		const float Env = FMath::SmoothStep(0.f, 14.f, Cyc) * (1.f - FMath::SmoothStep(30.f, 52.f, Cyc));
+		Swell = 1.f + 1.3f * Env + .12f * FMath::Sin(T * .043f);
+		if (UMaterialParameterCollection* M = Cast<UMaterialParameterCollection>(SeaMPC)) UKismetMaterialLibrary::SetScalarParameterValue(this, M, TEXT("Swell"), Swell);
+	}
+	const float Ds = FMath::Min(Dt, .05f);
 	for (FSeaBoat& B : SeaBoats)
 	{
 		AActor* A = B.A.Get(); if (!A || (bBoating && A == Boat)) continue;
-		FVector2D P = B.XY; float Yaw = B.Yaw, Heel = 0.f;
+		float Heel = 0.f;
+		const float Rough = FMath::Max(0.f, Swell - 1.f);
+		FVector2D P = B.XY; float Yaw = B.Yaw;
 		if (A == Boat) { P = BoatXY; Yaw = BoatYaw; }                                             // your rowboat: wherever you left it
-		if (B.Mode == 0) Yaw += 1.6f * FMath::Sin(T * .23f + B.Phase);                          // moored: tugging at its lines
+		if (B.Mode == 3) { TickFisher(B, Ds, T); P = B.XY; Yaw = B.Yaw; Heel = B.St == 1 || B.St == 3 ? FMath::Clamp(B.Spd / 380.f, 0.f, 1.f) * 2.5f : 0.f; }
+		if (B.Mode == 0 || (B.Mode == 3 && (B.St == 0 || B.St == 4)))                              // moored: tugging at its lines, more in a swell
+		{
+			Yaw += (1.6f + 4.f * Rough) * FMath::Sin(T * .23f + B.Phase);
+			const FVector2D F0(FMath::Cos(FMath::DegreesToRadians(Yaw)), FMath::Sin(FMath::DegreesToRadians(Yaw)));
+			P += F0 * (8.f + 30.f * Rough) * FMath::Sin(T * .31f + B.Phase * 1.7f);              // surging fore and aft
+		}
 		else if (B.Mode == 1)                                                                      // at anchor: swinging round slowly
 		{
 			Yaw += 9.f * FMath::Sin(T * .05f + B.Phase);
 			P += FVector2D(FMath::Cos(T * .05f + B.Phase), FMath::Sin(T * .037f + B.Phase)) * 60.f;
 		}
-		else                                                                                       // sailing a loop round the bay
+		else if (B.Mode == 2)                                                                      // sailing a loop round the bay
 		{
 			const float Wv = 2.f * PI / FMath::Max(30.f, B.Period), Ang = T * Wv + B.Phase;
 			P = B.C + FVector2D(B.Rx * FMath::Cos(Ang), B.Ry * FMath::Sin(Ang));
 			const FVector2D Vel(-B.Rx * FMath::Sin(Ang), B.Ry * FMath::Cos(Ang));
-			Yaw = FMath::RadiansToDegrees(FMath::Atan2(Vel.Y, Vel.X)); Heel = 9.f + 3.f * FMath::Sin(T * .4f);
+			Yaw = FMath::RadiansToDegrees(FMath::Atan2(Vel.Y, Vel.X)); Heel = 9.f + 3.f * FMath::Sin(T * .4f) + 4.f * Rough;
 		}
 		const FVector2D F(FMath::Cos(FMath::DegreesToRadians(Yaw)), FMath::Sin(FMath::DegreesToRadians(Yaw))), Rt(-F.Y, F.X);
 		const float H = B.Len * .45f, Wd = B.Beam * .5f;
 		const float Zb = WaveZ(P + F * H, T), Zs = WaveZ(P - F * H, T), Zp = WaveZ(P - Rt * Wd, T), Zr = WaveZ(P + Rt * Wd, T), Zc = WaveZ(P, T);
-		const float Pitch = FMath::RadiansToDegrees(FMath::Atan2(Zb - Zs, 2.f * H)), Roll = FMath::RadiansToDegrees(FMath::Atan2(Zr - Zp, 2.f * Wd)) + Heel;
-		A->SetActorLocationAndRotation(FVector(P.X, P.Y, (Zb + Zs + Zc) / 3.f + B.Z0), FRotator(Pitch, Yaw, Roll));
+		// small hulls roll more than big ones; a gust of extra roll in a swell
+		const float RollGain = B.Len < 600.f ? 1.5f : 1.1f;
+		const float TZ = (Zb + Zs + Zc) / 3.f + B.Z0;
+		const float TP = FMath::RadiansToDegrees(FMath::Atan2(Zb - Zs, 2.f * H));
+		const float TR = FMath::RadiansToDegrees(FMath::Atan2(Zr - Zp, 2.f * Wd)) * RollGain + Heel + Rough * 2.5f * FMath::Sin(T * .9f + B.Phase);
+		if (!B.bDyn) { B.Hz = TZ; B.Pt = TP; B.Ro = TR; B.bDyn = true; }
+		auto Spring = [Ds](float& X, float& V, float Tg, float K, float C) { V += (K * (Tg - X) - C * V) * Ds; X += V * Ds; };
+		Spring(B.Hz, B.Vz, TZ, 10.f, 3.4f); Spring(B.Pt, B.Vp, TP, 7.f, 2.4f); Spring(B.Ro, B.Vr, TR, 4.5f, 1.3f);
+		A->SetActorLocationAndRotation(FVector(P.X, P.Y, B.Hz), FRotator(B.Pt, Yaw, B.Ro));
+	}
+}
+
+bool APBXDirector::SteerBoat(FSeaBoat& B, float Dt)
+{
+	if (B.PathI >= B.Path.Num()) return true;
+	const FVector2D G = B.Path[B.PathI], D = G - B.XY; const float Dist = D.Size();
+	const bool bLast = B.PathI == B.Path.Num() - 1;
+	if (Dist < (bLast ? 90.f : 500.f)) { B.PathI++; if (B.PathI >= B.Path.Num()) { B.Spd = 0.f; return true; } return false; }
+	const float Want = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+	const float Diff = FMath::FindDeltaAngleDegrees(B.Yaw, Want);
+	B.Yaw = FMath::UnwindDegrees(B.Yaw + FMath::Clamp(Diff, -16.f * Dt, 16.f * Dt));
+	float Target = bLast ? FMath::Clamp(Dist / 5.f, 50.f, 360.f) : 360.f;               // ~7 knots, easing into the berth
+	if (FMath::Abs(Diff) > 50.f) Target *= .4f;                                              // slow down to turn
+	B.Spd = FMath::FInterpTo(B.Spd, Target, Dt, .5f);
+	B.XY += FVector2D(FMath::Cos(FMath::DegreesToRadians(B.Yaw)), FMath::Sin(FMath::DegreesToRadians(B.Yaw))) * B.Spd * Dt;
+	return false;
+}
+
+void APBXDirector::TickFisher(FSeaBoat& B, float Dt, float T)
+{
+	AActor* A = B.A.Get(); if (!A) return;
+	B.StT += Dt;
+	if (!B.Seller.IsValid())                     // the crew member who carries the catch ashore (crews are attached to their boat)
+		for (const TPair<FName, TObjectPtr<APBXNPC>>& It : NPCs)
+			if (APBXNPC* N = It.Value) if (N->GetAttachParentActor() == A)
+			{ B.Seller = N; B.SeatRel = N->GetRootComponent()->GetRelativeLocation(); B.SeatYaw = N->GetRootComponent()->GetRelativeRotation().Yaw; break; }
+	const float Side = B.PierX < B.Berth.X ? 1.f : -1.f;           // which way is open water from the berth (away from the pier)
+	const FVector2D Inner(-1000.f, -7300.f), Mouth(-200.f, -9300.f), Gate(-200.f, -11700.f);
+	auto CrewAnim = [&](const TCHAR* Clip) { for (const TPair<FName, TObjectPtr<APBXNPC>>& It : NPCs) if (APBXNPC* N = It.Value) if (N->GetAttachParentActor() == A) N->PlayAction(Clip, true, .4f); };
+	switch (B.St)
+	{
+	case 0:   // berthed
+		B.XY = FMath::Vector2DInterpTo(B.XY, B.Berth, Dt, 1.f);
+		if (B.StT > B.Wait)
+		{
+			B.Path = { B.Berth + FVector2D(Side * 700.f, -900.f), Inner, Mouth, Gate, B.Ground }; B.PathI = 0; B.Spd = 0.f;
+			B.St = 1; B.StT = 0.f; CrewAnim(TEXT("Idle_Rail_Loop"));
+			PBXLOG("[PBX] fishing boat %s heads out (trip %d)", *A->GetName(), B.Trips + 1);
+		}
+		break;
+	case 1:   // heading out
+		if (SteerBoat(B, Dt) || B.StT > 240.f) { B.St = 2; B.StT = 0.f; B.Wait = FMath::FRandRange(70.f, 120.f); CrewAnim(TEXT("Fixing_Kneeling")); }
+		break;
+	case 2:   // fishing: drifting slowly over the grounds, nets out
+		B.Yaw = FMath::UnwindDegrees(B.Yaw + 2.5f * Dt);
+		B.XY += FVector2D(FMath::Cos(FMath::DegreesToRadians(B.Yaw)), FMath::Sin(FMath::DegreesToRadians(B.Yaw))) * 35.f * Dt;
+		if (B.StT > B.Wait)
+		{
+			B.Path = { Gate, Mouth, Inner, B.Berth + FVector2D(Side * 700.f, -900.f), B.Berth }; B.PathI = 0;
+			B.St = 3; B.StT = 0.f; CrewAnim(TEXT("Idle_Rail_Loop"));
+			B.Ground = B.Ground + FVector2D(FMath::FRandRange(-1500.f, 1500.f), FMath::FRandRange(-1500.f, 1500.f));   // tomorrow: a different spot
+			PBXLOG("[PBX] fishing boat %s comes home with the catch", *A->GetName());
+		}
+		break;
+	case 3:   // coming home
+		if (SteerBoat(B, Dt) || B.StT > 260.f) { B.St = 4; B.StT = 0.f; B.Sub = 0; B.Yaw = FMath::UnwindDegrees(B.Yaw); CrewAnim(TEXT("Idle_Rail_Loop")); }
+		break;
+	case 4:   // unloading: one of the crew carries the catch to the stall, sells it, comes back aboard
+	{
+		B.XY = FMath::Vector2DInterpTo(B.XY, B.Berth, Dt, 1.f);
+		APBXNPC* N = B.Seller.Get();
+		if (!N || StallPos.IsZero()) { B.St = 0; B.StT = 0.f; B.Wait = 90.f; break; }
+		const FVector Deck(B.PierX, B.Berth.Y, 0.f), Root(B.PierX, -3950.f, 0.f), Shop(StallPos.X + 60.f, StallPos.Y - 230.f, StallPos.Z);
+		auto Ground = [this](FVector V) { FHitResult H; if (GetWorld()->LineTraceSingleByChannel(H, FVector(V.X, V.Y, V.Z + 3000.f), FVector(V.X, V.Y, -3000.f), ECC_Visibility)) V.Z = H.ImpactPoint.Z; return V; };
+		if (B.Sub == 0 && B.StT > 3.f)
+		{
+			B.Sub = 1;
+			N->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			N->SetActorEnableCollision(true); N->GetCharacterMovement()->SetMovementMode(MOVE_Walking); N->StopAction(.2f);
+			N->SetActorLocationAndRotation(Ground(Deck) + FVector(0, 0, 95.f), FRotator(0.f, 90.f, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+			TWeakObjectPtr<APBXNPC> WN = N; FSeaBoat* PB = &B;
+			N->WalkTo(Ground(Root), [WN, PB, Shop]() { if (APBXNPC* M = WN.Get()) M->WalkTo(Shop, [PB]() { PB->Sub = 2; PB->StT = 0.f; }); });
+		}
+		else if (B.Sub == 2)
+		{
+			N->FaceTowards(StallPos); N->PlayAction(TEXT("Idle_Talking_Loop"), true, .3f);
+			if (B.StT > 18.f)
+			{
+				B.Sub = 3; N->StopAction(.3f);
+				TWeakObjectPtr<APBXNPC> WN = N; FSeaBoat* PB = &B; const FVector R = Ground(Root), Dk = Ground(Deck);
+				N->WalkTo(R, [WN, PB, Dk]() { if (APBXNPC* M = WN.Get()) M->WalkTo(Dk, [PB]() { PB->Sub = 4; }); });
+			}
+		}
+		else if (B.Sub == 4)
+		{
+			N->GetCharacterMovement()->StopMovementImmediately(); N->GetCharacterMovement()->SetMovementMode(MOVE_None);
+			N->SetActorEnableCollision(false); N->StopTurning();
+			N->AttachToActor(A, FAttachmentTransformRules::KeepWorldTransform);
+			N->SetActorRelativeLocation(B.SeatRel); N->SetActorRelativeRotation(FRotator(0.f, B.SeatYaw, 0.f)); N->ReturnToIdle();
+			B.Trips++; B.St = 0; B.StT = 0.f; B.Wait = FMath::FRandRange(70.f, 140.f); B.BerthYaw = B.Yaw;
+			PBXLOG("[PBX] fishing boat %s: catch sold (trip %d)", *A->GetName(), B.Trips);
+		}
+		else if (B.StT > 120.f) { B.Sub = 4; }   // something got stuck: back aboard
+		break;
+	}
+	default: break;
 	}
 }
