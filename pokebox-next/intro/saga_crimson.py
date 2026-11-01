@@ -125,25 +125,35 @@ def crimson_sky(sc, top=(0.02, 0.0, 0.0), mid=(0.45, 0.02, 0.02), horizon=(1.0, 
     return w
 
 def splatter_image(name='SagaSplatter', w=1600, h=900, seed=5):
-    """ink splatter + coarse paper grain frame (white = clear, black = ink), concentrated at the edges"""
+    """a torn, dark ink border (noise-roughened) + fine ink spray clustered in two corners — white = clear
+    (r63 lesson: big round splats read as dirt on the lens, not ink)"""
     img = bpy.data.images.get(name)
     if img: return img
     import numpy as np
     rng = np.random.default_rng(seed)
-    v = np.ones((h, w), np.float32)
-    yy, xx = np.mgrid[0:h, 0:w]
-    for _ in range(260):
-        # bias toward the frame edges
-        e = rng.integers(0, 4)
-        cx = rng.uniform(0, w) if e < 2 else (rng.uniform(0, w * .12) if e == 2 else rng.uniform(w * .88, w))
-        cy = (rng.uniform(0, h * .12) if e == 0 else rng.uniform(h * .88, h)) if e < 2 else rng.uniform(0, h)
-        r = rng.uniform(1.5, 22) * (rng.random() ** 2.5) * 3 + 1
-        m = (xx - cx) ** 2 + (yy - cy) ** 2 < r * r
-        v[m] = np.minimum(v[m], rng.uniform(0.0, 0.25))
-    grain = rng.random((h, w)).astype(np.float32) * 0.10 + 0.90
-    edge = np.clip(1 - (np.maximum(np.abs(xx / w - .5), np.abs(yy / h - .5)) * 2 - .82) / .18, 0, 1) ** .5
-    v = v * grain * (0.35 + 0.65 * edge)
-    rgba = np.stack([v, v * 0.96, v * 0.92, np.ones_like(v)], -1).astype(np.float32)
+    def octave(sc):
+        g = rng.random((h // sc + 2, w // sc + 2))
+        yi = np.linspace(0, g.shape[0] - 1.001, h); xi = np.linspace(0, g.shape[1] - 1.001, w)
+        y0 = yi.astype(int); x0 = xi.astype(int); fy = (yi - y0)[:, None]; fx = (xi - x0)[None, :]
+        a = g[y0][:, x0]; b = g[y0][:, x0 + 1]; c = g[y0 + 1][:, x0]; d = g[y0 + 1][:, x0 + 1]
+        return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    n = octave(60) * .55 + octave(18) * .3 + octave(5) * .15
+    dx = np.minimum(xx, w - 1 - xx) / w; dy = np.minimum(yy, h - 1 - yy) / h
+    dist = np.minimum(dx * 1.0, dy * 1.6)                       # distance to the frame edge
+    border = np.clip((dist - 0.006 - n * 0.03) / 0.012, 0, 1)   # torn edge, ~1–4 % of the frame
+    v = 0.25 + 0.75 * border
+    for (cx, cy) in ((w * 0.04, h * 0.06), (w * 0.96, h * 0.93)):
+        for _ in range(140):
+            r = rng.gamma(1.2, 1.2) + 0.6
+            px = cx + rng.normal(0, w * 0.06); py = cy + rng.normal(0, h * 0.07)
+            x0, x1 = int(max(0, px - r - 1)), int(min(w, px + r + 2)); y0, y1 = int(max(0, py - r - 1)), int(min(h, py + r + 2))
+            if x0 >= x1 or y0 >= y1: continue
+            m = (xx[y0:y1, x0:x1] - px) ** 2 + (yy[y0:y1, x0:x1] - py) ** 2 < r * r
+            v[y0:y1, x0:x1][m] = np.minimum(v[y0:y1, x0:x1][m], 0.18)
+    grain = (rng.random((h, w)) * 0.06 + 0.94).astype(np.float32)
+    v = (v * grain).astype(np.float32)
+    rgba = np.stack([v, v * 0.97, v * 0.94, np.ones_like(v)], -1).astype(np.float32)
     img = bpy.data.images.new(name, w, h, alpha=True, float_buffer=True)
     img.pixels.foreach_set(rgba[::-1].ravel()); img.pack()
     return img

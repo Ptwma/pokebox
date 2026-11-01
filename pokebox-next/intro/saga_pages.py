@@ -715,6 +715,8 @@ def assemble(out_name='saga_intro.mp4'):
         m = strips.new_sound(f'MUS{k}', f, channel=5 + (k % 2), frame_start=f0)
         m.frame_final_end = min(m.frame_final_end, f1 + FPS)
         m.volume = gain
+    try: sc.render.image_settings.media_type = 'VIDEO'   # Blender 5.x: pick the video media type before FFMPEG
+    except Exception: pass
     sc.render.image_settings.file_format = 'FFMPEG'
     sc.render.ffmpeg.format = 'MPEG4'; sc.render.ffmpeg.codec = 'H264'; sc.render.ffmpeg.constant_rate_factor = 'HIGH'
     sc.render.ffmpeg.audio_codec = 'AAC'; sc.render.ffmpeg.audio_bitrate = 192
@@ -1335,6 +1337,8 @@ def assemble(out_name='saga_intro.mp4'):
         m = strips.new_sound(f'MUS{k}', f, channel=4 + (k % 2), frame_start=f0)
         if m.frame_final_end > f1 + fps: m.frame_final_end = f1 + fps
         m.volume = gain
+    try: sc.render.image_settings.media_type = 'VIDEO'   # Blender 5.x: pick the video media type before FFMPEG
+    except Exception: pass
     sc.render.image_settings.file_format = 'FFMPEG'
     sc.render.ffmpeg.format = 'MPEG4'; sc.render.ffmpeg.codec = 'H264'; sc.render.ffmpeg.constant_rate_factor = 'HIGH'
     sc.render.ffmpeg.audio_codec = 'AAC'; sc.render.ffmpeg.audio_bitrate = 192; sc.render.ffmpeg.audio_mixrate = 48000
