@@ -20,6 +20,10 @@
 
 ---
 
+## 0b. The intro (LOCKED 2026-11-01)
+"Crimson" saga film, 3:17 — see intro/SAGA_SCRIPT.md (narration + page list) and TOMORROW H9. Red / black / white,
+dark, one action burst (the Surge), drawn look made in Blender + Unreal FX. Music credit: Gregor Quendel (CC-BY 4.0).
+
 ## 1. Pitch
 The world was *written*. Every wave, stone and living thing is a word in the **Script**, a language older than memory.
 Some words became so full of meaning that they woke up: the **Sparks**. People learned to bond with them in a **Codex**,
