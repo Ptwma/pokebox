@@ -1340,3 +1340,27 @@ def assemble(out_name='saga_intro.mp4'):
     sc.render.ffmpeg.audio_codec = 'AAC'; sc.render.ffmpeg.audio_bitrate = 192; sc.render.ffmpeg.audio_mixrate = 48000
     sc.render.filepath = os.path.join(OUT, out_name)
     return sc.name, end, end / fps
+
+def write_subs(dest=None):
+    """subtitle cues for the game (Content/Movies/saga_intro_subs.json): each page's narration split into sentence
+    chunks (≤ ~95 chars), timed in proportion to their length across that line's real wav duration"""
+    import re
+    ns = {}; exec(open(os.path.join(SRC, 'tools', 'pbx_kokoro.py')).read().split("if __name__")[0].split("import soundfile")[0] + "\n", ns) if False else None
+    src = open(os.path.join(SRC, 'tools', 'pbx_kokoro.py'), encoding='utf-8').read()
+    lines = dict(re.findall(r"'(saga_\d+)':\s*(['\"])(.+?)\2,\n", src) and [(a, c) for a, b, c in re.findall(r"'(saga_\d+)':\s*(['\"])(.+?)\2,\n", src)])
+    fps = FPS // STEP; starts, end = timeline(); cues = []
+    for i, f0 in starts.items():
+        text = lines.get('saga_%02d' % i, '')
+        if not text: continue
+        sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        chunks, cur = [], ''
+        for s in sents:
+            if cur and len(cur) + len(s) > 95: chunks.append(cur); cur = s
+            else: cur = (cur + ' ' + s).strip()
+        if cur: chunks.append(cur)
+        t = (f0 - 1) / fps + 1.0; dur = vo_secs(i); total = sum(len(c) for c in chunks)
+        for c in chunks:
+            d = dur * len(c) / total; cues.append({'t0': round(t, 2), 't1': round(t + d + 0.25, 2), 'text': c}); t += d
+    dest = dest or os.path.join(OUT, 'saga_intro_subs.json')
+    json.dump(cues, open(dest, 'w', encoding='utf-8'), indent=1)
+    return dest, len(cues)

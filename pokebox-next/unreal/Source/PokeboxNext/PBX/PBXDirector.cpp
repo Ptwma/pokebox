@@ -1,6 +1,10 @@
 #include "PBX/PBXDirector.h"
 #include "PBX/PBXActors.h"
 #include "PBX/PBXAnim.h"
+#include "MediaPlayer.h"
+#include "MediaTexture.h"
+#include "MediaSoundComponent.h"
+#include "FileMediaSource.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
@@ -1945,8 +1949,56 @@ void APBXDirector::ShowMenu(EMenu M)
 	if (M != EMenu::None) UI->Mode = EPBXUIMode::Menu;
 }
 
+bool APBXDirector::PlayIntroMovie(TFunction<void()> OnEnd)
+{
+	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Movies/saga_intro.mp4"));
+	if (!FPaths::FileExists(File)) return false;
+	if (!MoviePlayer)
+	{
+		MoviePlayer = NewObject<UMediaPlayer>(this); MoviePlayer->PlayOnOpen = true; MoviePlayer->SetLooping(false);
+		MovieTex = NewObject<UMediaTexture>(this); MovieTex->AutoClear = true; MovieTex->SetMediaPlayer(MoviePlayer); MovieTex->UpdateResource();
+		MovieSound = NewObject<UMediaSoundComponent>(this); MovieSound->SetMediaPlayer(MoviePlayer); MovieSound->bAllowSpatialization = false;
+		MovieSound->RegisterComponent(); MovieSound->Start();
+		MovieSrc = NewObject<UFileMediaSource>(this);
+		UI->MovieBrush = MakeShared<FSlateBrush>(); UI->MovieBrush->SetResourceObject(MovieTex); UI->MovieBrush->ImageSize = FVector2D(1600, 900);
+	}
+	MovieSrc->SetFilePath(File);
+	// subtitles: [{"t0":s,"t1":s,"text":"..."}] written by intro/saga_pages.py assemble()
+	TSharedPtr<TArray<TTuple<float, float, FString>>> Subs = MakeShared<TArray<TTuple<float, float, FString>>>();
+	FString Js;
+	if (FFileHelper::LoadFileToString(Js, *(FPaths::ProjectContentDir() / TEXT("Movies/saga_intro_subs.json"))))
+	{
+		TArray<TSharedPtr<FJsonValue>> Arr; const TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(Js);
+		if (FJsonSerializer::Deserialize(R, Arr))
+			for (const TSharedPtr<FJsonValue>& V : Arr) { const TSharedPtr<FJsonObject> O = V->AsObject(); Subs->Add({ (float)O->GetNumberField(TEXT("t0")), (float)O->GetNumberField(TEXT("t1")), O->GetStringField(TEXT("text")) }); }
+	}
+	MusicHold = 9999.f; Music(TEXT(""));
+	TSharedPtr<bool> bOpened = MakeShared<bool>(false); TSharedPtr<int32> Shots = MakeShared<int32>(0);
+	Q([this, OnEnd, Subs, bOpened, Shots](float T)
+	{
+		if (!*bOpened) { *bOpened = true; MoviePlayer->OpenSource(MovieSrc); }
+		UI->Mode = EPBXUIMode::None; UI->Prompt.Empty(); UI->Fade = 0.f; UI->Letterbox = 0.f;
+		UI->MovieA = FMath::Clamp(T * 1.5f, 0.f, 1.f);
+		const float MT = (float)MoviePlayer->GetTime().GetTotalSeconds(), Dur = (float)MoviePlayer->GetDuration().GetTotalSeconds();
+		FString Sub; for (const auto& S : *Subs) if (MT >= S.Get<0>() && MT < S.Get<1>()) { Sub = S.Get<2>(); break; }
+		UI->Subtitle = Sub; UI->SubSpeaker.Empty(); UI->SubA = Sub.IsEmpty() ? FMath::Max(0.f, UI->SubA - .1f) : 1.f;
+		if (bAuto && *Shots < 2 && MT > (*Shots == 0 ? 6.f : 70.f)) { Shot(*Shots == 0 ? TEXT("c1_movie_a") : TEXT("c1_movie_b")); (*Shots)++; }
+		const bool bDone = (T > .4f && bConfirm) || (Dur > 1.f && MT >= Dur - .08f) || (T > 3.f && !MoviePlayer->IsPlaying() && !MoviePlayer->IsPreparing())
+			|| T > 420.f || (bAuto && T > 80.f);
+		bConfirm = false;
+		if (!bDone) return false;
+		MoviePlayer->Close(); UI->MovieA = 0.f; UI->Subtitle.Empty(); UI->SubA = 0.f;
+		PBXLOG("[PBX] saga intro movie ended at %.1f / %.1f s", MT, Dur);
+		if (OnEnd) OnEnd();
+		return true;
+	});
+	return true;
+}
+
 void APBXDirector::PlayIntro()
 {
+	// 2026-11-01: the drawn saga film replaces the in-engine shots whenever the video exists (fallback: the old film below)
+	if (PlayIntroMovie([this]() { ApplyBlanked(true); PlacePlayer(NewGameSpot); MusicHold = 0.f; })) return;
 	ApplyBlanked(false);   // the intro shows the harbour the day BEFORE the Blanking
 	UWorld* W = GetWorld();
 	const FPBXDoor* Lab = nullptr; for (const FPBXDoor& D : Doors) if (D.Id == TEXT("lab")) Lab = &D;

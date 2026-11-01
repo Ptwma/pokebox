@@ -1,4 +1,5 @@
 #include "PBX/PBXUI.h"
+#include "Widgets/Layout/SScaleBox.h"
 #include "PBX/PBXCore.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/SBoxPanel.h"
@@ -430,6 +431,16 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, FMath::Clamp(M->BigT, 0.f, 1.f))); })]
 		]
 
+		// ---------------- the saga intro video (full screen, scaled to fill, black behind)
+		+ SOverlay::Slot()
+		[
+			SNew(SBorder).BorderImage(White()).BorderBackgroundColor(FLinearColor::Black).Padding(0)
+			.Visibility_Lambda([this] { return M->MovieA > .001f && M->MovieBrush.IsValid() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			[
+				SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+				[ SNew(SImage).Image_Lambda([this] { return M->MovieBrush.Get(); }).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->MovieA)); }) ]
+			]
+		]
 		// ---------------- intro "ink myth" overlay (Sigil & Spark)
 		+ SOverlay::Slot()[ SNew(SPBXInk, M).Visibility(EVisibility::HitTestInvisible) ]
 		// ---------------- cutscene letterbox + caption (phase 6)

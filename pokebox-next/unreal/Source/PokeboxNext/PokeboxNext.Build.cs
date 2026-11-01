@@ -23,7 +23,10 @@ public class PokeboxNext : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"AssetRegistry",
-			"HairStrandsCore"
+			"HairStrandsCore",
+			"MediaAssets",
+			"Media",
+			"AudioMixer"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

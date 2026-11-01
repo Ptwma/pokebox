@@ -52,6 +52,7 @@ struct FPBXUIModel
 	// Sigil & Spark intro (2026-10-31): the "ink myth" overlay (glyphs drawing themselves) and timed subtitles
 	float Ink = 0.f, InkT = 0.f, InkWipe = 0.f; int32 InkMode = 0; FString InkTitle;
 	FString Subtitle, SubSpeaker; float SubA = 0.f;
+	TSharedPtr<FSlateBrush> MovieBrush; float MovieA = 0.f;   // the drawn saga intro (a video, 2026-11-01)
 	TArray<FPBXSpark> Sparks; FVector2D ViewSize = FVector2D(1920, 1080); float Time = 0.f;
 };
 

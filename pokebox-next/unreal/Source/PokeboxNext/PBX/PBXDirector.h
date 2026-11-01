@@ -129,6 +129,12 @@ private:
 	void ApplyBlanked(bool bOn);
 	bool bIntroShip = false; float IntroShipT0 = 0.f;
 	UPROPERTY() TArray<TObjectPtr<AActor>> IntroActors;
+	// the drawn saga intro (Blender video, 2026-11-01): Content/Movies/saga_intro.mp4 + saga_intro_subs.json
+	UPROPERTY() TObjectPtr<class UMediaPlayer> MoviePlayer;
+	UPROPERTY() TObjectPtr<class UMediaTexture> MovieTex;
+	UPROPERTY() TObjectPtr<class UMediaSoundComponent> MovieSound;
+	UPROPERTY() TObjectPtr<class UFileMediaSource> MovieSrc;
+	bool PlayIntroMovie(TFunction<void()> OnEnd);
 	void CheckCutscenes();   // first visits: the lighthouse island, the Lamplighters' Rest
 	bool Busy() const { return Queue.Num() > 0; }
 
