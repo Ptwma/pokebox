@@ -212,9 +212,12 @@ def _img(path, seq=None):
     if seq: im.source = 'SEQUENCE'
     return im
 
-def m_codex_page(name, script_idx, drawing=None, drain_keys=None, vis_keys=None, side=-1, seq_frames=1, seq_offset=0):
+def m_codex_page(name, script_idx, drawing=None, drain_keys=None, vis_keys=None, side=-1, seq_frames=1, seq_offset=0,
+                 reveal_keys=None, script_reveal_keys=None, glow_keys=None, blank=False, extra=None, centre=(0.5, 0.53), size=None):
     """lit aged paper + script + an optional pen drawing decal. Keyed inputs: Drain (0 alive → 1 Blanked),
-    Vis (drawing visible → 0 gone: the beast has left the paper)."""
+    Vis (drawing visible → 0 gone: the beast has left the paper). Full-intro extras: Reveal (the drawing draws itself),
+    ScriptReveal (lines of script write themselves top→bottom), Glow (the page wakes: ink turns to glowing gold),
+    blank (no script at all), extra = [(path, nframes, (u, v), size)] more drawings on the same page."""
     m = bpy.data.materials.new(name)
     nt, N, L = _nodes(m)
     out = N.new('ShaderNodeOutputMaterial'); bsdf = N.new('ShaderNodeBsdfPrincipled')
@@ -258,19 +261,30 @@ def m_codex_page(name, script_idx, drawing=None, drain_keys=None, vis_keys=None,
     # --- script ink (alpha) — sepia, drains to grey and lightens
     img = _img(os.path.join(TEX, f'script_{script_idx % 8}.png'))
     ink_col = mix((0.16, 0.08, 0.05), (0.42, 0.41, 0.40), drain.outputs[0])
-    if img:
+    if img and not blank:
         ti = N.new('ShaderNodeTexImage'); ti.image = img; L.new(uvn, ti.inputs['Vector'])
         a_s = math_('MULTIPLY', ti.outputs['Alpha'], math_('SUBTRACT', 0.9, math_('MULTIPLY', drain.outputs[0], 0.5)))
+        if script_reveal_keys:
+            sr = N.new('ShaderNodeValue'); sr.label = 'ScriptReveal'; keyed_factor(sr.outputs[0], script_reveal_keys)
+            prog = math_('ADD', math_('SUBTRACT', 1.0, sep.outputs['Y']), math_('MULTIPLY', sep.outputs['X'], 0.06))
+            a_s = math_('MULTIPLY', a_s, math_('LESS_THAN', prog, math_('MULTIPLY', sr.outputs[0], 1.08)))
         paper = mix(paper, ink_col, a_s)
+    glow = None
+    if glow_keys:
+        glow = N.new('ShaderNodeValue'); glow.label = 'Glow'; keyed_factor(glow.outputs[0], glow_keys)
+    rev = None
+    if reveal_keys:
+        rev = N.new('ShaderNodeValue'); rev.label = 'Reveal'; keyed_factor(rev.outputs[0], reveal_keys)
+    ink_total = None
     # --- the pen drawing decal (window centred on the page, DECAL wide)
-    if drawing:
-        path, nf = drawing
+    decals = ([(drawing[0], drawing[1], centre, size or DECAL)] if drawing else []) + list(extra or [])
+    for path, nf, (cu, cv), dsz in decals:
         dimg = _img(path, seq=(nf > 1))
         if dimg:
             mp = N.new('ShaderNodeMapping'); mp.vector_type = 'POINT'
             # page UV (0..1) → decal UV: centre (0.5, 0.53), size DECAL/PAGE_W × DECAL/PAGE_H
-            mp.inputs['Scale'].default_value = (PAGE_W / DECAL, PAGE_H / DECAL, 1)
-            mp.inputs['Location'].default_value = (0.5 - 0.5 * PAGE_W / DECAL, 0.5 - 0.53 * PAGE_H / DECAL, 0)
+            mp.inputs['Scale'].default_value = (PAGE_W / dsz, PAGE_H / dsz, 1)
+            mp.inputs['Location'].default_value = (0.5 - cu * PAGE_W / dsz, 0.5 - cv * PAGE_H / dsz, 0)
             L.new(uvn, mp.inputs['Vector'])
             def sample(vec):
                 t = N.new('ShaderNodeTexImage'); t.image = dimg; t.extension = 'EXTEND'; t.interpolation = 'Cubic'   # white border repeats → no dark seams
@@ -303,7 +317,17 @@ def m_codex_page(name, script_idx, drawing=None, drain_keys=None, vis_keys=None,
             smear = mix((1, 1, 1), t2.outputs['Color'], math_('MULTIPLY', drain.outputs[0], 0.35))
             dl = mix(dl, smear, 1.0, 'MULTIPLY')
             # vis 1 → 0: the drawing leaves; a faint ink ghost stays where it was
-            dv = mix((1, 1, 1), dl, math_('ADD', math_('MULTIPLY', vis.outputs[0], 0.92), 0.08))
+            vf = math_('ADD', math_('MULTIPLY', vis.outputs[0], 0.92), 0.08)
+            if rev is not None:   # the pen draws it: a ragged diagonal wipe in decal space
+                sd = N.new('ShaderNodeSeparateXYZ'); L.new(mp.outputs[0], sd.inputs[0])
+                rn = N.new('ShaderNodeTexNoise'); rn.inputs['Scale'].default_value = 18; L.new(uvn, rn.inputs['Vector'])
+                pr = math_('ADD', math_('MULTIPLY', math_('ADD', sd.outputs['X'], math_('SUBTRACT', 1.0, sd.outputs['Y'])), 0.5), math_('MULTIPLY', rn.outputs['Fac'], 0.18))
+                vf = math_('MULTIPLY', vf, math_('LESS_THAN', pr, math_('MULTIPLY', rev.outputs[0], 1.3)))
+            dv = mix((1, 1, 1), dl, vf)
+            ibw = N.new('ShaderNodeRGBToBW'); L.new(dv, ibw.inputs[0]); ink_amt = math_('SUBTRACT', 1.0, ibw.outputs[0])
+            ink_total = ink_amt if ink_total is None else math_('MAXIMUM', ink_total, ink_amt)
+            if glow is not None:   # the bond wakes: the drawing's ink turns to gold
+                dv = mix(dv, (0.95, 0.55, 0.12), math_('MULTIPLY', ink_amt, glow.outputs[0]))
             paper = mix(paper, dv, 1.0, 'MULTIPLY')
     # --- the page itself drains to dead grey paper
     pg = N.new('ShaderNodeRGBToBW'); L.new(paper, pg.inputs[0])
@@ -313,6 +337,11 @@ def m_codex_page(name, script_idx, drawing=None, drain_keys=None, vis_keys=None,
     L.new(final, bsdf.inputs['Base Color'])
     bump = N.new('ShaderNodeBump'); bump.inputs['Strength'].default_value = 0.06; L.new(fb.outputs['Fac'], bump.inputs['Height'])
     L.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
+    if glow is not None:   # glowing gold ink + a warm wash over the whole page
+        em = math_('MULTIPLY', glow.outputs[0], math_('ADD', math_('MULTIPLY', ink_total, 1.5) if ink_total is not None else 0.0, 0.10))
+        for nm in ('Emission Color', 'Emission'):
+            if nm in bsdf.inputs: bsdf.inputs[nm].default_value = (1.0, 0.52, 0.12, 1); break
+        if 'Emission Strength' in bsdf.inputs: L.new(em, bsdf.inputs['Emission Strength'])
     L.new(bsdf.outputs[0], out.inputs['Surface'])
     return m
 
@@ -359,7 +388,7 @@ def decal_world(page_obj, side):
 def crack_curve(name, page_obj, side, seed, f0, f1, centre=(0.5, 0.5)):
     """a crack writing itself across a drained page + a pale fibre edge beside it"""
     rnd = random.Random(seed); out = []
-    for k, (col, depth, off) in enumerate((((0.12, 0.11, 0.10), 0.0011, 0.0), ((0.92, 0.90, 0.86), 0.0005, 0.0018))):
+    for k, (col, depth, off) in enumerate((((0.20, 0.18, 0.17), 0.0006, 0.0), ((0.62, 0.60, 0.57), 0.00025, 0.0012))):
         rr = random.Random(seed)
         cu = bpy.data.curves.new(f'{name}{k}', 'CURVE'); cu.dimensions = '3D'; cu.bevel_depth = depth
         for s in range(5):
@@ -367,10 +396,10 @@ def crack_curve(name, page_obj, side, seed, f0, f1, centre=(0.5, 0.5)):
             u, v = centre[0] + rr.uniform(-0.25, 0.25), centre[1] + rr.uniform(-0.3, 0.3); a = rr.uniform(0, 2 * math.pi)
             for i in range(n):
                 x = side * (u if side > 0 else 1 - u) * PAGE_W; y = (v - 0.5) * PAGE_H
-                sp.points[i].co = (x + off, y + off, page_z(x) + 0.0012, 1)
+                sp.points[i].co = (x + off, y + off, page_z(x) + 0.0004, 1)
                 a += rr.uniform(-0.8, 0.8); st = rr.uniform(0.03, 0.08)
                 u += math.cos(a) * st * (1 if side > 0 else -1) * 0.7; v += math.sin(a) * st
-        o = bpy.data.objects.new(f'{name}{k}', cu); link(o); o.parent = page_obj
+        o = bpy.data.objects.new(f'{name}{k}', cu); link(o); o.parent = page_obj; o.visible_shadow = False
         cu.materials.append(glow(f'LB_Crack{k}', col, 1.0)); write_on(o, f0 + k * 3, f1 + k * 3); out.append(o)
     return out
 
@@ -575,7 +604,7 @@ def lb_build():
     fx += drops + reds
     # the red eye opens in the drawing (a glint on the page, before the tear)
     eye = sphere('EyeGlint', 0.012, (0, 0, 0), glow('LB_Eye', (1.0, 0.04, 0.02), 9.0)); fx.append(eye)
-    eye.location = D0 + Vector((-0.17, 0.13, 0.004))
+    eye.location = D0 + Vector((-0.143, 0.014, -0.002)); eye.visible_shadow = False   # on the drawing's eye (measured in d_0001)
     kf(eye, 'scale', EYE - 1, (0, 0, 0)); kf(eye, 'scale', EYE + 2, (1.8, 1.8, 0.4)); kf(eye, 'scale', EYE + 5, (1, 1, 0.3)); kf(eye, 'scale', TEAR - 1, (1.2, 1.2, 0.3))
     kf(eye, 'scale', TEAR, (0, 0, 0))
     # lights for B: one candle, a cold fill, and the red flash behind the book at the tear

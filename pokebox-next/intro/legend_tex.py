@@ -115,10 +115,28 @@ def splatter(W, H, seed, out, n_big=5):
     rgba = np.zeros((H, W, 4), np.uint8); rgba[..., 0] = 4; rgba[..., 1] = 2; rgba[..., 2] = 2; rgba[..., 3] = np.asarray(im)
     Image.fromarray(rgba, 'RGBA').save(out)
 
+def mask(W, H, out, seed=3):
+    """the White Page: a blank white mask — smooth oval, two narrow eye slits, no mouth; faint brush texture"""
+    S = 2; im = Image.new('L', (W * S, H * S), 0); dr = ImageDraw.Draw(im)
+    dr.ellipse([W * S * 0.12, H * S * 0.04, W * S * 0.88, H * S * 0.98], fill=255)
+    dr.polygon([(W * S * 0.12, H * S * 0.45), (W * S * 0.5, H * S * 0.33), (W * S * 0.88, H * S * 0.45), (W * S * 0.5, H * S * 0.20)], fill=255)
+    for sx in (-1, 1):
+        cx = W * S * (0.5 + sx * 0.17); cy = H * S * 0.43
+        dr.polygon([(cx - sx * W * S * 0.11, cy + H * S * 0.012), (cx + sx * W * S * 0.08, cy - H * S * 0.03), (cx + sx * W * S * 0.1, cy + H * S * 0.01),
+                    (cx - sx * W * S * 0.06, cy + H * S * 0.035)], fill=0)
+    im = im.filter(ImageFilter.GaussianBlur(1.2 * S)).resize((W, H), Image.LANCZOS)
+    a = np.asarray(im).astype(np.float32)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    shade = 0.82 + 0.18 * np.clip(1 - np.hypot((xx - W * 0.42) / W, (yy - H * 0.38) / H) * 1.6, 0, 1)
+    rgba = np.zeros((H, W, 4), np.uint8); v = np.clip(shade * 255, 0, 255).astype(np.uint8)
+    rgba[..., 0] = v; rgba[..., 1] = v; rgba[..., 2] = (v * 0.98).astype(np.uint8); rgba[..., 3] = a.astype(np.uint8)
+    Image.fromarray(rgba, 'RGBA').save(out)
+
 if __name__ == '__main__':
     out = sys.argv[1]; os.makedirs(out, exist_ok=True)
     for i in range(8):
         page_script(1400, 1960, 100 + i, os.path.join(out, f'script_{i}.png'))
     splatter(1920, 1080, 7, os.path.join(out, 'splatter_a.png'), 4)
     splatter(1920, 1080, 11, os.path.join(out, 'splatter_b.png'), 6)
+    mask(512, 680, os.path.join(out, 'mask.png'))
     print('ok')
