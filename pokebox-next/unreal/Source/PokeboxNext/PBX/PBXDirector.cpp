@@ -1886,7 +1886,7 @@ void APBXDirector::ShowMenu(EMenu M)
 		UI->Fade = 0.f;
 		const bool bSave = Game->HasSave();
 		OpenChoice(TEXT("SIGIL & SPARK"), TEXT("Chapter 1 · The Blank Page"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Your Codex is blank. Write it.")), Opt(TEXT("Credits"), TEXT("music, voices, tools")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
-			[this](int32 i)
+			[this, Opt](int32 i)
 			{
 				if (i == 0) ContinueGame();
 				else if (i == 1) ShowMenu(EMenu::Gender);
