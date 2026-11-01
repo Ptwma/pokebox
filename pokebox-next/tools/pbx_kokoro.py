@@ -40,6 +40,14 @@ LINES = {
     'saga_14': 'And one book, on one cold morning... opened blank.',
     'saga_15': 'That same night, white sails came out of the fog. And by morning, half of Lumen Harbor had forgotten its own name.',
     'saga_16': "Some books are blank because they are broken. Some books are blank... because they haven't been written yet.",
+    # v4 legend intro (60–90 s, council 2026-11-01): the everyday (Rite of Pages 1·2·3) + ONE hint (an unwritten Codex)
+    'leg_01': 'Long ago, the world was written. Some of its words woke up, with teeth, and wings, and wills of their own. We call them Sparks.',
+    'leg_02': 'They light our lamps. They guard our boats. They sleep beside our fires.',
+    'leg_03': 'On this island, every child turns sixteen with a Codex in their hands... and opens it before the whole town.',
+    'leg_04': 'Most wake a single glowing page. One Spark. One bond. A good life. The lucky wake two. Once in a generation... three. And the town speaks that name for years. That is how it has always been.',
+    'leg_05': 'But some books are found grey. Drained. Their Sparks gone quiet. Their owners... no longer sure of their own names.',
+    'leg_06': 'And the oldest keepers whisper of one more kind of book. One that opens with no light at all. Not burned. Not erased. Unwritten. And whatever hunts the grey... is hunting it too.',
+    'leg_08': 'Tonight, a Codex opens.',
 }
 PAUSE_SENTENCE = 0.42      # seconds between sentences (an ellipsis inside a sentence is voiced by the model itself)
 VOICE_DEFAULT = 'am_michael*0.7+am_onyx*0.3'
