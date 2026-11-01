@@ -637,13 +637,20 @@ def c16():
     glow_key(gw.data.materials[0], [(t_hit + 30, 0), (t_hit + 40, 14), (F, 8)])
     ignite(socks[0], t_hit + 40, (1.0, 0.25, 0.08), 60, 20)
     embers(160, (-.6, -.5, .1), (.4, .5, .5), t_hit + 40, F, (1, .45, .2), seed=16, rise=1.4, size=.004, strength=9)
-    tt = text3d('Title', 'SIGIL  &  SPARK', (0, 0.15, 0.9), 0.11, glow('MR_TitleW', WHITE, 2.4)); tt.rotation_euler = (math.radians(55), 0, 0)
+    tt = text3d('Title', 'SIGIL  &  SPARK', (0, 0.15, 0.9), 0.095, glow('MR_TitleW', WHITE, 2.4)); tt.rotation_euler = (math.radians(55), 0, 0)
     kfs(tt, 'scale', [(title_t, (0, 0, 0)), (title_t + 8, (1.08, 1.08, 1.08)), (title_t + 20, (1, 1, 1))])
-    sl = glyph('TitleSlash', 99, (0, 0.06, 0.82), 0.5, glow('MR_Slash', RED, 2.5), depth=0.004); sl.rotation_euler = (math.radians(55), 0, 0)
+    # red brush slash under the title (r63 fix: the old glyph was baked at world coords, so the X-rotation threw it off-frame)
+    scu = bpy.data.curves.new('TitleSlash', 'CURVE'); scu.dimensions = '3D'; scu.bevel_depth = 0.011; scu.bevel_resolution = 3; scu.resolution_u = 24
+    ssp = scu.splines.new('BEZIER'); ssp.bezier_points.add(2)
+    for bp, co, rad in zip(ssp.bezier_points, [(-0.36, 0, -0.012), (0.0, 0, 0.004), (0.37, 0, 0.022)], (0.15, 1.0, 0.25)):
+        bp.co = co; bp.handle_left_type = bp.handle_right_type = 'AUTO'; bp.radius = rad
+    sl = bpy.data.objects.new('TitleSlash', scu); link(sl); scu.materials.append(glow('MR_Slash', RED, 2.5))
+    sl.location = (0, 0.12, 0.815)
     write_on(sl, title_t + 6, title_t + 18)
     c = cam('Cam', (0, -0.9, 1.1), (0, 0, 0.1), 42)
-    cam_move(c, [(1, (0.1, -0.6, 0.85)), (t_hit, (0, -0.42, 0.55)), (title_t, (0, -0.5, 0.75)), (F, (0, -1.1, 1.4))],
-             [(1, (-0.2, 0, 0.1)), (t_hit, (-0.2, 0, 0.12)), (title_t, (-0.1, 0.05, 0.3)), (F, (0, 0.15, 0.8))])
+    # the title must HOLD (user feedback r63: it drifted off-frame after ~2 s): fast pull-back, then a still frame
+    cam_move(c, [(1, (0.1, -0.6, 0.85)), (t_hit, (0, -0.42, 0.55)), (title_t - 6, (0, -0.5, 0.75)), (title_t + 6, (0, -1.0, 1.32)), (F, (0, -1.04, 1.36))],
+             [(1, (-0.2, 0, 0.1)), (t_hit, (-0.2, 0, 0.12)), (title_t - 6, (-0.1, 0.05, 0.3)), (title_t + 6, (0, 0.13, 0.84)), (F, (0, 0.13, 0.84))])
     speedlines(c, t_hit + 40, t_hit + 56, (0.02, 0, 0), 0.8)
     shake(c, t_hit + 40, t_hit + 52, 0.01, seed=16)
 

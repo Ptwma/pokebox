@@ -1885,8 +1885,20 @@ void APBXDirector::ShowMenu(EMenu M)
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) { Cam->SetActorLocationAndRotation(FVector(4300, -3600, 1900), FRotator(-22, 138, 0)); PC->SetViewTarget(Cam); }
 		UI->Fade = 0.f;
 		const bool bSave = Game->HasSave();
-		OpenChoice(TEXT("SIGIL & SPARK"), TEXT("Chapter 1 · The Blank Page"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Your Codex is blank. Write it.")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
-			[this](int32 i) { if (i == 0) ContinueGame(); else if (i == 1) ShowMenu(EMenu::Gender); else FPlatformMisc::RequestExit(false); });
+		OpenChoice(TEXT("SIGIL & SPARK"), TEXT("Chapter 1 · The Blank Page"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Your Codex is blank. Write it.")), Opt(TEXT("Credits"), TEXT("music, voices, tools")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
+			[this](int32 i)
+			{
+				if (i == 0) ContinueGame();
+				else if (i == 1) ShowMenu(EMenu::Gender);
+				else if (i == 2)
+				{
+					// CC-BY 4.0 attribution for the intro music (required by the licence) + the rest of the credits
+					OpenChoice(TEXT("CREDITS"), TEXT("Music: Gregor Quendel – Cinematic Trailer Music (CC-BY 4.0) · Intro theme: nene (CC0)\nNarration: Kokoro TTS (Apache 2.0) · Effects: Unreal Niagara Examples, Vefects (free) · Textures: Poly Haven (CC0)\nMade with Unreal Engine and Blender"),
+						{ Opt(TEXT("Back"), TEXT("")) }, false, [this](int32) { ShowMenu(EMenu::Title); });
+					UI->Selected = 0;
+				}
+				else FPlatformMisc::RequestExit(false);
+			});
 		if (Game->HasSave()) UI->Selected = 0; else UI->Selected = 1;
 		break;
 	}
