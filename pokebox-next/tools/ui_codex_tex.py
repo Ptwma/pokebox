@@ -41,7 +41,7 @@ def flourish(dr, cx, cy, sx, sy, s, col, w):
 
 def parchment(W, H, seed, out, frame=(46, 34, 30), frame_w=(3, 1), crimson=False):
     rnd = random.Random(seed)
-    n = fbm(H, W, seed)
+    n = fbm(H, W, seed, ((max(8, W // 8), .5), (max(4, W // 20), .25), (4, .15), (2, .1)))
     base = np.array([236, 223, 192], np.float32)                  # warm parchment
     rgb = base[None, None, :] * (0.86 + 0.22 * n[..., None])
     fib = noise(H, W, 2, seed + 9)                                 # fibres: fine streaks
@@ -53,17 +53,17 @@ def parchment(W, H, seed, out, frame=(46, 34, 30), frame_w=(3, 1), crimson=False
     # burnt, darker edges
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     d = np.minimum(np.minimum(xx, W - 1 - xx), np.minimum(yy, H - 1 - yy))
-    burn = np.clip(1 - d / 38, 0, 1) ** 1.6 * (0.7 + 0.6 * n)
+    burn = np.clip(1 - d / max(10, W * 0.07), 0, 1) ** 1.6 * (0.7 + 0.6 * n)
     rgb *= (1 - 0.42 * burn[..., None]); rgb[..., 2] *= (1 - 0.12 * burn)
-    a = deckle(H, W, 5, seed + 50)
+    a = deckle(H, W, max(2, W // 100), seed + 50, rough=max(2.0, W / 90))
     im = Image.fromarray(np.dstack([np.clip(rgb, 0, 255), a * 255]).astype(np.uint8), 'RGBA')
     # the ruled frame: drawn on a separate layer, then multiplied so the ink sits IN the paper
     ink = Image.new('L', (W, H), 0); dr = ImageDraw.Draw(ink)
     for k, (m, w) in enumerate(zip(frame[:2], frame_w)):
-        wobble_rect(dr, m, m, W - 1 - m, H - 1 - m, 235 if k == 0 else 170, w, rnd)
+        wobble_rect(dr, m, m, W - 1 - m, H - 1 - m, 235 if k == 0 else 170, w, rnd, amp=0.5 if W < 300 else 1.2)
     if crimson:
         for (cx, cy, sx, sy) in ((frame[0], frame[0], 1, 1), (W - 1 - frame[0], frame[0], -1, 1), (frame[0], H - 1 - frame[0], 1, -1), (W - 1 - frame[0], H - 1 - frame[0], -1, -1)):
-            flourish(dr, cx, cy, sx, sy, 34, 240, 3)
+            flourish(dr, cx, cy, sx, sy, max(10, W * 0.066), 240, 2 if W < 300 else 3)
     ink = ink.filter(ImageFilter.GaussianBlur(0.6))
     ia = np.asarray(ink).astype(np.float32) / 255 * (0.8 + 0.3 * noise(H, W, 3, seed + 70))
     col = np.array([150, 22, 18] if crimson else [40, 26, 18], np.float32)
@@ -125,8 +125,9 @@ def vignette(W, H, out):
 
 if __name__ == '__main__':
     out = sys.argv[1]; os.makedirs(out, exist_ok=True)
-    parchment(512, 512, 1, os.path.join(out, 'ui_parchment.png'))
-    parchment(512, 512, 2, os.path.join(out, 'ui_parchment_sel.png'), frame=(40, 30, 26), frame_w=(5, 2), crimson=True)
+    # r59: drawn at native size (Slate's 9-slice margins follow the texture's own pixels): 192 px, frame 15 px in, margin 24 px
+    parchment(192, 192, 1, os.path.join(out, 'ui_parchment.png'), frame=(15, 10, 8), frame_w=(2, 1))
+    parchment(192, 192, 2, os.path.join(out, 'ui_parchment_sel.png'), frame=(14, 9, 8), frame_w=(3, 1), crimson=True)
     ink_wash(512, 256, 3, os.path.join(out, 'ui_inkwash.png'))
     brush_stroke(1024, 128, 4, os.path.join(out, 'ui_stroke.png'))
     wax_seal(128, 5, os.path.join(out, 'ui_seal.png'))

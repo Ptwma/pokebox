@@ -20,8 +20,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Fonts/FontMeasure.h"
 #include "Rendering/SlateRenderer.h"
-#include "Brushes/SlateBoxBrush.h"
-#include "Brushes/SlateImageBrush.h"
+#include "ImageUtils.h"
 
 static const FLinearColor InkC(.03f, .025f, .04f);
 static const FLinearColor PaperC(1.f, .98f, .93f);
@@ -75,14 +74,31 @@ static const FSlateBrush* Codex(const TCHAR* Name, FVector2f Size, float Margin 
 	const FString Key = FString::Printf(TEXT("%s|%.0f|%.0f|%.3f"), Name, Size.X, Size.Y, Margin);
 	if (const TSharedPtr<FSlateBrush>* F = Cache.Find(Key)) return F->Get();
 	const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("PBX/UI") / (FString(Name) + TEXT(".png")));
+	// r59 test: path-named Slate brushes are never loaded outside a registered style (they drew as plain white), so the
+	// PNG is decoded into a transient UTexture2D (rooted, one per file) and the brush points at that object.
+	static TMap<FString, UTexture2D*> Tex;
+	UTexture2D* T = nullptr;
+	if (UTexture2D** F = Tex.Find(Path)) T = *F;
+	else
+	{
+		T = FPaths::FileExists(Path) ? FImageUtils::ImportFileAsTexture2D(Path) : nullptr;
+		if (T) { T->AddToRoot(); T->Filter = TF_Trilinear; }
+		else UE_LOG(LogTemp, Warning, TEXT("[PBXASSET] UI texture %s missing"), *Path);
+		Tex.Add(Path, T);
+	}
 	TSharedPtr<FSlateBrush> B;
-	if (!FPaths::FileExists(Path)) { UE_LOG(LogTemp, Warning, TEXT("[PBXASSET] UI texture %s missing"), *Path); B = MakeShared<FSlateRoundedBoxBrush>(GlassC, 10.f, RimC, 1.5f); }
-	else if (Margin > 0.f) B = MakeShared<FSlateBoxBrush>(Path, Size, FMargin(Margin));
-	else B = MakeShared<FSlateImageBrush>(Path, Size);
+	if (!T) B = MakeShared<FSlateRoundedBoxBrush>(GlassC, 10.f, RimC, 1.5f);
+	else
+	{
+		B = MakeShared<FSlateBrush>(); B->SetResourceObject(T); B->ImageSize = FVector2D(Size);
+		B->DrawAs = Margin > 0.f ? ESlateBrushDrawType::Box : ESlateBrushDrawType::Image; B->Margin = FMargin(Margin);
+	}
 	Cache.Add(Key, B);
 	return B.Get();
 }
-static const FSlateBrush* Parchment(bool bSel = false, float Px = 256.f) { return Codex(bSel ? TEXT("ui_parchment_sel") : TEXT("ui_parchment"), FVector2f(Px, Px), .12f); }
+// r59: 9-slice margins follow the texture's own pixels, so the parchment is authored at its draw size: 192 px, ruled frame
+// 15 px in, 24 px corners. Every parchment widget keeps its text >= 28 px from the edge.
+static const FSlateBrush* Parchment(bool bSel = false, float = 0.f) { return Codex(bSel ? TEXT("ui_parchment_sel") : TEXT("ui_parchment"), FVector2f(192.f, 192.f), .125f); }
 static const FSlateBrush* InkWash() { return Codex(TEXT("ui_inkwash"), FVector2f(256.f, 128.f), .14f); }
 static const FSlateBrush* Stroke() { return Codex(TEXT("ui_stroke"), FVector2f(512.f, 64.f), 0.f); }
 static const FSlateBrush* StrokeBox() { return Codex(TEXT("ui_stroke"), FVector2f(256.f, 32.f), .08f); }   // bars: keeps the tapered ends
@@ -255,8 +271,7 @@ TSharedRef<SWidget> SPBXHud::Panel(TSharedRef<SWidget> Content, FLinearColor Fil
 	// light fills = a parchment page (ink text), dark fills = an ink-wash strip (ivory text). Small panels use a smaller
 	// 9-slice so the ruled frame never touches the text.
 	const bool bLight = Fill.R + Fill.G + Fill.B > 1.5f;
-	const float Px = Pad >= 18.f ? 256.f : 200.f;
-	return SNew(SBorder).BorderImage(bLight ? Parchment(false, Px) : InkWash()).Padding(FMargin(Pad + Px * .075f, Pad + Px * .055f))[Content];
+	return SNew(SBorder).BorderImage(bLight ? Parchment() : InkWash()).Padding(FMargin(FMath::Max(Pad + 16.f, 30.f), FMath::Max(Pad + 12.f, 26.f)))[Content];
 }
 
 /** shear (x by y) + scale + translation as one Slate render transform */
@@ -364,7 +379,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			+ SOverlay::Slot().VAlign(VAlign_Bottom)[SNew(SBox).HeightOverride(54)[SNew(SImage).Image(White()).ColorAndOpacity(FLinearColor(0, 0, 0, .85f))]]
 			// Gen 1-3 layout: each HP plate sits opposite its creature -> foe (upper right) plate top-left, yours (lower left) on the right above the moves
 			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(48, 78)[MakePlate(1)]
-			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(48, 0, 48, 400)[MakePlate(0)]
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(48, 0, 48, 490)[MakePlate(0)]   // above the move cards (up to 4 rows)
 			// battle log: slim dark strip under the top bar
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 66)
 			[
@@ -448,7 +463,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		// ---------------- choice / menus (center): an ink vignette darkens the world behind the page
 		+ SOverlay::Slot()
 		[
-			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity(FLinearColor(1, 1, 1, .7f)).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
@@ -550,7 +565,7 @@ TSharedRef<SWidget> SPBXHud::MakePlate(int32 Side)
 		// slides in from its screen edge after the VS intro
 		.RenderTransform_Lambda([this, Side] { const float k = M->IntroT > 0.f ? 0.f : 1.f; (void)k; const float In = FMath::Clamp(1.f - M->IntroT * 2.f, 0.f, 1.f); return XForm(0.f, 1.f, 1.f, FVector2D((1.f - In) * (Side == 0 ? -520.f : 520.f), 0)); })
 	[
-		SNew(SBorder).BorderImage(Bg).Padding(FMargin(34, 22))
+		SNew(SBorder).BorderImage(Bg).Padding(FMargin(32, 26))
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
@@ -600,7 +615,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 	for (int32 i = 0; i < M->Options.Num(); i++)
 	{
 		const FPBXOption& O = M->Options[i];
-		const float Px = M->bCards ? 256.f : 200.f;
+		const float Px = M->bCards ? 256.f : 160.f;   // the ruled frame sits at 9 % of Px: keep the text clear of it
 		const FSlateBrush* Sel = Parchment(true, Px); const FSlateBrush* Nor = Parchment(false, Px);
 		auto OnDown = [this, i](const FGeometry&, const FPointerEvent&) { M->Selected = i; if (M->OnPick && M->Options.IsValidIndex(i) && M->Options[i].bEnabled) M->OnPick(i); return FReply::Handled(); };
 		auto Brush = [this, i, Sel, Nor] { return M->Options.IsValidIndex(i) && M->Options[i].bEnabled && M->Selected == i ? Sel : Nor; };
@@ -610,8 +625,8 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(226).HeightOverride(316)[SNew(SImage).Image(O.Image.Get())]];
 		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 32 : 31)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : TextC); })];
 		if (!O.Sub.IsEmpty())
-			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 21)).ColorAndOpacity(FLinearColor::LerpUsingHSV(O.Color, SepiaC, .55f)).WrapTextAt(M->bCards ? 0.f : 500.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
-		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(M->bCards ? FMargin(30, 26) : FMargin(38, 18)).OnMouseButtonDown_Lambda(OnDown)
+			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 21)).ColorAndOpacity(FLinearColor::LerpUsingHSV(O.Color, SepiaC, .55f)).WrapTextAt(M->bCards ? 230.f : 500.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
+		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(M->bCards ? FMargin(30, 30) : FMargin(36, 24)).OnMouseButtonDown_Lambda(OnDown)
 			.RenderTransform_Lambda([this, i] { return FSlateRenderTransform(M->Selected == i ? 1.03f : 1.f); }).RenderTransformPivot(FVector2D(.5f, .5f))[Inner];
 		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(300).HeightOverride(470)[Btn]];
 		else Col->AddSlot().AutoHeight().Padding(0, 5)[SNew(SBox).WidthOverride(600)[Btn]];
@@ -629,18 +644,18 @@ TSharedRef<SWidget> SPBXHud::MakeMoves()
 		if (i % 2 == 0) { Row = SNew(SHorizontalBox); Col->AddSlot().AutoHeight().Padding(0, 6)[Row.ToSharedRef()]; }
 		const FPBXOption& O = M->Moves[i];
 		const FLinearColor Base = O.Color;
-		const FSlateBrush* Card = Parchment(false, 200.f); const FSlateBrush* Sel = Parchment(true, 200.f);
+		const FSlateBrush* Card = Parchment(false, 160.f); const FSlateBrush* Sel = Parchment(true, 160.f);
 		auto Brush = [this, i, Sel, Card] { return M->Moves.IsValidIndex(i) && M->Moves[i].bEnabled && M->MoveSel == i ? Sel : Card; };
 		auto Tint = [this, i] { return FSlateColor(!M->Moves.IsValidIndex(i) || !M->Moves[i].bEnabled ? FLinearColor(.6f, .56f, .5f, .75f) : FLinearColor::White); };
 		auto OnDown = [this, i](const FGeometry&, const FPointerEvent&) { M->MoveSel = i; if (M->OnMove && M->Moves.IsValidIndex(i) && M->Moves[i].bEnabled) M->OnMove(i); return FReply::Handled(); };
 		auto OnHover = [this, i](const FGeometry&, const FPointerEvent&) { M->MoveSel = i; };
 		Row->AddSlot().FillWidth(1).Padding(6, 0)
 		[
-			SNew(SBox).HeightOverride(92)
+			SNew(SBox).HeightOverride(88)
 				.RenderTransform_Lambda([this, i] { const bool bSel = M->MoveSel == i; const float s = bSel ? 1.04f + .012f * FMath::Sin(M->Time * 5.f) : 1.f; return XForm(0.f, s, s); })
 			.RenderTransformPivot(FVector2D(.5f, .5f))
 			[
-				SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(FMargin(22, 10)).OnMouseButtonDown_Lambda(OnDown).OnMouseMove_Lambda([OnHover](const FGeometry& G, const FPointerEvent& E) { OnHover(G, E); return FReply::Unhandled(); })
+				SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(FMargin(26, 15, 26, 12)).OnMouseButtonDown_Lambda(OnDown).OnMouseMove_Lambda([OnHover](const FGeometry& G, const FPointerEvent& E) { OnHover(G, E); return FReply::Unhandled(); })
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 12, 0)
