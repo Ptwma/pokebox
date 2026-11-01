@@ -1,4 +1,4 @@
-// Pokebox Next — all game UI in Slate (code only, no widget assets): comic panels, Bangers titles, Barlow text.
+// Pokebox Next / Sigil & Spark — all game UI in Slate (code only, no widget assets): the "Codex" look (parchment, ink, crimson, wax seals).
 #pragma once
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
@@ -58,7 +58,7 @@ struct FPBXUIModel
 
 namespace PBXUI
 {
-	FSlateFontInfo Font(const TCHAR* Kind, int32 Size, int32 Outline = 0);   // Kind: "title" (Bangers) | "bold" | "body"
+	FSlateFontInfo Font(const TCHAR* Kind, int32 Size, int32 Outline = 0);   // Kind: "title" (Cinzel Bold) | "label" (Cinzel) | "bold" (EB Garamond) | "body" / "italic" (IM Fell English)
 	TSharedPtr<FSlateBrush> TextureBrush(UTexture2D* T, FVector2D Size);
 	/** UI particles: a burst of glowing sparks at a screen point / confetti raining over the whole screen */
 	void SparkBurst(FPBXUIModel& M, FVector2D At, FLinearColor C, int32 N, float Speed = 650.f, float Size = 10.f);

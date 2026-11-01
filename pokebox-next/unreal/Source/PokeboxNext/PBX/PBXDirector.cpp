@@ -438,7 +438,7 @@ int32 APBXDirector::MonMaxHP(const FPBXMon& M) const
 }
 
 // =================================================================== UI helpers
-void APBXDirector::Toast(const FString& T) { FPBXUIModel::FToast X; X.Text = T; UI->Toasts.Add(X); if (UI->Toasts.Num() > 3) UI->Toasts.RemoveAt(0); PBXLOG("[PBX] toast: %s", *T); }
+void APBXDirector::Toast(const FString& T) { Sfx(TEXT("ui_quill"), .7f); FPBXUIModel::FToast X; X.Text = T; UI->Toasts.Add(X); if (UI->Toasts.Num() > 3) UI->Toasts.RemoveAt(0); PBXLOG("[PBX] toast: %s", *T); }
 void APBXDirector::Splash(const FString& T, const FString& S, float Secs) { UI->BigTitle = T; UI->BigSub = S; UI->BigT = Secs; }
 
 FString APBXDirector::SpeakerName(FName Who) const
@@ -1114,7 +1114,9 @@ FVector APBXDirector::ObjectiveTarget(FString& Label) const
 void APBXDirector::UpdateObjective()
 {
 	UI->Chapter = Step() >= EPBXStep::Done ? (ChapterLabel.IsEmpty() ? FString(TEXT("Chapter 2 · Route 1")) : ChapterLabel) : FString(TEXT("Chapter 1 · The Blank Page"));
-	FString L; const FVector T = ObjectiveTarget(L); UI->Objective = L;
+	FString L; const FVector T = ObjectiveTarget(L);
+	if (L != UI->Objective && !L.IsEmpty() && !UI->Objective.IsEmpty()) Sfx(TEXT("ui_quill"), .6f);   // the Codex writes the new objective
+	UI->Objective = L;
 	if (T.IsZero() || !Player) { UI->bArrow = false; UI->Distance = -1; return; }
 	const FVector P = PlayerLoc();
 	UI->Distance = FMath::RoundToInt(FVector::Dist2D(P, T) / 100.f); UI->bArrow = UI->Distance > 2;
@@ -1866,6 +1868,7 @@ void APBXDirector::EndBattle(const FString& Result)
 // =================================================================== menus
 void APBXDirector::OpenChoice(const FString& Title, const FString& Sub, const TArray<FPBXOption>& Opts, bool bCards, TFunction<void(int32)> Pick)
 {
+	if (UI->Mode != EPBXUIMode::Choice && UI->Mode != EPBXUIMode::Menu) Sfx(TEXT("ui_page"), .8f);   // a Codex page turns open
 	UI->ChoiceTitle = Title; UI->ChoiceSub = Sub; UI->Options = Opts; UI->bCards = bCards; UI->OnPick = MoveTemp(Pick);
 	UI->Selected = 0; while (UI->Options.IsValidIndex(UI->Selected) && !UI->Options[UI->Selected].bEnabled) UI->Selected++;
 	UI->OptionsRev++; UI->Mode = Menu != EMenu::None ? EPBXUIMode::Menu : EPBXUIMode::Choice;
@@ -1994,9 +1997,9 @@ bool APBXDirector::PlayIntroMovie(TFunction<void()> OnEnd)
 		const float MT = (float)MoviePlayer->GetTime().GetTotalSeconds(), Dur = (float)MoviePlayer->GetDuration().GetTotalSeconds();
 		FString Sub; for (const auto& S : *Subs) if (MT >= S.Get<0>() && MT < S.Get<1>()) { Sub = S.Get<2>(); break; }
 		UI->Subtitle = Sub; UI->SubSpeaker.Empty(); UI->SubA = Sub.IsEmpty() ? FMath::Max(0.f, UI->SubA - .1f) : 1.f;
-		if (bAuto && *Shots < 2 && MT > (*Shots == 0 ? 6.f : 70.f)) { Shot(*Shots == 0 ? TEXT("c1_movie_a") : TEXT("c1_movie_b")); (*Shots)++; }
+		if (bAuto && *Shots < 2 && MT > (*Shots == 0 ? 6.f : 60.f)) { Shot(*Shots == 0 ? TEXT("c1_movie_a") : TEXT("c1_movie_b")); (*Shots)++; }
 		const bool bDone = (T > .4f && bConfirm) || (Dur > 1.f && MT >= Dur - .08f) || (T > 3.f && !MoviePlayer->IsPlaying() && !MoviePlayer->IsPreparing())
-			|| T > 420.f || (bAuto && T > 80.f);
+			|| T > 420.f || (bAuto && T > 95.f);
 		bConfirm = false;
 		if (!bDone) return false;
 		MoviePlayer->Close(); UI->MovieA = 0.f; UI->Subtitle.Empty(); UI->SubA = 0.f;
