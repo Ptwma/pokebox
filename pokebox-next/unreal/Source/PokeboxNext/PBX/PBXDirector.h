@@ -176,7 +176,9 @@ private:
 	void TalkTo(APBXNPC* N);
 	void UseDoor(const FPBXDoor& D, bool bFromOutside);
 	void Rest();
-	void ChooseStarter();
+	void ChooseStarter(bool bRite = false);
+	/** r65 opening: the Rite of Pages night → the first fight → dawn (then Capture) */
+	void BeginRite(); void StartFirstFight(); void DawnAfterRite(bool bWon);
 	TArray<FPBXLine> LinesFor(FName Who) const;
 
 	// ---- story
@@ -218,7 +220,16 @@ private:
 	void SaveTeamHP();
 
 	// ---- menus
-	enum class EMenu : uint8 { None, Title, Gender, Pause, Controls, Complete, Confirm, Team };
+	enum class EMenu : uint8 { None, Title, Gender, Pause, Controls, Complete, Confirm, Team, Settings };
+	// ---- settings (r65, user 2026-11-01: "settings and every menu option a game should have"): audio, display, camera,
+	// subtitles; stored in GameUserSettings.ini [PBX.Settings] (display via UGameUserSettings)
+	float VolMaster = 1.f, VolMusic = 1.f, VolSfx = 1.f, LookSens = 1.f; bool bInvertY = false, bSubs = true;
+	EMenu SettingsBack = EMenu::Title;
+	void LoadSettings(); void SaveSettings(); void ApplyAudioSettings();
+	void AdjustSetting(int32 Row, int32 Dir);
+	// the title screen's drawn background (a Blender loop, Content/Movies/title_loop.mp4) instead of the live town
+	UPROPERTY() TObjectPtr<class UFileMediaSource> TitleSrc; bool bTitleLoop = false;
+	void StartTitleLoop(); void StopTitleLoop();
 	EMenu Menu = EMenu::None;
 	void ShowMenu(EMenu M);
 	void OpenChoice(const FString& Title, const FString& Sub, const TArray<FPBXOption>& Opts, bool bCards, TFunction<void(int32)> Pick);

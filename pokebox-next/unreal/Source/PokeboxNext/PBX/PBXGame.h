@@ -9,10 +9,13 @@
 UENUM()
 enum class EPBXStep : uint8
 {
-	WakeUp = 0,     // head outside (Mum gives the hint)
-	MeetRho,        // Rho greets you outside the house
-	GoLab,          // meet Dr. Vale at Pokébox Labs
-	Starter,        // choose your partner card
+	// r65 (user 2026-11-01: no mother, start straight in a gameplay part of the story): the game opens AT the Rite of Pages
+	// in the Scriptorium on the night the intro ends ("Tonight, a Codex opens"). The first four values keep their numbers
+	// so old saves still load; they are only passed through during the scripted night (nothing is saved before Capture).
+	WakeUp = 0,     // = the Rite: Rho's three pages, your Codex stays unwritten, the White Page attacks, choose a Spark
+	MeetRho,        // = the first fight: a grey (Blanked) Spark in the alley behind the Scriptorium
+	GoLab,          // (unused since r65)
+	Starter,        // (unused since r65)
 	Capture,        // catch your first wild Echo in the tall grass
 	RhoBattle,      // rival battle at the Route 1 gate
 	Rest,           // rest your team at home

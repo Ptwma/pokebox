@@ -460,6 +460,16 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			]
 		]
 
+		// ---------------- the title screen's drawn background loop (under the menus)
+		+ SOverlay::Slot()
+		[
+			SNew(SBorder).BorderImage(White()).BorderBackgroundColor(FLinearColor::Black).Padding(0)
+			.Visibility_Lambda([this] { return M->MovieBgA > .001f && M->MovieBrush.IsValid() && M->MovieA <= .001f ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			[
+				SNew(SScaleBox).Stretch(EStretch::ScaleToFill)
+				[ SNew(SImage).Image_Lambda([this] { return M->MovieBrush.Get(); }).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->MovieBgA)); }) ]
+			]
+		]
 		// ---------------- choice / menus (center): an ink vignette darkens the world behind the page
 		+ SOverlay::Slot()
 		[
@@ -515,7 +525,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		// ---------------- subtitles (user 2026-10-31: every narrated / spoken line of the intro)
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 34)
 		[
-			SNew(SBorder).Visibility_Lambda([this] { return M->SubA > .01f && !M->Subtitle.IsEmpty() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			SNew(SBorder).Visibility_Lambda([this] { return M->bSubtitles && M->SubA > .01f && !M->Subtitle.IsEmpty() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 			.BorderImage(InkWash()).BorderBackgroundColor_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, .85f * M->SubA)); }).Padding(FMargin(40, 14))
 			[
 				SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->SubSpeaker.IsEmpty() ? M->Subtitle : M->SubSpeaker + TEXT(":  ") + M->Subtitle); })
@@ -529,6 +539,11 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			.Text(FText::FromString(TEXT("E  skip"))).Font(PBXUI::Font(TEXT("italic"), 20)).ColorAndOpacity(FLinearColor(1, 1, 1, .55f))
 		]
 
+		// ---------------- full-screen flash (big hits, the White Page's light)
+		+ SOverlay::Slot()
+		[
+			SNew(SImage).Image(White()).Visibility(EVisibility::HitTestInvisible).ColorAndOpacity_Lambda([this] { FLinearColor C = M->FlashColor; C.A = FMath::Clamp(M->FlashT, 0.f, 1.f) * .85f; return FSlateColor(C); })
+		]
 		// ---------------- fade
 		+ SOverlay::Slot()
 		[
@@ -612,6 +627,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 {
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
 	TSharedRef<SVerticalBox> Col = SNew(SVerticalBox);
+	const bool bC = !M->bCards && M->Options.Num() > 7;   // long lists (Settings, Pause) use compact rows
 	for (int32 i = 0; i < M->Options.Num(); i++)
 	{
 		const FPBXOption& O = M->Options[i];
@@ -623,13 +639,13 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 		TSharedRef<SVerticalBox> Inner = SNew(SVerticalBox);
 		if (M->bCards && O.Image.IsValid())
 			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(226).HeightOverride(316)[SNew(SImage).Image(O.Image.Get())]];
-		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 32 : 31)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : TextC); })];
+		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 32 : bC ? 25 : 31)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : TextC); })];
 		if (!O.Sub.IsEmpty())
 			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 21)).ColorAndOpacity(FLinearColor::LerpUsingHSV(O.Color, SepiaC, .55f)).WrapTextAt(M->bCards ? 230.f : 500.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
-		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(M->bCards ? FMargin(30, 30) : FMargin(36, 24)).OnMouseButtonDown_Lambda(OnDown)
+		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(M->bCards ? FMargin(30, 30) : bC ? FMargin(34, 13) : FMargin(36, 24)).OnMouseButtonDown_Lambda(OnDown)
 			.RenderTransform_Lambda([this, i] { return FSlateRenderTransform(M->Selected == i ? 1.03f : 1.f); }).RenderTransformPivot(FVector2D(.5f, .5f))[Inner];
 		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(300).HeightOverride(470)[Btn]];
-		else Col->AddSlot().AutoHeight().Padding(0, 5)[SNew(SBox).WidthOverride(600)[Btn]];
+		else Col->AddSlot().AutoHeight().Padding(0, bC ? 2 : 5)[SNew(SBox).WidthOverride(600)[Btn]];
 	}
 	if (M->bCards) return SNew(SBox).WidthOverride(328.f * FMath::Max(1, M->Options.Num())).HeightOverride(470.f)[Row];   // explicit size: the card row came out zero-sized (all three cards drawn on one spot)
 	return Col;

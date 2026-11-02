@@ -39,6 +39,9 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/FileHelper.h"
 #include "Misc/App.h"
+#include "GameFramework/GameUserSettings.h"
+#include "AudioDevice.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -178,8 +181,10 @@ void APBXDirector::BeginPlay()
 		Hud = SNew(SPBXHud, UI);
 		GEngine->GameViewport->AddViewportWidgetContent(SNew(SWeakWidget).PossiblyNullContent(Hud.ToSharedRef()), 10);
 	}
+	LoadSettings();
 	if (!LoadData()) { Toast(TEXT("Map data missing — rebuild the town (blender_town.py).")); }
 	SpawnWorld();
+	if (APBXNPC* Mom = NPCs.FindRef(TEXT("mom"))) { Mom->Destroy(); NPCs.Remove(TEXT("mom")); }   // r65: no mother in the story
 	if (APBXController* PC = Cast<APBXController>(GetWorld()->GetFirstPlayerController())) PC->Director = this;
 	if (bAuto && Game->AutoResume >= 0) { AutoStep = Game->AutoResume; Game->AutoResume = -1; bAutoFail = Game->bAutoFail; AutoShots = Game->AutoShots; }
 	if (Game->bPendingContinue) { Game->bPendingContinue = false; ContinueGame(); }
@@ -682,7 +687,7 @@ void APBXDirector::InMove(FVector2D V)
 void APBXDirector::InLook(FVector2D V)
 {
 	if (!Player || Menu != EMenu::None || Bt.bActive) return;
-	Player->AddControllerYawInput(V.X); Player->AddControllerPitchInput(V.Y);
+	Player->AddControllerYawInput(V.X * LookSens); Player->AddControllerPitchInput(V.Y * LookSens * (bInvertY ? -1.f : 1.f));
 }
 void APBXDirector::InJump() { if (Player && !bBoating && !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore) Player->Jump(); }
 void APBXDirector::InRun(bool b) { bRunHeld = b; if (Player) Player->SetRunning(b); }
@@ -702,17 +707,20 @@ void APBXDirector::InConfirm()
 void APBXDirector::InBack()
 {
 	if (Menu == EMenu::Team) { ShowMenu(EMenu::Pause); return; }
+	if (Menu == EMenu::Settings) { SaveSettings(); ShowMenu(SettingsBack); return; }
 	if (Menu == EMenu::Pause || Menu == EMenu::Controls) { CloseChoice(); Menu = EMenu::None; return; }
 	if (Menu == EMenu::Confirm) { CloseChoice(); Menu = EMenu::None; return; }
 }
 void APBXDirector::InPause()
 {
+	if (Menu == EMenu::Settings) { SaveSettings(); if (SettingsBack == EMenu::Title) { ShowMenu(EMenu::Title); return; } CloseChoice(); Menu = EMenu::None; return; }
 	if (Menu == EMenu::Pause || Menu == EMenu::Controls || Menu == EMenu::Team || Menu == EMenu::Confirm) { CloseChoice(); Menu = EMenu::None; return; }
 	if (Menu == EMenu::None && !Busy() && !Bt.bActive && UI->Mode == EPBXUIMode::Explore) ShowMenu(EMenu::Pause);
 }
 void APBXDirector::InNav(int32 Dx, int32 Dy)
 {
 	if (UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None || (Bt.bActive && UI->bMoves)) Sfx(TEXT("sfx_cursor"), .6f);
+	if (Menu == EMenu::Settings && Dx != 0) { AdjustSetting(UI->Selected, Dx); return; }   // left / right change the value
 	if (UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None)
 	{
 		const int32 N = UI->Options.Num(); if (!N) return;
@@ -804,12 +812,11 @@ void APBXDirector::UseDoor(const FPBXDoor& D, bool bFromOutside)
 	QDo([this, To] { PlacePlayer(To); if (Partner) Partner->PlaceAt(To.Pos - FRotator(0, To.Yaw, 0).Vector() * 120.f); });
 	QWait(.15f);
 	QFade(0.f, .35f);
-	if (!bFromOutside && D.Id == TEXT("house") && Step() == EPBXStep::WakeUp) QDo([this] { SetStep(EPBXStep::MeetRho); });
 }
 
 void APBXDirector::ApplyBlanked(bool bOn)
 {
-	static const FName Taken[] = { TEXT("mom"), TEXT("kid"), TEXT("gardener"), TEXT("merchant") };
+	static const FName Taken[] = { TEXT("kid"), TEXT("gardener"), TEXT("merchant") };
 	for (const FName& Id : Taken) if (APBXNPC* N = NPCs.FindRef(Id)) { if (!bOn) N->SetBlanked(false); else { N->ReturnToIdle(); N->SetBlanked(true); } }
 }
 
@@ -858,10 +865,10 @@ void APBXDirector::Rest()
 	QDo([this] { SaveNow(false); Toast(TEXT("Your team is fully rested. Game saved.")); });
 	if (Step() == EPBXStep::Rest)
 	{
-		QSay({ { TEXT("note"), TEXT("When you wake, a letter lies on your chest. Your mother is still at the table, pouring tea for no one.") },
+		QSay({ { TEXT("note"), TEXT("When you wake, a letter lies on your chest. The house is as quiet as it has been for years.") },
 			   { TEXT("note"), TEXT("\"Rho is gone — east, alone. The watch cleared the landslide at dawn. Route 1 is open. — V.\"") },
 			   { TEXT("note"), TEXT("\"Go west, to Mistvale. Whatever the White Page is writing there, unwrite it. Trust no one in white.\"") },
-			   { TEXT("note"), TEXT("You kiss your mother's cold forehead. She smiles politely, the way you'd smile at a stranger.") } });
+			   { TEXT("note"), TEXT("You pack the blank Codex, your lantern and what's left of the bread. Nobody is left to say goodbye to.") } });
 		QDo([this] { SetStep(EPBXStep::Gate); Splash(TEXT("ALONE"), TEXT("Route 1 is open — head west")); SaveNow(false); });
 	}
 }
@@ -951,7 +958,7 @@ void APBXDirector::OpenMonActions(int32 i)
 		});
 }
 
-void APBXDirector::ChooseStarter()
+void APBXDirector::ChooseStarter(bool bRite)
 {
 	TArray<FPBXOption> Opts;
 	for (FName Id : PBXData::Starters())
@@ -960,7 +967,7 @@ void APBXDirector::ChooseStarter()
 		O.Sub = FString::Printf(TEXT("%s Ink · Art: %s"), *PBXData::InkName(C->Type), *FPBXBattle::SigOf(C->Type).Name); O.Color = PBXData::TypeColor(C->Type);
 		Opts.Add(O);
 	}
-	OpenChoice(TEXT("Which Spark do you shield?"), TEXT("Three Sparks hid from the White Page in the Scriptorium. The one you choose writes your Codex's first page."), Opts, true, [this](int32 i)
+	OpenChoice(TEXT("Which Spark do you shield?"), bRite ? TEXT("Three Sparks flee the white light through the stacks. One of them runs straight at you.") : TEXT("Three Sparks hid from the White Page in the Scriptorium. The one you choose writes your Codex's first page."), Opts, true, [this, bRite](int32 i)
 	{
 		const FName Id = PBXData::Starters()[i]; const FPBXCardDef* C = PBXData::Card(Id);
 		CloseChoice();
@@ -969,11 +976,121 @@ void APBXDirector::ChooseStarter()
 		SpawnPartner(true);
 		Splash(C->Name.ToUpper(), TEXT("is written on your first page!"));
 		QWait(1.2f);
+		if (bRite)
+		{
+			QSay({ { TEXT("note"), FString::Printf(TEXT("%s leaps into your arms. Your Codex opens by itself, and the first line writes itself in something darker than ink."), *C->Name) },
+				   { TEXT("vale"), TEXT("Blood. It wrote in your blood. ...Later. The back door — GO!") } });
+			QDo([this] { StartFirstFight(); });
+			return;
+		}
 		QSay({ { TEXT("vale"), FString::Printf(TEXT("%s. Your Codex wrote its name in your blood, not ink. ...That's never happened before."), *C->Name) },
 			   { TEXT("vale"), TEXT("Wild Sparks gather in the tall grass by the west road. Weaken one in a Pact Battle, then use Binding Ink to write it into your Codex.") },
 			   { TEXT("vale"), TEXT("Write your second page, Scribe. And if a White Page Eraser finds you first — run.") } });
 		QDo([this] { SetStep(EPBXStep::Capture); SaveNow(false); });
 	});
+}
+
+// =================================================================== the opening (r65): the Rite of Pages night
+void APBXDirector::BeginRite()
+{
+	const FPBXDoor* Lab = nullptr; for (const FPBXDoor& D : Doors) if (D.Id == TEXT("lab")) Lab = &D;
+	APBXNPC* Vale = NPCs.FindRef(TEXT("vale")); APBXNPC* Rho = NPCs.FindRef(TEXT("rho"));
+	Game->SetStep(EPBXStep::WakeUp); ApplyBlanked(false);
+	if (Partner) { Partner->Destroy(); Partner = nullptr; }
+	// stage: you and Rho in front of Vale's reading desk, the three starters on the table behind her
+	if (Lab && Vale)
+	{
+		const FVector V = Vale->GetActorLocation(); const FVector F = Vale->GetActorForwardVector(); const FVector R(-F.Y, F.X, 0.f);
+		FPBXSpot Me; Me.Pos = V + F * 230.f - R * 70.f - FVector(0, 0, 95.f); Me.Yaw = (-F).Rotation().Yaw; PlacePlayer(Me);
+		if (Rho) { Rho->SetActorLocationAndRotation(V + F * 230.f + R * 90.f, (-F).Rotation(), false, nullptr, ETeleportType::TeleportPhysics); Rho->Home = Rho->GetActorLocation(); Rho->HomeYaw = (-F).Rotation().Yaw; Rho->ReturnToIdle(); }
+		Vale->FaceTowards(PlayerLoc(), false);
+	}
+	else if (Lab) PlacePlayer(Lab->Inside);
+	RefreshWorld();
+	MusicHold = 9999.f; Music(TEXT("mus_home"));
+	const bool bM = Game->State->bMale;
+	const FString Me = bM ? TEXT("Rook") : TEXT("Vesna");
+	QFade(0.f, 1.2f);
+	QDo([this] { Splash(TEXT("THE RITE OF PAGES"), TEXT("Lumen Harbor · the night of your sixteenth year"), 3.2f); });
+	QWait(2.6f);
+	QSay({ { TEXT("vale"), TEXT("Rho Calder. Open your Codex.") } });
+	QDo([this, Rho]
+	{
+		if (Rho && FX) FX->Burst(Rho->GetActorLocation() + FVector(0, 0, 40), FLinearColor(1.f, .78f, .3f), 60, 320.f, 16.f, 1.6f, 60.f, .8f);
+		UI->FlashT = .35f; UI->FlashColor = FLinearColor(1.f, .85f, .45f); Sfx(TEXT("sfx_levelup"));
+	});
+	QWait(.8f);
+	QSay({ { TEXT("vale"), TEXT("One page... two... THREE. Three pages on the first night. The town will say that name for years.") },
+		   { TEXT("rho"), TEXT("Told you.") },
+		   { TEXT("vale"), FString::Printf(TEXT("%s. Your turn."), *Me) },
+		   { TEXT("note"), TEXT("You open your Codex. The pages stay white. No light. Not one line.") },
+		   { TEXT("aide"), TEXT("...Blank?") },
+		   { TEXT("rho"), TEXT("Blank. Of course it's blank.") },
+		   { TEXT("vale"), TEXT("Not blank. Unwritten. ...That isn't the same thing. That isn't the same thing at all.") } });
+	// the White Page
+	QDo([this] { Sfx(TEXT("sfx_spotted"), 1.3f); UI->FlashT = 1.2f; UI->FlashColor = FLinearColor(.95f, .97f, 1.f); });
+	QWait(.9f);
+	QSay({ { TEXT("note"), TEXT("The harbour bell. Then every window in the Scriptorium turns white.") },
+		   { TEXT("vale"), TEXT("White Page. GET DOWN!") } });
+	QDo([this, Rho]
+	{
+		UI->FlashT = 1.f; UI->FlashColor = FLinearColor::White; Sfx(TEXT("sfx_hit"), 1.2f);
+		if (Rho && FX) FX->Burst(Rho->GetActorLocation() + FVector(0, 0, 60), FLinearColor(.95f, .97f, 1.f), 50, 380.f, 14.f, 1.2f, -100.f, .6f);
+	});
+	QWait(.6f);
+	QSay({ { TEXT("note"), TEXT("White light pours through the door. Two of Rho's pages tear loose and burn white in the air.") },
+		   { TEXT("rho"), TEXT("NO— give them BACK!") },
+		   { TEXT("note"), TEXT("The light reaches your Codex... and slides off it. There is nothing in it to erase.") },
+		   { TEXT("vale"), TEXT("It can't take what isn't written. ...The stacks — three Sparks are hiding there. Take one. RUN!") } });
+	QDo([this] { ChooseStarter(true); });
+	PBXLOG("[PBX] rite of pages (%s)", *Me);
+}
+
+void APBXDirector::StartFirstFight()
+{
+	const FPBXDoor* Lab = nullptr; for (const FPBXDoor& D : Doors) if (D.Id == TEXT("lab")) Lab = &D;
+	SetStep(EPBXStep::MeetRho);
+	QFade(1.f, .4f);
+	QDo([this, Lab]
+	{
+		if (Lab) PlacePlayer(Lab->Outside);
+		if (Partner) Partner->PlaceAt(PlayerLoc() - Player->GetActorForwardVector() * 120.f);
+	});
+	QFade(0.f, .5f);
+	QSay({ { TEXT("note"), TEXT("The alley behind the Scriptorium. Screams from the harbour, white light behind every window.") },
+		   { TEXT("note"), TEXT("Something blocks the way: a Spark gone grey, its eyes empty. It doesn't run. It doesn't remember how.") } });
+	QDo([this]
+	{
+		const TArray<FName> Pool = PBXData::WildPool(); if (!Pool.Num() || !Player) { DawnAfterRite(false); return; }
+		const FVector P = PlayerLoc() + Player->GetActorForwardVector() * 450.f;
+		APBXEcho* E = GetWorld()->SpawnActor<APBXEcho>(APBXEcho::StaticClass(), FTransform(P));
+		if (!E) { DawnAfterRite(false); return; }
+		const FName Card = Pool[0]; const FPBXCardDef* C = PBXData::Card(Card);
+		E->Setup(Card, 90.f * (C ? C->Size : 1.f)); E->bWild = true; E->PlaceAt(P); E->Mode = APBXEcho::EMode::Idle;
+		StartWildBattle(E);
+	});
+}
+
+void APBXDirector::DawnAfterRite(bool bWon)
+{
+	QFade(1.f, .9f);
+	QDo([this]
+	{
+		ApplyBlanked(true);   // morning: half the harbour has been Blanked
+		APBXNPC* Vale = NPCs.FindRef(TEXT("vale"));
+		if (Vale) { FPBXSpot S; S.Pos = Vale->GetActorLocation() + Vale->GetActorForwardVector() * 200.f - FVector(0, 0, 95.f); S.Yaw = (-Vale->GetActorForwardVector()).Rotation().Yaw; PlacePlayer(S); Vale->FaceTowards(PlayerLoc(), false); }
+		if (Partner) Partner->PlaceAt(PlayerLoc() - Player->GetActorForwardVector() * 120.f);
+	});
+	QWait(.6f);
+	QFade(0.f, 1.2f);
+	QDo([this] { Splash(TEXT("DAWN"), TEXT("Lumen Harbor has forgotten its own name"), 3.f); });
+	QWait(2.2f);
+	QSay({ { TEXT("note"), bWon ? TEXT("The grey Spark crumbled into white dust. You don't remember the walk back. Only the silence.") : TEXT("You ran until the light was gone. You don't remember the walk back. Only the silence.") },
+		   { TEXT("vale"), TEXT("You're alive. Good. ...Don't look at the floor, it's mostly ink. Mostly.") },
+		   { TEXT("vale"), TEXT("Half the harbour was Blanked tonight. They breathe, they walk, and there's nothing written in them anymore. Rho ran after them.") },
+		   { TEXT("vale"), TEXT("Your Codex is a First Page. It can't be erased, because nothing is written in it yet. That is why they came.") },
+		   { TEXT("vale"), TEXT("Wild Sparks gather in the tall grass by the west road. Weaken one in a Pact Battle, then use Binding Ink to write your second page.") } });
+	QDo([this] { MusicHold = 0.f; SetStep(EPBXStep::Capture); if (Game->State->Balls < 5) Game->State->Balls = 5; SaveNow(false); Splash(TEXT("CHAPTER 1"), TEXT("The Unwritten"), 3.f); });
 }
 
 TArray<FPBXLine> APBXDirector::LinesFor(FName Who) const
@@ -993,7 +1110,7 @@ TArray<FPBXLine> APBXDirector::LinesFor(FName Who) const
 	{
 		switch (S)
 		{
-		case EPBXStep::WakeUp: case EPBXStep::MeetRho: case EPBXStep::GoLab: case EPBXStep::Starter: return { { Who, TEXT("Go see Vale. She's bleeding all over the Scriptorium and she still only asks about YOUR book.") } };
+		case EPBXStep::WakeUp: case EPBXStep::MeetRho: case EPBXStep::GoLab: case EPBXStep::Starter: return { { Who, TEXT("Don't talk to me. Not tonight.") } };
 		case EPBXStep::Capture: return { { Who, TEXT("One page. Great. They tore two out of mine and I've still got more than you.") } };
 		case EPBXStep::RhoBattle: return { { Who, TEXT("They came for your book. Not mine — YOURS. And my whole street paid for it.") }, { Who, TEXT("Give it to me. ...Fine. Then take it from me.") } };
 		default: return { { Who, S >= EPBXStep::Done ? TEXT("White fog in Mistvale. That's where they went. Don't follow me.") : TEXT("Don't wait for me on Route 1. I don't walk with anyone anymore.") } };
@@ -1002,7 +1119,7 @@ TArray<FPBXLine> APBXDirector::LinesFor(FName Who) const
 	if (Who == TEXT("vale"))
 	{
 		if (S <= EPBXStep::Starter) return { { Who, TEXT("Close the door. ...Don't look at the floor, it's mostly ink. Mostly.") },
-			{ Who, TEXT("Half the harbour was Blanked last night. Your mother. The Okafor boy. They breathe, they walk, and there's nothing written in them anymore.") },
+			{ Who, TEXT("Half the harbour was Blanked last night. The Okafor boy. Rho's parents. They breathe, they walk, and there's nothing written in them anymore.") },
 			{ Who, TEXT("Your Codex didn't fail. It's a First Page: it can't be erased, because there's nothing in it yet. That's why they came.") },
 			{ Who, TEXT("Three Sparks survived in the stacks. One of them will bleed for you. Choose.") } };
 		if (S == EPBXStep::Capture) return { { Who, TEXT("The tall grass by the west road, Scribe. Weaken a wild Spark, then use Binding Ink.") } };
@@ -1048,10 +1165,10 @@ void APBXDirector::SetStep(EPBXStep S)
 void APBXDirector::RefreshWorld()
 {
 	const EPBXStep S = Step();
-	// Rho: outside your house at the start, at the Route 1 gate afterwards
-	if (TObjectPtr<APBXNPC>* R = NPCs.Find(TEXT("rho")))
+	// Rho: beside you at the Rite (placed by BeginRite), at the Route 1 gate from dawn on
+	if (TObjectPtr<APBXNPC>* R = NPCs.Find(TEXT("rho")); R && S >= EPBXStep::Capture)
 	{
-		const FString Key = S <= EPBXStep::MeetRho ? TEXT("rho_greet") : TEXT("rho_gate");
+		const FString Key = TEXT("rho_gate");
 		if (const FPBXSpot* Sp = Spots.Find(Key))
 		{
 			const float Z = PBXWorld::GroundZ(GetWorld(), Sp->Pos, 300.f, 1500.f, Sp->Pos.Z);
@@ -1063,9 +1180,8 @@ void APBXDirector::RefreshWorld()
 	for (auto& KV : NPCs)
 	{
 		bool M = false;
-		if (KV.Key == TEXT("vale")) M = S == EPBXStep::GoLab || S == EPBXStep::Starter;
+		if (KV.Key == TEXT("vale")) M = false;
 		if (KV.Key == TEXT("rho")) M = S == EPBXStep::RhoBattle;
-		if (KV.Key == TEXT("mom")) M = S == EPBXStep::WakeUp;
 		KV.Value->SetMarker(M);
 	}
 	// the gate
@@ -1080,7 +1196,7 @@ void APBXDirector::RefreshWorld()
 	for (int32 i = 0; i < TableCards.Num(); i++) if (TableCards[i])
 	{
 		bool bTaken = false; if (Game && Game->State) for (const FPBXMon& Mo : Game->State->Team) if (Mo.Card == PBXData::Starters()[i]) bTaken = true;
-		TableCards[i]->SetActorHiddenInGame(bTaken || S < EPBXStep::GoLab);
+		TableCards[i]->SetActorHiddenInGame(bTaken);
 	}
 	if (S >= EPBXStep::Capture) SpawnPartner(false);
 }
@@ -1100,9 +1216,8 @@ FVector APBXDirector::ObjectiveTarget(FString& Label) const
 	const bool bIn = Inside(); const bool bInLab = bIn && FVector::Dist2D(PlayerLoc(), DoorOf(TEXT("lab"), false)) < 2500.f;
 	switch (Step())
 	{
-	case EPBXStep::WakeUp: Label = TEXT("Head outside — Archivist Vale is expecting you"); return bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
-	case EPBXStep::MeetRho: Label = TEXT("Someone is waiting outside"); return NpcLoc(TEXT("rho"));
-	case EPBXStep::GoLab: case EPBXStep::Starter: Label = TEXT("Meet Archivist Vale at the Scriptorium"); return bInLab ? NpcLoc(TEXT("vale")) : bIn ? DoorOf(TEXT("house"), false) : DoorOf(TEXT("lab"), true);
+	case EPBXStep::WakeUp: case EPBXStep::GoLab: case EPBXStep::Starter: Label = TEXT("The Rite of Pages"); return FVector::ZeroVector;
+	case EPBXStep::MeetRho: Label = TEXT("Survive the night"); return FVector::ZeroVector;
 	case EPBXStep::Capture: Label = TEXT("Write a wild Spark into your Codex (tall grass, west road)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : (Grass.Num() ? FVector(Grass[0].GetCenter(), 0) : FVector::ZeroVector);
 	case EPBXStep::RhoBattle: Label = TEXT("Rho is waiting at the Route 1 gate"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : DoorOf(TEXT("house"), false)) : NpcLoc(TEXT("rho"));
 	case EPBXStep::Rest: Label = TEXT("Rest your team at home (your bed)"); return bIn ? (bInLab ? DoorOf(TEXT("lab"), false) : BedPos) : DoorOf(TEXT("house"), true);
@@ -1130,7 +1245,7 @@ void APBXDirector::StoryTick(float Dt)
 	if (!Player || !Game) return;
 	const FVector P = PlayerLoc(); const EPBXStep S = Step();
 	// Rho's greeting the first time you step outside
-	if (S == EPBXStep::MeetRho && !Inside())
+	if (false)   // r65: the old "Rho greets you outside the house" beat is gone
 	{
 		if (TObjectPtr<APBXNPC>* R = NPCs.Find(TEXT("rho")))
 		{
@@ -1326,7 +1441,7 @@ USoundBase* APBXDirector::Snd(const TCHAR* Name)
 
 void APBXDirector::Sfx(const TCHAR* Name, float Vol)
 {
-	if (USoundBase* S = Snd(Name)) UGameplayStatics::PlaySound2D(this, S, .55f * Vol);
+	if (USoundBase* S = Snd(Name)) UGameplayStatics::PlaySound2D(this, S, .55f * Vol * VolSfx);
 }
 
 const TCHAR* APBXDirector::MapMusic() const
@@ -1348,8 +1463,8 @@ void APBXDirector::Music(const TCHAR* Name)
 	if (!*Name) return;
 	if (USoundBase* S = Snd(Name))
 	{
-		MusicComp = UGameplayStatics::SpawnSound2D(this, S, .32f, 1.f, 0.f, nullptr, false, false);
-		if (MusicComp) MusicComp->FadeIn(bPlace ? 2.5f : .7f, .32f);
+		MusicComp = UGameplayStatics::SpawnSound2D(this, S, .32f * VolMusic, 1.f, 0.f, nullptr, false, false);
+		if (MusicComp) MusicComp->FadeIn(bPlace ? 2.5f : .7f, .32f * VolMusic);
 	}
 }
 
@@ -1462,6 +1577,8 @@ void APBXDirector::StartWildBattle(APBXEcho* W)
 	Bt = FBattleCtx(); Bt.bActive = true; Bt.bWild = true; Bt.Foe = W; Bt.Mine = Partner; Music(TEXT("mus_battle"));
 	const int32 Patch = PatchOf(W->GetActorLocation()); const FIntPoint Lv = GrassLv.IsValidIndex(Patch) ? GrassLv[Patch] : FIntPoint(10, 12);
 	const FPBXCardDef* C = PBXData::Card(W->CardId); Bt.FoeLv = FMath::RandRange(Lv.X, Lv.Y);
+	const bool bFirstFight = Step() == EPBXStep::MeetRho;   // r65: the grey Spark behind the Scriptorium
+	if (bFirstFight) { Bt.FoeLv = FMath::Max(2, Game->State->Team.Num() ? Game->State->Team[0].Lv - 3 : 3); Bt.bOwnsFoe = true; for (FPBXFighter& F : Mine) F.MinHP = 1; }
 	if (Step() == EPBXStep::Capture && Game->State->Balls <= 0) { Game->State->Balls = 5; Toast(TEXT("Archivist Vale sent you 5 more vials of Binding Ink.")); }
 	FPBXFighter Foe = FPBXFighter::Make(*C, Bt.FoeLv, PBXData::LvMult(Bt.FoeLv));
 	Bt.bStory = Step() == EPBXStep::Capture; if (Bt.bStory) Foe.MinHP = 1;
@@ -1818,6 +1935,7 @@ void APBXDirector::EndBattle(const FString& Result)
 	SpawnPartner(false);
 	if (APBXNPC* N = NPCs.FindRef(Trainer)) { N->SetActorLocation(N->Home, false, nullptr, ETeleportType::TeleportPhysics); N->ReturnToIdle(); }
 	// story
+	if (Step() == EPBXStep::MeetRho) { DawnAfterRite(bWin); return; }
 	if (bCaught && Step() == EPBXStep::Capture)
 	{
 		QSay({ { TEXT("note"), TEXT("Gold ink bleeds across your Codex: \"Your second page. Rho is at the west gate — he wants your book. Don't let him take it. — V.\"") } });
@@ -1860,7 +1978,7 @@ void APBXDirector::EndBattle(const FString& Result)
 		});
 		QFade(0.f, .5f);
 		if (Re) QSay({ { TEXT("healer"), TEXT("Easy now — sit by the fire. Your Sparks just need a moment. ...There. Good as new.") } });
-		else QSay({ { TEXT("note"), TEXT("You sit beside your mother until your hands stop shaking. She hums her wordless song. Your Sparks sleep.") } });
+		else QSay({ { TEXT("note"), TEXT("You sit on your bed until your hands stop shaking. The house is very quiet. Your Sparks sleep.") } });
 	}
 	(void)bStory;
 }
@@ -1887,13 +2005,17 @@ void APBXDirector::ShowMenu(EMenu M)
 		if (Player) { Player->SetActorHiddenInGame(true); }
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) { Cam->SetActorLocationAndRotation(FVector(4300, -3600, 1900), FRotator(-22, 138, 0)); PC->SetViewTarget(Cam); }
 		UI->Fade = 0.f;
+		StartTitleLoop();
 		const bool bSave = Game->HasSave();
-		OpenChoice(TEXT("SIGIL & SPARK"), TEXT("Chapter 1 · The Blank Page"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Your Codex is blank. Write it.")), Opt(TEXT("Credits"), TEXT("music, voices, tools")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
+		OpenChoice(TEXT("SIGIL & SPARK"), TEXT("Chapter 1 · The Blank Page"), { Opt(TEXT("Continue"), bSave ? TEXT("Load your saved game") : TEXT("No saved game yet"), bSave), Opt(TEXT("New Game"), TEXT("Your Codex is blank. Write it.")),
+			Opt(TEXT("Settings"), TEXT("sound, display, camera, subtitles")), Opt(TEXT("Controls"), TEXT("keyboard, mouse and gamepad")), Opt(TEXT("Credits"), TEXT("music, voices, tools")), Opt(TEXT("Quit"), TEXT("Back to the desktop")) }, false,
 			[this, Opt](int32 i)
 			{
-				if (i == 0) ContinueGame();
+				if (i == 0) { StopTitleLoop(); ContinueGame(); }
 				else if (i == 1) ShowMenu(EMenu::Gender);
-				else if (i == 2)
+				else if (i == 2) { SettingsBack = EMenu::Title; ShowMenu(EMenu::Settings); }
+				else if (i == 3) { SettingsBack = EMenu::Title; ShowMenu(EMenu::Controls); }
+				else if (i == 4)
 				{
 					// CC-BY 4.0 attribution for the intro music (required by the licence) + the rest of the credits
 					OpenChoice(TEXT("CREDITS"), TEXT("Music: Gregor Quendel – Cinematic Trailer Music (CC-BY 4.0) · Intro theme: nene (CC0)\nNarration: Kokoro TTS (Apache 2.0) · Effects: Unreal Niagara Examples, Vefects (free) · Textures: Poly Haven (CC0)\nMade with Unreal Engine and Blender"),
@@ -1915,14 +2037,15 @@ void APBXDirector::ShowMenu(EMenu M)
 		OpenChoice(TEXT("PAUSED"), FString::Printf(TEXT("Play time %d min · Binder: %d seen, %d owned · %d coins · Balls %d · Mending Tea %d"), FMath::FloorToInt(Game->State->PlayTime / 60.f),
 			Game->State->Seen.Num(), Owned.Num(), Game->State->Coins, Game->State->Balls, Game->State->Potions),
 			{ Opt(TEXT("Resume"), TEXT("")), Opt(TEXT("Team"), TEXT("your Sparks, lead, Mending Tea"), Game->HasPartner()), Opt(TEXT("Save game"), TEXT("")), Opt(TEXT("Load last save"), TEXT(""), Game->HasSave()),
-			  Opt(TEXT("Controls"), TEXT("")), Opt(TEXT("Quit to title"), TEXT("")), Opt(TEXT("Quit game"), TEXT("")) }, false,
+			  Opt(TEXT("Controls"), TEXT("")), Opt(TEXT("Quit to title"), TEXT("")), Opt(TEXT("Quit game"), TEXT("")), Opt(TEXT("Settings"), TEXT("sound, display, camera, subtitles")) }, false,
 			[this](int32 i)
 			{
 				if (i == 0) { CloseChoice(); Menu = EMenu::None; }
 				else if (i == 1) OpenTeam();
 				else if (i == 2) { CloseChoice(); Menu = EMenu::None; SaveNow(true); }
 				else if (i == 3) { CloseChoice(); Menu = EMenu::None; ContinueGame(); }
-				else if (i == 4) ShowMenu(EMenu::Controls);
+				else if (i == 4) { SettingsBack = EMenu::Pause; ShowMenu(EMenu::Controls); }
+				else if (i == 7) { SettingsBack = EMenu::Pause; ShowMenu(EMenu::Settings); }
 				else if (i == 5) ToTitle();
 				else FPlatformMisc::RequestExit(false);
 			});
@@ -1930,9 +2053,30 @@ void APBXDirector::ShowMenu(EMenu M)
 	}
 	case EMenu::Team: OpenTeam(); break;
 	case EMenu::Controls:
-		OpenChoice(TEXT("CONTROLS"), TEXT("WASD / left stick: move · Mouse / right stick: camera · Shift / LT: run · Space: jump\nE / Enter / A: talk, interact, confirm · 1-8: battle moves · Mouse wheel / LB-RB: zoom · Esc / Start: pause"),
-			{ Opt(TEXT("Back"), TEXT("")) }, false, [this](int32) { ShowMenu(EMenu::Pause); });
+		OpenChoice(TEXT("CONTROLS"), TEXT("WASD / left stick: move · Mouse / right stick: camera · Shift / LT: run · Space: jump\nE / Enter / A: talk, interact, confirm · 1-8: battle moves · Mouse wheel / LB-RB: zoom · Esc / Start: pause\nIn menus: arrows / D-pad to choose, left / right to change a setting, Esc / B to go back"),
+			{ Opt(TEXT("Back"), TEXT("")) }, false, [this](int32) { ShowMenu(SettingsBack == EMenu::Title ? EMenu::Title : EMenu::Pause); });
 		break;
+	case EMenu::Settings:
+	{
+		// one row per setting; E / click or right steps forward, left steps back (AdjustSetting); values are saved on Back
+		UGameUserSettings* GS = GEngine ? GEngine->GetGameUserSettings() : nullptr;
+		auto Pct = [](float V) { return FString::Printf(TEXT("%d %%"), FMath::RoundToInt(V * 100.f)); };
+		static const TCHAR* Q[] = { TEXT("Low"), TEXT("Medium"), TEXT("High"), TEXT("Epic") };
+		const int32 Ql = GS ? FMath::Clamp(GS->GetOverallScalabilityLevel(), 0, 3) : 2;
+		const FIntPoint R = GS ? GS->GetScreenResolution() : FIntPoint(1920, 1080);
+		const EWindowMode::Type WM = GS ? GS->GetFullscreenMode() : EWindowMode::Fullscreen;
+		const TCHAR* WMs = WM == EWindowMode::Fullscreen ? TEXT("Fullscreen") : WM == EWindowMode::WindowedFullscreen ? TEXT("Borderless window") : TEXT("Window");
+		const float Fps = GS ? GS->GetFrameRateLimit() : 0.f;
+		auto Row = [&](const FString& T, const FString& V) { return Opt(T + TEXT(":  ") + V, TEXT("")); };
+		OpenChoice(TEXT("SETTINGS"), TEXT("left / right or E to change · Esc to save and go back"),
+			{ Row(TEXT("Master volume"), Pct(VolMaster)), Row(TEXT("Music volume"), Pct(VolMusic)), Row(TEXT("Effects volume"), Pct(VolSfx)),
+			  Row(TEXT("Graphics quality"), Q[Ql]), Row(TEXT("Resolution"), FString::Printf(TEXT("%d x %d"), R.X, R.Y)), Row(TEXT("Display"), WMs),
+			  Row(TEXT("V-sync"), GS && GS->IsVSyncEnabled() ? TEXT("On") : TEXT("Off")), Row(TEXT("Frame limit"), Fps <= 0.f ? FString(TEXT("None")) : FString::Printf(TEXT("%d fps"), FMath::RoundToInt(Fps))),
+			  Row(TEXT("Camera sensitivity"), Pct(LookSens)), Row(TEXT("Invert camera Y"), bInvertY ? TEXT("On") : TEXT("Off")), Row(TEXT("Subtitles"), bSubs ? TEXT("On") : TEXT("Off")),
+			  Opt(TEXT("Back"), TEXT("")) }, false,
+			[this](int32 i) { if (i == 11) { SaveSettings(); ShowMenu(SettingsBack); } else AdjustSetting(i, 1); });
+		break;
+	}
 	case EMenu::Complete:
 	{
 		FString P = Game->HasPartner() ? PBXData::Card(Game->State->Team[0].Card)->Name : FString(TEXT("-"));
@@ -1964,8 +2108,103 @@ void APBXDirector::ShowMenu(EMenu M)
 	if (M != EMenu::None) UI->Mode = EPBXUIMode::Menu;
 }
 
+// =================================================================== settings + title loop (r65)
+static const TCHAR* PBXSet = TEXT("PBX.Settings");
+void APBXDirector::LoadSettings()
+{
+	if (!GConfig) return;
+	GConfig->GetFloat(PBXSet, TEXT("VolMaster"), VolMaster, GGameUserSettingsIni); GConfig->GetFloat(PBXSet, TEXT("VolMusic"), VolMusic, GGameUserSettingsIni);
+	GConfig->GetFloat(PBXSet, TEXT("VolSfx"), VolSfx, GGameUserSettingsIni); GConfig->GetFloat(PBXSet, TEXT("LookSens"), LookSens, GGameUserSettingsIni);
+	GConfig->GetBool(PBXSet, TEXT("InvertY"), bInvertY, GGameUserSettingsIni); GConfig->GetBool(PBXSet, TEXT("Subtitles"), bSubs, GGameUserSettingsIni);
+	VolMaster = FMath::Clamp(VolMaster, 0.f, 1.f); VolMusic = FMath::Clamp(VolMusic, 0.f, 1.f); VolSfx = FMath::Clamp(VolSfx, 0.f, 1.f); LookSens = FMath::Clamp(LookSens, .2f, 3.f);
+	ApplyAudioSettings();
+}
+void APBXDirector::SaveSettings()
+{
+	if (GConfig)
+	{
+		GConfig->SetFloat(PBXSet, TEXT("VolMaster"), VolMaster, GGameUserSettingsIni); GConfig->SetFloat(PBXSet, TEXT("VolMusic"), VolMusic, GGameUserSettingsIni);
+		GConfig->SetFloat(PBXSet, TEXT("VolSfx"), VolSfx, GGameUserSettingsIni); GConfig->SetFloat(PBXSet, TEXT("LookSens"), LookSens, GGameUserSettingsIni);
+		GConfig->SetBool(PBXSet, TEXT("InvertY"), bInvertY, GGameUserSettingsIni); GConfig->SetBool(PBXSet, TEXT("Subtitles"), bSubs, GGameUserSettingsIni);
+		GConfig->Flush(false, GGameUserSettingsIni);
+	}
+	if (GEngine && GEngine->GetGameUserSettings()) GEngine->GetGameUserSettings()->SaveSettings();
+}
+void APBXDirector::ApplyAudioSettings()
+{
+	if (GEngine) if (FAudioDeviceHandle AD = GEngine->GetMainAudioDevice()) AD->SetTransientPrimaryVolume(VolMaster);
+	if (MusicComp) MusicComp->AdjustVolume(.1f, .32f * VolMusic);
+	if (UI) UI->bSubtitles = bSubs;
+}
+void APBXDirector::AdjustSetting(int32 Row, int32 Dir)
+{
+	UGameUserSettings* GS = GEngine ? GEngine->GetGameUserSettings() : nullptr;
+	auto Step = [Dir](float& V, float Lo, float Hi, float By) { V = FMath::Clamp(FMath::RoundToFloat((V + Dir * By) / By) * By, Lo, Hi); };
+	bool bDisplay = false;
+	switch (Row)
+	{
+	case 0: Step(VolMaster, 0.f, 1.f, .1f); break;
+	case 1: Step(VolMusic, 0.f, 1.f, .1f); break;
+	case 2: Step(VolSfx, 0.f, 1.f, .1f); Sfx(TEXT("sfx_confirm")); break;   // let the player hear the new level
+	case 3: if (GS) { GS->SetOverallScalabilityLevel((FMath::Clamp(GS->GetOverallScalabilityLevel(), 0, 3) + Dir + 4) % 4); bDisplay = true; } break;
+	case 4: if (GS)
+	{
+		// the common 16:9 sizes up to the desktop's own resolution
+		const FIntPoint Desk = GS->GetDesktopResolution(); TArray<FIntPoint> L;
+		for (FIntPoint P : { FIntPoint(1280, 720), FIntPoint(1600, 900), FIntPoint(1920, 1080), FIntPoint(2560, 1440), FIntPoint(3840, 2160) }) if (P.X <= Desk.X && P.Y <= Desk.Y) L.Add(P);
+		if (!L.Contains(Desk)) L.Add(Desk);
+		int32 k = L.IndexOfByKey(GS->GetScreenResolution()); k = k == INDEX_NONE ? 0 : (k + Dir + L.Num()) % L.Num();
+		GS->SetScreenResolution(L[k]); bDisplay = true;
+	} break;
+	case 5: if (GS)
+	{
+		const EWindowMode::Type Ms[] = { EWindowMode::Fullscreen, EWindowMode::WindowedFullscreen, EWindowMode::Windowed };
+		int32 k = 0; for (int32 j = 0; j < 3; j++) if (Ms[j] == GS->GetFullscreenMode()) k = j;
+		GS->SetFullscreenMode(Ms[(k + Dir + 3) % 3]); bDisplay = true;
+	} break;
+	case 6: if (GS) { GS->SetVSyncEnabled(!GS->IsVSyncEnabled()); bDisplay = true; } break;
+	case 7: if (GS)
+	{
+		const float Ls[] = { 0.f, 30.f, 60.f, 120.f }; int32 k = 0; for (int32 j = 0; j < 4; j++) if (FMath::IsNearlyEqual(GS->GetFrameRateLimit(), Ls[j], 1.f)) k = j;
+		GS->SetFrameRateLimit(Ls[(k + Dir + 4) % 4]); bDisplay = true;
+	} break;
+	case 8: Step(LookSens, .2f, 3.f, .1f); break;
+	case 9: bInvertY = !bInvertY; break;
+	case 10: bSubs = !bSubs; break;
+	default: return;
+	}
+	if (bDisplay && GS) GS->ApplySettings(false);
+	ApplyAudioSettings();
+	const int32 Keep = UI->Selected; ShowMenu(EMenu::Settings); UI->Selected = Keep;
+}
+
+void APBXDirector::StartTitleLoop()
+{
+	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Movies/title_loop.mp4"));
+	if (bTitleLoop || !FPaths::FileExists(File)) return;
+	if (!MoviePlayer)
+	{
+		MoviePlayer = NewObject<UMediaPlayer>(this); MoviePlayer->PlayOnOpen = true;
+		MovieTex = NewObject<UMediaTexture>(this); MovieTex->AutoClear = true; MovieTex->SetMediaPlayer(MoviePlayer); MovieTex->UpdateResource();
+		MovieSound = NewObject<UMediaSoundComponent>(this); MovieSound->SetMediaPlayer(MoviePlayer); MovieSound->bAllowSpatialization = false;
+		MovieSound->RegisterComponent(); MovieSound->Start();
+		UI->MovieBrush = MakeShared<FSlateBrush>(); UI->MovieBrush->SetResourceObject(MovieTex); UI->MovieBrush->ImageSize = FVector2D(1600, 900);
+	}
+	if (!TitleSrc) TitleSrc = NewObject<UFileMediaSource>(this);
+	TitleSrc->SetFilePath(File);
+	MoviePlayer->SetLooping(true); MoviePlayer->OpenSource(TitleSrc);
+	bTitleLoop = true; UI->MovieBgA = 1.f;
+}
+void APBXDirector::StopTitleLoop()
+{
+	if (!bTitleLoop) return;
+	bTitleLoop = false; UI->MovieBgA = 0.f;
+	if (MoviePlayer) { MoviePlayer->Close(); MoviePlayer->SetLooping(false); }
+}
+
 bool APBXDirector::PlayIntroMovie(TFunction<void()> OnEnd)
 {
+	StopTitleLoop();
 	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Movies/saga_intro.mp4"));
 	if (!FPaths::FileExists(File)) return false;
 	if (!MoviePlayer)
@@ -1977,6 +2216,8 @@ bool APBXDirector::PlayIntroMovie(TFunction<void()> OnEnd)
 		MovieSrc = NewObject<UFileMediaSource>(this);
 		UI->MovieBrush = MakeShared<FSlateBrush>(); UI->MovieBrush->SetResourceObject(MovieTex); UI->MovieBrush->ImageSize = FVector2D(1600, 900);
 	}
+	if (!MovieSrc) MovieSrc = NewObject<UFileMediaSource>(this);   // the title loop may have created the player first
+	MoviePlayer->SetLooping(false);
 	MovieSrc->SetFilePath(File);
 	// subtitles: [{"t0":s,"t1":s,"text":"..."}] written by intro/saga_pages.py assemble()
 	TSharedPtr<TArray<TTuple<float, float, FString>>> Subs = MakeShared<TArray<TTuple<float, float, FString>>>();
@@ -1996,7 +2237,7 @@ bool APBXDirector::PlayIntroMovie(TFunction<void()> OnEnd)
 		UI->MovieA = FMath::Clamp(T * 1.5f, 0.f, 1.f);
 		const float MT = (float)MoviePlayer->GetTime().GetTotalSeconds(), Dur = (float)MoviePlayer->GetDuration().GetTotalSeconds();
 		FString Sub; for (const auto& S : *Subs) if (MT >= S.Get<0>() && MT < S.Get<1>()) { Sub = S.Get<2>(); break; }
-		UI->Subtitle = Sub; UI->SubSpeaker.Empty(); UI->SubA = Sub.IsEmpty() ? FMath::Max(0.f, UI->SubA - .1f) : 1.f;
+		UI->Subtitle = Sub; UI->SubSpeaker.Empty(); UI->SubA = Sub.IsEmpty() ? FMath::Max(0.f, UI->SubA - .1f) : 1.f; UI->MovieBgA = 0.f;
 		if (bAuto && *Shots < 2 && MT > (*Shots == 0 ? 6.f : 60.f)) { Shot(*Shots == 0 ? TEXT("c1_movie_a") : TEXT("c1_movie_b")); (*Shots)++; }
 		const bool bDone = (T > .4f && bConfirm) || (Dur > 1.f && MT >= Dur - .08f) || (T > 3.f && !MoviePlayer->IsPlaying() && !MoviePlayer->IsPreparing())
 			|| T > 420.f || (bAuto && T > 95.f);
@@ -2013,7 +2254,7 @@ bool APBXDirector::PlayIntroMovie(TFunction<void()> OnEnd)
 void APBXDirector::PlayIntro()
 {
 	// 2026-11-01: the drawn saga film replaces the in-engine shots whenever the video exists (fallback: the old film below)
-	if (PlayIntroMovie([this]() { ApplyBlanked(true); PlacePlayer(NewGameSpot); MusicHold = 0.f; })) return;
+	if (PlayIntroMovie([this]() { ApplyBlanked(false); MusicHold = 0.f; })) return;
 	ApplyBlanked(false);   // the intro shows the harbour the day BEFORE the Blanking
 	UWorld* W = GetWorld();
 	const FPBXDoor* Lab = nullptr; for (const FPBXDoor& D : Doors) if (D.Id == TEXT("lab")) Lab = &D;
@@ -2161,6 +2402,7 @@ void APBXDirector::PlayIntro()
 
 void APBXDirector::StartNewGame(bool bMale)
 {
+	StopTitleLoop();
 	CloseChoice(); Menu = EMenu::None;
 	Game->NewGame(bMale);
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
@@ -2171,15 +2413,11 @@ void APBXDirector::StartNewGame(bool bMale)
 	ApplyPlayerLook();
 	PlacePlayer(NewGameSpot);
 	RefreshWorld();
-	// Sigil & Spark (2026-10-31): the opening film — the ink myth, Lumen Harbor at dawn, the White Page (skippable with E)
+	// Sigil & Spark: the legend film ("Tonight, a Codex opens") → straight into the Rite of Pages (r65: no wake-up at home)
 	QFade(0.f, 1.f);
 	PlayIntro();
-	QFade(1.f, .6f);
-	QWait(.3f);
-	QDo([this] { Player->PlayAction(TEXT("LayToIdle"), false, .05f); });
-	QFade(0.f, 1.2f);
-	QDo([this] { Splash(TEXT("CHAPTER 1"), TEXT("The Blank Page"), 3.f); });
-	QWait(1.5f);
+	QFade(1.f, .4f);
+	QDo([this] { BeginRite(); });
 	PBXLOG("[PBX] new game (%s)", bMale ? TEXT("m") : TEXT("f"));
 }
 
@@ -2197,6 +2435,7 @@ void APBXDirector::ContinueGame()
 	CloseChoice(); Menu = EMenu::None; Queue.Reset(); QueueGen++; StepT = 0.f;
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
 	ApplyPlayerLook();
+	if (Step() < EPBXStep::Capture) { Game->State->Team.Reset(); RefreshWorld(); UI->Fade = 1.f; BeginRite(); return; }   // saved before r65 in the old opening
 	FPBXSpot S = NewGameSpot; if (Game->State->bHasPos) { S.Pos = Game->State->Pos - FVector(0, 0, 95.f); S.Yaw = Game->State->Yaw; }
 	PlacePlayer(S);
 	RefreshWorld(); SpawnPartner(false);
@@ -2388,16 +2627,17 @@ void APBXDirector::AutoTick(float Dt)
 	case 0: if (AutoT > 4.f) { Shot(TEXT("01_title")); AutoNext(); } break;
 	case 1: if (AutoStepT > 1.f) { ShowMenu(EMenu::Gender); AutoNext(); } break;
 	case 2: if (AutoStepT > 2.f) { if (ShotFirst(TEXT("02_gender"))) break; StartNewGame(true); AutoNext(); } break;
-	case 3: if (AutoStepT > 4.5f && Idle()) { static bool bH = false; if (!bH) { bH = true; LogMHHeights(); } if (ShotFirst(TEXT("03_house"))) break; if (APBXNPC* N = NPCs.FindRef(TEXT("mom"))) { TeleportPlayer(N->GetActorLocation() + N->GetActorForwardVector() * 150.f, 0); TalkTo(N); } AutoNext(); } break;
-	case 4: if (AutoStepT > 1.2f && UI->Mode == EPBXUIMode::Dialogue && UI->Visible >= UI->Line.Len()) { Shot(TEXT("04_dialogue_mum")); AutoNext(); } break;
-	case 5: if (Idle()) { if (const FPBXDoor* D = DoorById(TEXT("house"))) UseDoor(*D, false); AutoNext(); } break;
-	case 6: if (UI->Mode == EPBXUIMode::Dialogue && UI->Visible >= UI->Line.Len() && AutoStepT > 1.5f) { Shot(TEXT("05_rho_greets")); AutoNext(); } break;
-	case 7: if (Idle() && Step() == EPBXStep::GoLab) { if (ShotFirst(TEXT("06_town_objective"))) break; if (const FPBXDoor* D = DoorById(TEXT("lab"))) { FPBXSpot S = D->Outside; S.Pos += FRotator(0, S.Yaw, 0).Vector() * 600.f; S.Yaw += 180.f; PlacePlayer(S); } AutoNext(); } break;
-	case 8: if (AutoStepT > 2.5f) { if (ShotFirst(TEXT("07_lab_outside"))) break; if (const FPBXDoor* D = DoorById(TEXT("lab"))) UseDoor(*D, true); AutoNext(); } break;
-	case 9: if (Idle() && AutoStepT > 1.5f) { if (ShotFirst(TEXT("08_lab_inside"))) break; if (APBXNPC* V = NPCs.FindRef(TEXT("vale"))) { TeleportPlayer(V->GetActorLocation() + V->GetActorForwardVector() * 170.f, 0); TalkTo(V); } AutoNext(); } break;
+	// r65: the film → the Rite of Pages (dialogue) → the starter choice → the first fight → dawn in the Scriptorium
+	case 3: if (AutoStepT > 2.f && UI->Mode == EPBXUIMode::Dialogue && Step() == EPBXStep::WakeUp && UI->Visible >= UI->Line.Len()) { Shot(TEXT("03_rite")); AutoNext(); } break;
+	case 4: if (UI->Mode == EPBXUIMode::Dialogue && UI->Line.Contains(TEXT("Unwritten")) && UI->Visible >= UI->Line.Len()) { Shot(TEXT("04_unwritten")); AutoNext(); }
+		else if (UI->Mode == EPBXUIMode::Choice) { AutoStep = 10; AutoStepT = 0.f; } break;
+	case 5: if (UI->FlashT > .3f && Step() == EPBXStep::WakeUp) { Shot(TEXT("05_white_page")); AutoNext(); } else if (UI->Mode == EPBXUIMode::Choice) { AutoStep = 10; AutoStepT = 0.f; } break;
+	case 6: case 7: case 8: case 9: AutoNext(); break;
 	case 10: if (UI->Mode == EPBXUIMode::Choice && AutoStepT > 2.5f) { if (ShotFirst(TEXT("09_starter_choice"))) break; InNav(1, 0); AutoNext(); } break;
 	case 11: if (AutoStepT > .8f) { InConfirm(); AutoNext(); } break;
-	case 12: if (Idle() && Step() == EPBXStep::Capture) { Shot(TEXT("10_partner")); AutoNext(); } break;
+	case 12: { static bool bFF = false;
+		if (!bFF && Bt.bActive && UI->bMoves && UI->MovesIn >= 1.f) { bFF = true; Shot(TEXT("09b_first_fight")); }
+		else if (Idle() && Step() == EPBXStep::Capture) { Shot(TEXT("10_dawn")); AutoNext(); } } break;
 	case 13: if (AutoStepT > 1.f) { if (const FPBXDoor* D = DoorById(TEXT("lab"))) UseDoor(*D, false); AutoNext(); } break;
 	case 14: if (Idle() && AutoStepT > 1.f)
 		{
