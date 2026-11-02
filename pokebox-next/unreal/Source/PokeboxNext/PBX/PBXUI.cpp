@@ -639,16 +639,16 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 		auto Tint = [this, i] { return FSlateColor(!M->Options.IsValidIndex(i) || !M->Options[i].bEnabled ? FLinearColor(.62f, .58f, .52f, .7f) : M->Selected == i ? FLinearColor::White : FLinearColor(.9f, .87f, .82f, .96f)); };
 		TSharedRef<SVerticalBox> Inner = SNew(SVerticalBox);
 		if (M->bCards && O.Image.IsValid())
-			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(226).HeightOverride(316)[SNew(SImage).Image(O.Image.Get())]];
+			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(180).HeightOverride(252)[SNew(SImage).Image(O.Image.Get())]];
 		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 32 : bC ? 25 : 31)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : TextC); })];
 		if (!O.Sub.IsEmpty())
 			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 21)).ColorAndOpacity(FLinearColor::LerpUsingHSV(O.Color, SepiaC, .55f)).WrapTextAt(M->bCards ? 230.f : 500.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
 		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(M->bCards ? FMargin(30, 30) : bC ? FMargin(34, 13) : FMargin(36, 24)).OnMouseButtonDown_Lambda(OnDown)
 			.RenderTransform_Lambda([this, i] { return FSlateRenderTransform(M->Selected == i ? 1.03f : 1.f); }).RenderTransformPivot(FVector2D(.5f, .5f))[Inner];
-		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(300).HeightOverride(470)[Btn]];
+		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(260).HeightOverride(390)[Btn]];
 		else Col->AddSlot().AutoHeight().Padding(0, bC ? 2 : 5)[SNew(SBox).WidthOverride(600)[Btn]];
 	}
-	if (M->bCards) return SNew(SBox).WidthOverride(328.f * FMath::Max(1, M->Options.Num())).HeightOverride(470.f)[Row];   // explicit size: the card row came out zero-sized (all three cards drawn on one spot)
+	if (M->bCards) return SNew(SBox).WidthOverride(288.f * FMath::Max(1, M->Options.Num())).HeightOverride(390.f)[Row];   // explicit size: the card row came out zero-sized (all three cards drawn on one spot)
 	return Col;
 }
 

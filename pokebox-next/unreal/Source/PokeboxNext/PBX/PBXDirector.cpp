@@ -2058,9 +2058,10 @@ void APBXDirector::ShowMenu(EMenu M)
 		if (Player && Cam)
 		{
 			const FVector P = Player->GetActorLocation(); const FVector F = Player->GetActorForwardVector(); const FVector R(-F.Y, F.X, 0.f);
-			const FVector C = P + F * 230.f - R * 75.f + FVector(0, 0, 45.f);
-			Cam->SetActorLocationAndRotation(C, (P + FVector(0, 0, 35.f) - R * 75.f - C).Rotation());
-			Cam->GetCameraComponent()->SetFieldOfView(40.f);
+			// the hero on the right third, framed from the knees up (the menu sits on the left third)
+			const FVector C = P + F * 300.f + R * 70.f + FVector(0, 0, 40.f);
+			Cam->SetActorLocationAndRotation(C, (P + FVector(0, 0, 25.f) + R * 70.f - C).Rotation());
+			Cam->GetCameraComponent()->SetFieldOfView(38.f);
 			if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Cam);
 		}
 		OpenChoice(TEXT("YOUR LOOK"), bPendingMale ? TEXT("Rook, sixteen") : TEXT("Vesna, sixteen"),
@@ -2690,7 +2691,10 @@ void APBXDirector::AutoTick(float Dt)
 	{
 	case 0: if (AutoT > 4.f) { Shot(TEXT("01_title")); AutoNext(); } break;
 	case 1: if (AutoStepT > 1.f) { ShowMenu(EMenu::Gender); AutoNext(); } break;
-	case 2: if (AutoStepT > 2.f) { if (ShotFirst(TEXT("02_gender"))) break; StartNewGame(true); AutoNext(); } break;
+	case 2: { static int32 Ph = 0;   // r65: gender → the four looks (live preview) → new game with look 0
+		if (Ph == 0 && AutoStepT > 2.f) { if (ShotFirst(TEXT("02_gender"))) break; bPendingMale = true; PendingLook = 0; ShowMenu(EMenu::Look); Ph = 1; AutoStepT = 0.f; }
+		else if (Ph >= 1 && Ph <= 4 && AutoStepT > 2.5f) { const FString N = FString::Printf(TEXT("02_look_%d"), Ph - 1); if (ShotFirst(*N)) break; if (Ph < 4) InNav(0, -1); Ph++; AutoStepT = 0.f; }
+		else if (Ph == 5 && AutoStepT > 1.f) { PendingLook = 0; StartNewGame(true); AutoNext(); } } break;
 	// r65: the film → the Rite of Pages (dialogue) → the starter choice → the first fight → dawn in the Scriptorium
 	case 3: if (AutoStepT > 2.f && UI->Mode == EPBXUIMode::Dialogue && Step() == EPBXStep::WakeUp && UI->Visible >= UI->Line.Len()) { Shot(TEXT("03_rite")); AutoNext(); } break;
 	case 4: if (UI->Mode == EPBXUIMode::Dialogue && UI->Line.Contains(TEXT("Unwritten")) && UI->Visible >= UI->Line.Len()) { Shot(TEXT("04_unwritten")); AutoNext(); }
