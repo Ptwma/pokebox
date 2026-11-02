@@ -391,7 +391,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			]
 			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(48, 78)
 			[
-				SAssignNew(MovesHost, SBox).WidthOverride(700).Visibility_Lambda([this] { return M->bMoves ? EVisibility::Visible : EVisibility::Collapsed; })
+				SAssignNew(MovesHost, SBox).WidthOverride(780).Visibility_Lambda([this] { return M->bMoves ? EVisibility::Visible : EVisibility::Collapsed; })
 				.RenderTransform_Lambda([this] { const float k = FMath::Clamp(M->MovesIn, 0.f, 1.f); return FSlateRenderTransform(FVector2D((1.f - FMath::Sin(k * PI * .5f)) * 760.f, 0)); })
 			]
 			// banner: slanted colour strip that pops in (wild appeared / super effective / critical)
@@ -473,11 +473,12 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		// ---------------- choice / menus (center): an ink vignette darkens the world behind the page
 		+ SOverlay::Slot()
 		[
-			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity(FLinearColor(1, 1, 1, .7f)).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->bMenuLeft ? .35f : .7f)); }).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::Visible : EVisibility::Collapsed; })
+			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, 0.f)); })
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceTitle); }).Font(PBXUI::Font(TEXT("title"), 68, 4)).ColorAndOpacity(IvoryC)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 22)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceSub); }).Font(PBXUI::Font(TEXT("italic"), 28, 2)).ColorAndOpacity(IvoryC).Justification(ETextJustify::Center)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SAssignNew(ChoiceHost, SBox)]
@@ -627,7 +628,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 {
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
 	TSharedRef<SVerticalBox> Col = SNew(SVerticalBox);
-	const bool bC = !M->bCards && M->Options.Num() > 7;   // long lists (Settings, Pause) use compact rows
+	const bool bC = !M->bCards && M->Options.Num() > 5;   // long lists (Settings, Pause) use compact rows
 	for (int32 i = 0; i < M->Options.Num(); i++)
 	{
 		const FPBXOption& O = M->Options[i];
@@ -680,8 +681,8 @@ TSharedRef<SWidget> SPBXHud::MakeMoves()
 					+ SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)
 					[
 						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Title.ToUpper())).Font(PBXUI::Font(TEXT("title"), 23)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->MoveSel == i ? CrimsonC : TextC); })]
-							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 18)).ColorAndOpacity(SepiaC)]
+						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Title.ToUpper())).Font(PBXUI::Font(TEXT("title"), 19)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->MoveSel == i ? CrimsonC : TextC); })]
+							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 17)).ColorAndOpacity(TextC * .75f)]
 					]
 				]
 			]

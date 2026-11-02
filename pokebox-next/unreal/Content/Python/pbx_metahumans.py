@@ -40,6 +40,13 @@ SPEC = {
     'crew_sail': ('Lani',    0.95, 167, .25, .35, 'Hair_M_Layered', None, (.85, .85, .8)),
     'crew_kid':  ('Mikel',   0.0, 136, -.4, -.8, 'Hair_S_CurlyFade', None, (.85, .3, .2)),
 }
+# r65 (user 2026-11-01: "why am I black? I see no other colour"): four looks per hero — the same face, four skin tones
+# (MetaHuman skin u = melanin, v = undertone) and matching hair colours. Picked on the "Your look" screen after gender.
+for _i, (_u, _v, _hc) in enumerate(((0.18, 0.45, (.20, .11, .05)), (0.34, 0.55, (.03, .02, .015)), (0.52, 0.62, (.05, .03, .02))), start=2):
+    SPEC[f'player_m{_i}'] = SPEC['player_m']
+SKIN = {'player_m2': (0.18, 0.45), 'player_m3': (0.34, 0.55), 'player_m4': (0.52, 0.62),
+        'player_f2': (0.18, 0.45), 'player_f3': (0.55, 0.62), 'player_f4': (0.82, 0.85)}
+for _c in ('player_f2', 'player_f3', 'player_f4'): SPEC[_c] = SPEC['player_f']
 KIDS = {'kid', 'crew_kid'}   # 2026-11-01: hero + rival are 16
 # hair colour for the hair CARDS material (the MetaHuman hair shader only draws through the groom renderer — r61)
 HAIR_COLOR = {'player_m': (.05, .03, .02), 'player_f': (.02, .015, .012), 'mom': (.09, .05, .03), 'vale': (.55, .42, .28),
@@ -47,6 +54,8 @@ HAIR_COLOR = {'player_m': (.05, .03, .02), 'player_f': (.02, .015, .012), 'mom':
               'merchant': (.02, .015, .01), 'kid': (.03, .02, .015), 'conductor': (.25, .12, .05), 'guard': (.12, .08, .05),
               'crew_jon': (.08, .05, .03), 'crew_ada': (.20, .10, .04), 'crew_ben': (.06, .04, .03), 'crew_old': (.75, .75, .74),
               'crew_sail': (.62, .48, .30), 'crew_kid': (.04, .03, .02)}
+HAIR_COLOR.update({'player_m2': (.20, .11, .05), 'player_m3': (.03, .02, .015), 'player_m4': (.05, .03, .02),
+                   'player_f2': (.25, .08, .03), 'player_f3': (.02, .015, .012), 'player_f4': (.02, .015, .012)})
 
 class builtins_flag: done = False
 HAIR_DEFAULT_TEX = '/MetaHumanCharacter/Optional/Grooms/GroomAssets/Hair/Hair_S_Messy/Hair_S_Messy_RootUVSeedCoverage'
@@ -171,7 +180,28 @@ def create(cid):
         if s.is_object_added_for_editing(ch): s.remove_object_to_edit(ch)
     try: _set_grooms(ch, cid)
     except Exception as ex: log('groom', cid, ex)
+    if cid in SKIN: set_skin(ch, *SKIN[cid])
     EAL.save_loaded_asset(ch); log('created', cid, 'from', preset); return ch
+
+def set_skin(ch, u, v):
+    """skin tone on a (not yet rigged) character: MetaHuman skin u = melanin, v = undertone"""
+    s = S()
+    if not s.try_add_object_to_edit(ch): log('busy (skin)'); return False
+    try:
+        ss = ch.get_editor_property('skin_settings'); sk = ss.skin; sk.u = float(u); sk.v = float(v); ss.skin = sk
+        s.commit_skin_settings(ch, ss); log('skin', ch.get_name(), u, v)
+    finally:
+        if s.is_object_added_for_editing(ch): s.remove_object_to_edit(ch)
+    return True
+
+def looks():
+    """r65: create + rig + texture + build the hero looks that don't exist yet (one at a time, saved after each)"""
+    for cid in [c for c in SKIN if not is_built(c)]:
+        try:
+            if not EAL.does_asset_exist(f'{ROOT}/Characters/MH_{cid}'): create(cid)
+            build_save(cid)
+        except Exception as ex: log('look FAILED', cid, ex)
+    log('looks pending', [c for c in SKIN if not is_built(c)])
 
 def create_all():
     for cid in SPEC: create(cid)

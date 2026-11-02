@@ -41,6 +41,7 @@ class UPBXSaveGame : public USaveGame
 public:
 	UPROPERTY() int32 Version = 1;
 	UPROPERTY() bool bMale = true;
+	UPROPERTY() int32 Look = 0;      // r65: hero look 0..3 = fair · light · brown · deep (skin tone + hair), see APBXDirector::LookId
 	UPROPERTY() uint8 Step = 0;
 	UPROPERTY() TArray<FPBXMon> Team;        // battle team (max 6), [0] = partner that walks with you
 	UPROPERTY() TArray<FPBXMon> Box;         // everything else you caught

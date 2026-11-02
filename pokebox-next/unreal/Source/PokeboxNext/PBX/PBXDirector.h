@@ -220,10 +220,17 @@ private:
 	void SaveTeamHP();
 
 	// ---- menus
-	enum class EMenu : uint8 { None, Title, Gender, Pause, Controls, Complete, Confirm, Team, Settings };
+	enum class EMenu : uint8 { None, Title, Gender, Pause, Controls, Complete, Confirm, Team, Settings, Look };
+	// r65 hero looks: the same face in four skin tones (+ hair), previewed live after the gender pick
+	bool bPendingMale = true; int32 PendingLook = 0;
+	static FString LookId(bool bMale, int32 Look);
+	void PreviewLook(int32 Look);
 	// ---- settings (r65, user 2026-11-01: "settings and every menu option a game should have"): audio, display, camera,
 	// subtitles; stored in GameUserSettings.ini [PBX.Settings] (display via UGameUserSettings)
-	float VolMaster = 1.f, VolMusic = 1.f, VolSfx = 1.f, LookSens = 1.f; bool bInvertY = false, bSubs = true;
+	float VolMaster = 1.f, VolMusic = 1.f, VolSfx = 1.f, LookSens = 1.f; bool bInvertY = false, bSubs = true, bInkStyle = true;
+	// the ink / Codex look over the whole world (user 2026-11-01): M_PBX_AnimePP (ink outlines, cel bands, hatching) on an unbound PP volume
+	UPROPERTY() TObjectPtr<class UMaterialInstanceDynamic> InkMID;
+	void ApplyInkStyle();
 	EMenu SettingsBack = EMenu::Title;
 	void LoadSettings(); void SaveSettings(); void ApplyAudioSettings();
 	void AdjustSetting(int32 Row, int32 Dir);

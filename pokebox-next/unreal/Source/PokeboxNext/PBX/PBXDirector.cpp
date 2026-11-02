@@ -40,6 +40,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/App.h"
 #include "GameFramework/GameUserSettings.h"
+#include "Engine/PostProcessVolume.h"
 #include "AudioDevice.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
@@ -181,7 +182,7 @@ void APBXDirector::BeginPlay()
 		Hud = SNew(SPBXHud, UI);
 		GEngine->GameViewport->AddViewportWidgetContent(SNew(SWeakWidget).PossiblyNullContent(Hud.ToSharedRef()), 10);
 	}
-	LoadSettings();
+	LoadSettings(); ApplyInkStyle();
 	if (!LoadData()) { Toast(TEXT("Map data missing — rebuild the town (blender_town.py).")); }
 	SpawnWorld();
 	if (APBXNPC* Mom = NPCs.FindRef(TEXT("mom"))) { Mom->Destroy(); NPCs.Remove(TEXT("mom")); }   // r65: no mother in the story
@@ -346,11 +347,25 @@ void APBXDirector::PlacePlayer(const FPBXSpot& S)
 
 void APBXDirector::TeleportPlayer(const FVector& P, float Yaw) { FPBXSpot S; S.Pos = P; S.Yaw = Yaw; PlacePlayer(S); }
 
+FString APBXDirector::LookId(bool bMale, int32 Look)
+{
+	static const TCHAR* Ms[] = { TEXT("player_m2"), TEXT("player_m3"), TEXT("player_m4"), TEXT("player_m") };
+	static const TCHAR* Fs[] = { TEXT("player_f2"), TEXT("player_f"), TEXT("player_f3"), TEXT("player_f4") };
+	const int32 k = FMath::Clamp(Look, 0, 3); return bMale ? Ms[k] : Fs[k];
+}
+
+void APBXDirector::PreviewLook(int32 Look)
+{
+	if (!Player) return;
+	if (!Player->ApplyMetaHuman(LookId(bPendingMale, Look))) Player->ApplyMetaHuman(bPendingMale ? TEXT("player_m") : TEXT("player_f"));
+	Player->SetActorScale3D(FVector(1.f)); Player->SetActorHiddenInGame(false);
+}
+
 void APBXDirector::ApplyPlayerLook()
 {
 	const bool bM = Game->State->bMale;
 	// he: the Fab "Free Stylized Boy" (retargeted UAL animations); she: Quaternius body + 3D clothes, cartoon proportions
-	if (Player->ApplyMetaHuman(bM ? TEXT("player_m") : TEXT("player_f"))) Player->SetActorScale3D(FVector(1.f));   // phase 5
+	if (Player->ApplyMetaHuman(LookId(bM, Game->State->Look)) || Player->ApplyMetaHuman(bM ? TEXT("player_m") : TEXT("player_f"))) Player->SetActorScale3D(FVector(1.f));   // phase 5 (+ r65 looks)
 	else if (bM) Player->ApplyLook(TEXT("boy"), FString(), .92f);
 	else Player->ApplyLook(TEXT("f"), TEXT("Hair_Long"), .9f, TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
@@ -726,6 +741,7 @@ void APBXDirector::InNav(int32 Dx, int32 Dy)
 		const int32 N = UI->Options.Num(); if (!N) return;
 		const int32 D = UI->bCards ? Dx : -Dy; if (!D) return;
 		for (int32 k = 0; k < N; k++) { UI->Selected = (UI->Selected + D + N) % N; if (UI->Options[UI->Selected].bEnabled) break; }
+		if (Menu == EMenu::Look && UI->Selected < 4) { PendingLook = UI->Selected; PreviewLook(UI->Selected); }
 	}
 	else if (Bt.bActive && UI->bMoves)
 	{
@@ -965,6 +981,9 @@ void APBXDirector::ChooseStarter(bool bRite)
 	{
 		const FPBXCardDef* C = PBXData::Card(Id); FPBXOption O; O.Title = C->Name;
 		O.Sub = FString::Printf(TEXT("%s Ink · Art: %s"), *PBXData::InkName(C->Type), *FPBXBattle::SigOf(C->Type).Name); O.Color = PBXData::TypeColor(C->Type);
+		// r65: the Spark's pen-and-ink drawing (from the legend intro's drawings) on the card
+		const FString Pic = FPaths::ProjectContentDir() / FString::Printf(TEXT("PBX/UI/starter_%s.png"), *C->Name);
+		if (FPaths::FileExists(Pic)) if (UTexture2D* T = FImageUtils::ImportFileAsTexture2D(Pic)) { CardTex.Add(T); O.Image = PBXUI::TextureBrush(T, FVector2D(226, 316)); }
 		Opts.Add(O);
 	}
 	OpenChoice(TEXT("Which Spark do you shield?"), bRite ? TEXT("Three Sparks flee the white light through the stacks. One of them runs straight at you.") : TEXT("Three Sparks hid from the White Page in the Scriptorium. The one you choose writes your Codex's first page."), Opts, true, [this, bRite](int32 i)
@@ -1996,7 +2015,7 @@ void APBXDirector::CloseChoice() { UI->Options.Reset(); UI->OnPick = nullptr; UI
 
 void APBXDirector::ShowMenu(EMenu M)
 {
-	Menu = M;
+	Menu = M; UI->bMenuLeft = M == EMenu::Look;
 	auto Opt = [](const FString& T, const FString& S, bool bOk = true) { FPBXOption O; O.Title = T; O.Sub = S; O.bEnabled = bOk; O.Color = FLinearColor(.4f, .35f, .3f); return O; };
 	switch (M)
 	{
@@ -2029,8 +2048,31 @@ void APBXDirector::ShowMenu(EMenu M)
 	}
 	case EMenu::Gender:
 		OpenChoice(TEXT("WHO ARE YOU?"), TEXT("Choose your Scribe"), { Opt(TEXT("Rook · he / him"), TEXT("sixteen, the harbour's lantern-boy, a blank Codex")), Opt(TEXT("Vesna · she / her"), TEXT("sixteen, the harbour's lantern-girl, a blank Codex")), Opt(TEXT("Back"), TEXT("")) }, false,
-			[this](int32 i) { if (i == 2) ShowMenu(EMenu::Title); else StartNewGame(i == 0); });
+			[this](int32 i) { if (i == 2) ShowMenu(EMenu::Title); else { bPendingMale = i == 0; PendingLook = 0; ShowMenu(EMenu::Look); } });
 		break;
+	case EMenu::Look:
+	{
+		// the hero stands in their house; the camera looks at them, the menu slides to the left third
+		StopTitleLoop();
+		PlacePlayer(NewGameSpot); PreviewLook(PendingLook);
+		if (Player && Cam)
+		{
+			const FVector P = Player->GetActorLocation(); const FVector F = Player->GetActorForwardVector(); const FVector R(-F.Y, F.X, 0.f);
+			const FVector C = P + F * 230.f - R * 75.f + FVector(0, 0, 45.f);
+			Cam->SetActorLocationAndRotation(C, (P + FVector(0, 0, 35.f) - R * 75.f - C).Rotation());
+			Cam->GetCameraComponent()->SetFieldOfView(40.f);
+			if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Cam);
+		}
+		OpenChoice(TEXT("YOUR LOOK"), bPendingMale ? TEXT("Rook, sixteen") : TEXT("Vesna, sixteen"),
+			{ Opt(TEXT("Fair"), TEXT("pale skin, brown hair")), Opt(TEXT("Light"), TEXT("light olive skin, black hair")), Opt(TEXT("Brown"), TEXT("warm brown skin, dark hair")), Opt(TEXT("Deep"), TEXT("deep brown skin, black hair")), Opt(TEXT("Back"), TEXT("")) }, false,
+			[this](int32 i)
+			{
+				if (i == 4) { if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f); ShowMenu(EMenu::Gender); return; }
+				PendingLook = i; if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f); StartNewGame(bPendingMale);
+			});
+		UI->Selected = PendingLook;
+		break;
+	}
 	case EMenu::Pause:
 	{
 		TSet<FName> Owned; for (const FPBXMon& Mo : Game->State->Team) Owned.Add(Mo.Card); for (const FPBXMon& Mo : Game->State->Box) Owned.Add(Mo.Card);
@@ -2073,8 +2115,8 @@ void APBXDirector::ShowMenu(EMenu M)
 			  Row(TEXT("Graphics quality"), Q[Ql]), Row(TEXT("Resolution"), FString::Printf(TEXT("%d x %d"), R.X, R.Y)), Row(TEXT("Display"), WMs),
 			  Row(TEXT("V-sync"), GS && GS->IsVSyncEnabled() ? TEXT("On") : TEXT("Off")), Row(TEXT("Frame limit"), Fps <= 0.f ? FString(TEXT("None")) : FString::Printf(TEXT("%d fps"), FMath::RoundToInt(Fps))),
 			  Row(TEXT("Camera sensitivity"), Pct(LookSens)), Row(TEXT("Invert camera Y"), bInvertY ? TEXT("On") : TEXT("Off")), Row(TEXT("Subtitles"), bSubs ? TEXT("On") : TEXT("Off")),
-			  Opt(TEXT("Back"), TEXT("")) }, false,
-			[this](int32 i) { if (i == 11) { SaveSettings(); ShowMenu(SettingsBack); } else AdjustSetting(i, 1); });
+			  Row(TEXT("Ink style"), bInkStyle ? TEXT("On") : TEXT("Off")), Opt(TEXT("Back"), TEXT("")) }, false,
+			[this](int32 i) { if (i == 12) { SaveSettings(); ShowMenu(SettingsBack); } else AdjustSetting(i, 1); });
 		break;
 	}
 	case EMenu::Complete:
@@ -2116,6 +2158,7 @@ void APBXDirector::LoadSettings()
 	GConfig->GetFloat(PBXSet, TEXT("VolMaster"), VolMaster, GGameUserSettingsIni); GConfig->GetFloat(PBXSet, TEXT("VolMusic"), VolMusic, GGameUserSettingsIni);
 	GConfig->GetFloat(PBXSet, TEXT("VolSfx"), VolSfx, GGameUserSettingsIni); GConfig->GetFloat(PBXSet, TEXT("LookSens"), LookSens, GGameUserSettingsIni);
 	GConfig->GetBool(PBXSet, TEXT("InvertY"), bInvertY, GGameUserSettingsIni); GConfig->GetBool(PBXSet, TEXT("Subtitles"), bSubs, GGameUserSettingsIni);
+	GConfig->GetBool(PBXSet, TEXT("InkStyle"), bInkStyle, GGameUserSettingsIni);
 	VolMaster = FMath::Clamp(VolMaster, 0.f, 1.f); VolMusic = FMath::Clamp(VolMusic, 0.f, 1.f); VolSfx = FMath::Clamp(VolSfx, 0.f, 1.f); LookSens = FMath::Clamp(LookSens, .2f, 3.f);
 	ApplyAudioSettings();
 }
@@ -2126,6 +2169,7 @@ void APBXDirector::SaveSettings()
 		GConfig->SetFloat(PBXSet, TEXT("VolMaster"), VolMaster, GGameUserSettingsIni); GConfig->SetFloat(PBXSet, TEXT("VolMusic"), VolMusic, GGameUserSettingsIni);
 		GConfig->SetFloat(PBXSet, TEXT("VolSfx"), VolSfx, GGameUserSettingsIni); GConfig->SetFloat(PBXSet, TEXT("LookSens"), LookSens, GGameUserSettingsIni);
 		GConfig->SetBool(PBXSet, TEXT("InvertY"), bInvertY, GGameUserSettingsIni); GConfig->SetBool(PBXSet, TEXT("Subtitles"), bSubs, GGameUserSettingsIni);
+		GConfig->SetBool(PBXSet, TEXT("InkStyle"), bInkStyle, GGameUserSettingsIni);
 		GConfig->Flush(false, GGameUserSettingsIni);
 	}
 	if (GEngine && GEngine->GetGameUserSettings()) GEngine->GetGameUserSettings()->SaveSettings();
@@ -2171,11 +2215,31 @@ void APBXDirector::AdjustSetting(int32 Row, int32 Dir)
 	case 8: Step(LookSens, .2f, 3.f, .1f); break;
 	case 9: bInvertY = !bInvertY; break;
 	case 10: bSubs = !bSubs; break;
+	case 11: bInkStyle = !bInkStyle; ApplyInkStyle(); break;
 	default: return;
 	}
 	if (bDisplay && GS) GS->ApplySettings(false);
 	ApplyAudioSettings();
 	const int32 Keep = UI->Selected; ShowMenu(EMenu::Settings); UI->Selected = Keep;
+}
+
+void APBXDirector::ApplyInkStyle()
+{
+	if (!InkMID)
+		if (UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_AnimePP.M_PBX_AnimePP")))
+		{
+			// tuned for the Codex: a little less colour (aged ink), soft cel bands, light hatching in the shadows
+			InkMID = UMaterialInstanceDynamic::Create(Mat, this);
+			InkMID->SetScalarParameterValue(TEXT("Sat"), .9f); InkMID->SetScalarParameterValue(TEXT("Cel"), .35f);
+			InkMID->SetScalarParameterValue(TEXT("HatchAmt"), .4f); InkMID->SetScalarParameterValue(TEXT("InkAmt"), .75f);
+			InkMID->SetScalarParameterValue(TEXT("FadeDist"), 60000.f);
+		}
+	if (!InkMID) { PBXLOG("[PBXASSET] M_PBX_AnimePP missing — ink style off"); return; }
+	APostProcessVolume* V = nullptr;
+	for (TActorIterator<APostProcessVolume> It(GetWorld()); It; ++It) if (It->bUnbound) { V = *It; break; }
+	if (!V) { V = GetWorld()->SpawnActor<APostProcessVolume>(); if (!V) return; V->bUnbound = true; V->Priority = 50.f; }
+	V->Settings.WeightedBlendables.Array.RemoveAll([this](const FWeightedBlendable& B) { return B.Object == InkMID; });
+	V->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(bInkStyle ? 1.f : 0.f, InkMID));
 }
 
 void APBXDirector::StartTitleLoop()
@@ -2404,7 +2468,7 @@ void APBXDirector::StartNewGame(bool bMale)
 {
 	StopTitleLoop();
 	CloseChoice(); Menu = EMenu::None;
-	Game->NewGame(bMale);
+	Game->NewGame(bMale); Game->State->Look = PendingLook; UI->bMenuLeft = false;
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
 	for (APBXEcho* W : Wilds) if (W) W->Destroy(); Wilds.Reset();
 	Queue.Reset(); QueueGen++; StepT = 0.f;
