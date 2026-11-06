@@ -179,6 +179,19 @@ void APBXDirector::StoryPump()
 		}
 		if (N->TryGetStringField(TEXT("amb"), S)) { StoryLoop(StoryAmb, StoryAmbName, TEXT("amb"), S, .55f * VolSfx, 2.0f); continue; }
 		bool bB; if (N->TryGetBoolField(TEXT("blanked"), bB)) { ApplyBlanked(bB); continue; }
+		if (N->TryGetStringField(TEXT("place"), S))   // where the scene is staged: "door:<id>:in|out", "spot:<id>", "npc:<id>"
+		{
+			FPBXSpot P; bool bOk = false;
+			if (S.StartsWith(TEXT("door:")))
+			{
+				TArray<FString> Parts; S.ParseIntoArray(Parts, TEXT(":"));
+				for (const FPBXDoor& Dr : Doors) if (Parts.Num() >= 2 && Dr.Id == Parts[1]) { P = (Parts.Num() > 2 && Parts[2] == TEXT("in")) ? Dr.Inside : Dr.Outside; bOk = true; }
+			}
+			else if (S.StartsWith(TEXT("spot:"))) { if (const FPBXSpot* Sp = Spots.Find(S.Mid(5))) { P = *Sp; bOk = true; } }
+			else { const FVector At = StoryAt(S); if (!At.IsZero()) { P.Pos = At + FVector(180, 0, 0); P.Yaw = 180.f; bOk = true; } }
+			if (bOk) PlacePlayer(P); else SLOG("[PBXSTORY] place: unknown %s", *S);
+			continue;
+		}
 		if (N->TryGetStringField(TEXT("log"), S)) { SLOG("[PBXSTORY] %s", *S); continue; }
 		if (N->TryGetStringField(TEXT("if"), S))
 		{

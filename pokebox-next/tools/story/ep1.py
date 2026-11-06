@@ -23,7 +23,7 @@ def rho_ends_alone():
 # =============================================================== SCENE 1 — Before the Rite
 S.scene('s1_harbour', 'Before the Rite',
     setf('rho', v=2), setf('gus', v=3), setf('omari', v=2), setf('rho_pages', v=0),
-    blanked(False), music('harbour'), {'amb': 'harbour'},
+    blanked(False), place('spot:rho_greet'), music('harbour'), {'amb': 'harbour'},
     title('EPISODE ONE', 'The Unwritten'),
     nar('Tonight every sixteen-year-old in Lumen Harbor opens a Codex for the first time.'),
     nar('Tonight the Script decides who you are.'),
@@ -105,7 +105,7 @@ S.scene('s1_harbour', 'Before the Rite',
 
 # =============================================================== SCENE 2 — The Rite
 S.scene('s2_rite', 'The Rite of Pages',
-    {'amb': 'hall'}, music('calm'), fade(0, 1.0),
+    place('door:lab:in'), {'amb': 'hall'}, music('calm'), fade(0, 1.0),
     nar('Candles. Six lecterns in a ring, a closed Codex on each. The whole harbour on the benches. Rain on the high windows.'),
     say('rho', 'Benches are full. Dad\'s seat is empty. He said he\'d be here.'),
     choice('', 8, [
@@ -196,6 +196,7 @@ S.scene('s4_spark', 'The Spark',
 
 # =============================================================== SCENE 5 — The Alley (Pact moment)
 S.scene('s5_alley', 'The Alley',
+    place('spot:rho_gate'),
     {'amb': 'rain'}, music('action'),
     nar('The fish-market alley. Fog. A Blanked Spark, big, grey, eyeless, blocks the only way to the lighthouse.'),
     spark('WRITE WITH ME.', "there's a word!! write the word!!", 'Trace. With. Me.'),
@@ -208,6 +209,7 @@ S.scene('s5_alley', 'The Alley',
 
 # =============================================================== SCENE 6 — Dawn
 S.scene('s6_dawn', 'Dawn',
+    place('door:house:in'),
     {'amb': 'sea'}, music('lullaby'), fade(0, 1.2),
     nar('Grey dawn. Half the town stands in the streets, white and still. The White Page ships are gone.'),
     say('gus', "Thirty years I kept this lamp lit so I'd see them coming. And they came in fog."),
@@ -272,7 +274,7 @@ def clue(flag, *lines):
     return [setf(flag), add('CLUES'), lines, toast('A clue is written in your Codex.')]
 
 S.scene('s7_gate', 'Who Opened the Gate?',
-    setf('CLUES', v=0), {'amb': 'rain'}, music('suspense'), fade(0, 1.0),
+    setf('CLUES', v=0), place('spot:rho_greet'), {'amb': 'rain'}, music('suspense'), fade(0, 1.0),
     nar('Morning. The harbour in daylight, silent. White figures everywhere, frozen mid-step.'),
     hub(objective='Find out who opened the sea gate', exit='seen.square', spots=[
         spot('c1', 'Climb to the green lamp', 'npc:bruce', clue('C1', note('The wick is burnt. Someone lit the all-clear at nine. Only the watch can.'))),
@@ -341,6 +343,7 @@ S.scene('s7_gate', 'Who Opened the Gate?',
 
 # =============================================================== SCENE 8 — The Road
 S.scene('s8_road', 'The Road',
+    place('spot:rho_gate'),
     {'amb': 'wind'}, music('lullaby'), fade(0, 1.0),
     say('vale', 'They went north. They took the archive. They will come back for you.'),
     if_('ACCUSED_GUS', say('vale', 'Gus asked me to give you his coat. Even now.'), say('gus', 'Take the coat. North wind bites.')),

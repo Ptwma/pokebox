@@ -40,6 +40,7 @@ def title(t, sub=''): return {'title': t, 'sub': sub}
 def panel(desc): return {'panel': desc}
 def objective(t): return {'objective': t}
 def blanked(b): return {'blanked': b}
+def place(at): return {'place': at}
 def log(t): return {'log': t}
 def end(): return {'end': True}
 
