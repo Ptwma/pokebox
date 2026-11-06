@@ -3,7 +3,13 @@
 from story_dsl import *
 
 S = Story('ep1', start='s1_harbour', title='Episode 1 · The Unwritten')
-S.stage('Pier', (120000, 0, 0))   # v4 set #1: the pier at dusk (tools/sets/set_pier.py → pbx_sets.import_set)
+S.stage('Pier', (120000, 0, 0))
+S.stage('Scriptorium', (150000, 0, 0))
+S.stage('Alley', (180000, 0, 0))   # v4 set #3: the fish-market alley (tools/sets/set_alley.py)
+def AL(x, y, z=0): return f'stage:Alley:{x},{y},{z}'
+S.stage('Lighthouse', (210000, 0, 3000))   # v4 set #4: the lamp room, 30 m above the sea (tools/sets/set_lighthouse.py)
+def LH(x, y, z=0): return f'stage:Lighthouse:{x},{y},{z}'   # v4 set #2: the hall + the stacks (tools/sets/set_scriptorium.py)
+def SC(x, y, z=0): return f'stage:Scriptorium:{x},{y},{z}'   # v4 set #1: the pier at dusk (tools/sets/set_pier.py → pbx_sets.import_set)
 def P(x, y, z=0): return f'stage:Pier:{x},{y},{z}'
 S.cast('rho', 'Rho', 'rho', (.4, .75, 1))
 S.cast('bruce', 'Captain Bruce', 'guard', (.75, .7, .6))
@@ -118,7 +124,9 @@ S.scene('s1_harbour', 'Before the Rite',
 
 # =============================================================== SCENE 2 — The Rite
 S.scene('s2_rite', 'The Rite of Pages',
-    {'npc_home': True}, sun(-35, 35, 1.0, (.86, .88, .95)), place('door:lab:in'), {'amb': 'hall'}, music('calm'), fade(0, 1.0),
+    sun(-6, 200, 0.12, (.55, .62, .9)), place(SC(0, 380) + ':270'),   # night outside the windows
+    npc('rho', SC(300, 200), 235), npc('vale', SC(0, -520), 90), npc('kelvin', SC(190, -660), 110),
+    npc('omari', SC(-490, 220), 0), npc('gus', SC(-490, -180), 0), npc('bruce', SC(0, -1500), 90), {'amb': 'hall'}, music('calm'), fade(0, 1.0),
     nar('Candles. Six lecterns in a ring, a closed Codex on each. The whole harbour on the benches. Rain on the high windows.'),
     say('rho', 'Benches are full. Dad\'s seat is empty. He said he\'d be here.'),
     choice('', 8, [
@@ -186,7 +194,7 @@ S.scene('s3_white', 'The White Page',
 
 # =============================================================== SCENE 4 — The Spark
 S.scene('s4_spark', 'The Spark',
-    {'amb': 'fire'}, music('suspense'), fade(0, .8),
+    place(SC(0, 1150) + ':90'), if_('SAVED_PAGES', npc('rho', SC(-160, 1080), 60), npc('rho', SC(0, -1500), 0)), {'amb': 'fire'}, music('suspense'), fade(0, .8),
     nar('The stacks. Tall shelves, jars of sleeping Sparks. Fire in one aisle. Kelvin\'s lantern on the floor, still lit.'),
     if_('SAVED_PAGES', nar("Rho carries Omari's white, weightless body. He won't talk.")),
     nar('A shelf of jars breaks. Three young Sparks spill out and scatter. An Eraser\'s light sweeps the aisle.'),
@@ -209,7 +217,7 @@ S.scene('s4_spark', 'The Spark',
 
 # =============================================================== SCENE 5 — The Alley (Pact moment)
 S.scene('s5_alley', 'The Alley',
-    place('spot:rho_gate'),
+    {'npc_home': True}, place(AL(-950, 0) + ':0'), sun(-6, 200, 0.1, (.5, .58, .85)),
     {'amb': 'rain'}, music('action'),
     nar('The fish-market alley. Fog. A Blanked Spark, big, grey, eyeless, blocks the only way to the lighthouse.'),
     spark('WRITE WITH ME.', "there's a word!! write the word!!", 'Trace. With. Me.'),
@@ -222,7 +230,9 @@ S.scene('s5_alley', 'The Alley',
 
 # =============================================================== SCENE 6 — Dawn
 S.scene('s6_dawn', 'Dawn',
-    place('door:house:in'),
+    place(LH(150, -60) + ':158'), sun(-4, 100, 0.55, (.75, .8, .95)),
+    npc('gus', LH(60, 90), 200), npc('vale', LH(230, 60), 185), npc('rho', LH(170, -190), 140),
+    if_('SAVED_OMARI', npc('omari', LH(-160, -150), 30), npc('omari', LH(110, -230), 100)),
     {'amb': 'sea'}, music('lullaby'), fade(0, 1.2),
     nar('Grey dawn. Half the town stands in the streets, white and still. The White Page ships are gone.'),
     say('gus', "Thirty years I kept this lamp lit so I'd see them coming. And they came in fog."),
@@ -253,7 +263,8 @@ S.scene('s6_dawn', 'Dawn',
 
 # =============================================================== SCENE 6b — The lighthouse at night (quiet scene)
 S.scene('s6b_night', 'The Lamp Room',
-    {'amb': 'rain'}, music('calm'), fade(0, 1.0),
+    place(LH(-120, 150) + ':40'), sun(-6, 200, 0.08, (.5, .58, .85)), npc('rho', LH(20, 240), 250), npc('gus', SC(0, -1500), 0), npc('vale', SC(0, -1500), 0),
+    if_('SAVED_OMARI', npc('omari', LH(-220, -90), 0), npc('omari', SC(0, -1500), 0)), {'amb': 'rain'}, music('calm'), fade(0, 1.0),
     nar('Night. The lamp room at the top of the lighthouse. The beam sweeps over a harbour full of white statues.'),
     if_('partner==1', nar('Cindril sleeps curled in the warm brass of the lamp, smoking a little.'),
         if_('partner==2', nar('Glublet sleeps in the bucket of rain water, blowing bubbles.'), nar('Sporrow sits on the window sill, not sleeping, watching the beam.'))),
@@ -287,21 +298,23 @@ def clue(flag, *lines):
     return [setf(flag), add('CLUES'), lines, toast('A clue is written in your Codex.')]
 
 S.scene('s7_gate', 'Who Opened the Gate?',
-    setf('CLUES', v=0), place('spot:rho_greet'), {'amb': 'rain'}, music('suspense'), fade(0, 1.0),
+    setf('CLUES', v=0), place(P(-420, 340) + ':15'), sun(-25, 120, 0.7, (.85, .88, .95)),
+    npc('gus', P(780, 1150), 90), npc('kelvin', P(-950, 300), 0), npc('zuri', P(-820, 230), 20), npc('rho', P(120, 520), 180),
+    npc('vale', P(-180, 620), 90), npc('bruce', SC(0, -1500), 0), npc('omari', SC(0, -1500), 0), {'amb': 'rain'}, music('suspense'), fade(0, 1.0),
     nar('Morning. The harbour in daylight, silent. White figures everywhere, frozen mid-step.'),
     hub(objective='Find out who opened the sea gate', exit='seen.square', spots=[
-        spot('c1', 'Climb to the green lamp', 'npc:bruce', clue('C1', note('The wick is burnt. Someone lit the all-clear at nine. Only the watch can.'))),
-        spot('c2', 'Look in the watchhouse stove', 'npc:bruce',
+        spot('c1', 'Climb to the green lamp', P(560, 60), clue('C1', note('The wick is burnt. Someone lit the all-clear at nine. Only the watch can.'))),
+        spot('c2', 'Look in the watchhouse stove', P(420, 90),
             spark('MOVE. I WILL DRY IT.', "i'll lift the ash!! gently!!", 'Roots. Will. Pull.'),
             clue('C2', note('The last page of the watch log, half-burnt: "21:00 — lamp lit — B."'))),
-        spot('c3', 'Examine the sea gate', 'spot:rho_gate',
+        spot('c3', 'Examine the sea gate', P(-1150, 120),
             if_('NAME_TOLD', clue('C3', note("No break. A key, from the inside. Not the Archivist's wards — the watch's key.")),
                 note('No break. Someone opened it with a key, from the inside. You can\'t tell whose.'))),
-        spot('c4', 'Walk through the watchhouse', 'npc:bruce', clue('C4', note('Everyone around it is white. Inside, not even the cat.'))),
-        spot('c5', "Open the Captain's drawer", 'npc:bruce',
+        spot('c4', 'Walk through the watchhouse', P(340, 130), clue('C4', note('Everyone around it is white. Inside, not even the cat.'))),
+        spot('c5', "Open the Captain's drawer", P(640, 150),
             clue('C5', note("A white silk ribbon stitched with Hollowmere's sign. The White Page's token.")),
             if_('EGG_REPORTED', note("And Omari's egg, safe and warm in a padded box. Kept for someone."))),
-        spot('r1', 'Look in the tavern', '', note("Kelvin's key, in the tavern keeper's white hand. Lost at dice before the Rite. Not Kelvin, then.")),
+        spot('r1', 'Look in the tavern', P(-700, 120), note("Kelvin's key, in the tavern keeper's white hand. Lost at dice before the Rite. Not Kelvin, then.")),
         spot('r2', "Read Gus's logbook", 'npc:gus',
             note('"Out at sunset. Saw sails to the north. White." Gus went to look, not to open doors.'),
             if_('GUS_THIRD_PAGE', [say('gus', 'My third page. A ship with white sails. I\'ve waited my whole life for it.'), rel(gus=1)])),
@@ -334,7 +347,7 @@ S.scene('s7_gate', 'Who Opened the Gate?',
             say('vale', 'You went through the harbour. Tell us.'),
             choice('', 0, [
                 opt('Accuse Captain Bruce.', if_('CLUES>=3 && C2 || CLUES>=3 && C5 || CLUES>=3 && C6', [
-                        nar('The square turns. Captain Bruce walks in from the cliffs, soaked. He does not deny it.'),
+                        npc('bruce', P(-60, 760), 270), nar('The square turns. Captain Bruce walks in from the cliffs, soaked. He does not deny it.'),
                         say('bruce', 'I was six when the words drowned Hollowmere. They promised it would never happen again.'),
                         say('bruce', 'They promised they\'d spare my boy.'),
                         say('rho', 'Dad.'),
@@ -342,7 +355,7 @@ S.scene('s7_gate', 'Who Opened the Gate?',
                         setf('ACCUSED_BRUCE_PROOF'), rel(town=1, vale=1),
                         if_('RHO_SAW_PROOF', rel(rho=-1), rel(rho=-3)), remember('Rho'),
                         nar('The watch locks their own Captain in the watchhouse.')],
-                    [say('bruce', 'The kid with the blank book is accusing the man who held the north wall all night?'),
+                    [npc('bruce', P(-60, 760), 270), say('bruce', 'The kid with the blank book is accusing the man who held the north wall all night?'),
                      nar('Uneasy laughter. Bruce looks at you a long time. He knows that you know.'),
                      setf('ACCUSED_BRUCE_WEAK'), rel(town=-1, rho=-2)])),
                 opt('Accuse Old Gus.', say('gus', "If that's what you think of me."), nar('The watch takes him. Captain Bruce leads the arrest.'),

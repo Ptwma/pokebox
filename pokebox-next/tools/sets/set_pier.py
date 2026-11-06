@@ -282,9 +282,36 @@ ls.select_by_visibility = True; ls.select_by_collection = True; ls.collection = 
 if ls.linestyle is None: ls.linestyle = bpy.data.linestyles.new('Ink')
 ls.linestyle.color = (0.03, 0.02, 0.03); ls.linestyle.thickness = 1.8
 
+
+# ------------------------------------------------------------------ dressing (owner: "a little full, not empty")
+exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kit.py')).read().split('# ------------------------------------------------------------------ dressing props')[1].split('\n', 1)[1])   # prop() from kit.py
+D = random.Random(21)
+# the market on the quay: two stalls with fish and crates, barrels, buckets, nets, rope
+prop('k_town/stall-red', (-7.6, -3.2, 0), 180, height=2.4); prop('k_town/stall-green', (-3.4, -3.6, 0), 170, height=2.4)
+for (x, y) in [(-8.2, -3.0), (-7.0, -3.1), (-3.0, -3.4)]: prop('k_survival/fish', (x, y, 0.95), D.uniform(0, 360), height=0.12)
+for (x, y, r) in [(-10.6, -1.5, 0), (-10.0, -1.2, 30), (1.8, -1.3, 0), (2.5, -1.6, 15), (6.3, -5.4, 0)]: prop('k_pirate/barrel', (x, y, 0), r, height=0.95)
+for (x, y) in [(-2.2, -1.2), (6.0, -9.6)]: prop('k_pirate/crate-bottles', (x, y, 0), D.uniform(0, 90), height=0.7)
+for (x, y) in [(-5.6, -1.0), (2.9, -1.1), (7.6, -13.0)]: prop('Bucket_Wooden_1', (x, y, 0), D.uniform(0, 360), height=0.4)
+for (x, y) in [(6.2, -7.2), (7.8, -10.2), (-0.8, -5.4)]: prop('Rope_1', (x, y, 0.01), D.uniform(0, 360), height=0.18)
+prop('Bench', (-1.2, -0.7, 0), 0, height=0.85); prop('Bench', (4.2, -0.7, 0), 0, height=0.85)
+prop('k_survival/signpost', (-11.2, -4.6, 0), 30, height=2.0)
+prop('lifebuoy', (7.95, -6.3, 0.35), 90, height=0.75, tilt=(90, 0))
+prop('k_town/cart', (-12.2, -2.6, 0), 80, height=1.5)
+prop('k_town/banner-red', (-4.9, -0.15, 3.2), 180, height=1.6); prop('k_town/banner-green', (3.1, -0.15, 3.2), 180, height=1.6)
+# boats at the pier
+prop('k_pirate/boat-row-small', (5.4, -12.5, -0.55), 95, height=0.9); prop('k_pirate/boat-row-large', (9.0, -9.0, -0.55), 85, height=1.1)
+prop('k_pirate/boat-row-small', (9.3, -14.6, -0.55), 70, height=0.9)
+prop('k_pirate/mast', (11.5, -20.0, -0.6), 0, height=9.0)   # a moored ship's mast beyond the pier
+# wall lanterns and flower boxes on the houses
+for x in (-9.0, -3.0, 1.0, 6.0): prop('Lantern_Wall', (x, -0.3, 2.2), 180, height=0.55)
+for x in (-8.0, -4.0, 4.0): prop('planter_box_01', (x, -0.35, 0), 0, height=0.45)
+for m in bpy.data.materials: toonify(m)
+
 if EXPORT:
     import json
-    drop = [o for o in bpy.data.objects if o.type in ('CAMERA', 'LIGHT') or o is fog or o is beam]
+    for o in [o for o in bpy.data.objects if o.type == 'MESH' and o.parent is not None and o.parent.type == 'EMPTY']:
+        mw = o.matrix_world.copy(); o.parent = None; o.matrix_world = mw
+    drop = [o for o in bpy.data.objects if o.type in ('CAMERA', 'LIGHT') or o is fog or o is beam or o is water]   # Unreal: the town's own sea shows instead (no seam)
     lights = [{'pos': [round(o.location.x * 100, 1), round(-o.location.y * 100, 1), round(o.location.z * 100, 1)], 'energy': o.data.energy, 'color': list(o.data.color), 'type': o.data.type} for o in bpy.data.objects if o.type == 'LIGHT' and o.data.type == 'POINT']
     for o in drop: bpy.data.objects.remove(o)
     fbx = os.path.splitext(OUT)[0] + '.fbx'; os.makedirs(os.path.dirname(fbx), exist_ok=True)

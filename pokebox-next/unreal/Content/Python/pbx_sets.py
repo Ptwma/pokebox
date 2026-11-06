@@ -7,7 +7,7 @@ G = '/Game/PBX'
 AT = unreal.AssetToolsHelpers.get_asset_tools(); EAL = unreal.EditorAssetLibrary
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 MEL = unreal.MaterialEditingLibrary
-STAGES = {'Pier': (120000.0, 0.0, 0.0)}   # stage origins (cm): far east of the old town, at sea level
+STAGES = {'Pier': (120000.0, 0.0, 0.0), 'Scriptorium': (150000.0, 0.0, 0.0), 'Alley': (180000.0, 0.0, 0.0), 'Lighthouse': (210000.0, 0.0, 3000.0)}   # stage origins (cm): far east of the old town, at sea level
 def log(*a): print('[pbx]', *a)
 
 def _emissive():
@@ -51,7 +51,8 @@ def import_set(name='Pier'):
     bs = sm.get_editor_property('body_setup')
     if bs: bs.set_editor_property('collision_trace_flag', unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
     # emissive slots by Blender material name
-    glow = {'LanternGlass': ((1.0, .45, .12), 6.0), 'RoomLit': ((1.0, .6, .28), 2.5), 'RoomDark': ((.02, .025, .04), 1.0), 'LampRoom': ((1.0, .8, .45), 8.0)}
+    glow = {'LanternGlass': ((1.0, .45, .12), 6.0), 'RoomLit': ((1.0, .6, .28), 2.5), 'RoomDark': ((.02, .025, .04), 1.0), 'LampRoom': ((1.0, .8, .45), 8.0),
+            'Candle': ((1.0, .62, .22), 10.0), 'JarGlow': ((.45, .75, 1.0), 1.5), 'LampRed': ((1.0, .12, .08), 8.0)}
     mats = sm.get_editor_property('static_materials')
     for i, sl in enumerate(mats):
         n = str(sl.get_editor_property('material_slot_name'))
@@ -65,11 +66,14 @@ def import_set(name='Pier'):
     act = EAS.spawn_actor_from_object(sm, loc, unreal.Rotator(0, 0, 0)); act.set_actor_label(f'SET_{name}')
     info = json.load(open(base + '.json'))
     for i, L in enumerate(info['lights']):
+        if L.get('type') == 'SPOT': continue   # preview-only moonlight shafts (outside the walls)
         p = unreal.Vector(loc.x + L['pos'][0], loc.y + L['pos'][1], loc.z + L['pos'][2])
         la = EAS.spawn_actor_from_class(unreal.PointLight, p, unreal.Rotator(0, 0, 0)); la.set_actor_label(f'SET_{name}_Light{i}')
         lc = la.get_component_by_class(unreal.PointLightComponent)
-        lc.set_editor_property('intensity', 18.0); lc.set_editor_property('intensity_units', unreal.LightUnits.CANDELAS)
-        lc.set_editor_property('light_color', unreal.Color(r=255, g=140, b=60, a=255)); lc.set_editor_property('attenuation_radius', 900.0)
+        # Blender watts → candelas, roughly (a 420 W lantern ≈ 8 cd); colour from the set
+        c = L.get('color', [1, .55, .25])
+        lc.set_editor_property('intensity', max(1.0, L.get('energy', 300) / 52.0)); lc.set_editor_property('intensity_units', unreal.LightUnits.CANDELAS)
+        lc.set_editor_property('light_color', unreal.Color(r=int(255 * c[0]), g=int(255 * c[1]), b=int(255 * c[2]), a=255)); lc.set_editor_property('attenuation_radius', 1000.0)
         lc.set_editor_property('mobility', unreal.ComponentMobility.MOVABLE)
     unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
     log('set', name, 'at', loc, 'slots', len(mats), 'lights', len(info['lights']))
