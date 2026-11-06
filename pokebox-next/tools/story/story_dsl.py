@@ -35,7 +35,7 @@ def wait(s): return {'wait': s}
 def fade(to, secs=.6): return {'fade': to, 'secs': secs}
 def flash(r=1, g=1, b=1): return {'flash': [r, g, b]}
 def sfx(n): return {'sfx': n}
-def music(n): return {'music': n}
+def music(n, fade=2.5): return {'music': n, 'xfade': fade}
 def title(t, sub=''): return {'title': t, 'sub': sub}
 def panel(desc): return {'panel': desc}
 def objective(t): return {'objective': t}

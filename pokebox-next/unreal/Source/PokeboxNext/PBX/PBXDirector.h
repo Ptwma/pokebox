@@ -190,6 +190,13 @@ private:
 	struct FStorySpot { FString Id, Label; FVector Pos = FVector::ZeroVector; TArray<TSharedPtr<class FJsonValue>> Do; bool bOnce = true; };
 	TArray<FStorySpot> HubSpots; bool bHub = false;
 	TFunction<void()> OnFuse;
+	UPROPERTY() TObjectPtr<UAudioComponent> StoryVoice;
+	UPROPERTY() TObjectPtr<UAudioComponent> StoryMusic;
+	UPROPERTY() TObjectPtr<UAudioComponent> StoryAmb;
+	FString StoryMusicName, StoryAmbName;
+	void StoryLoop(TObjectPtr<UAudioComponent>& Comp, FString& Cur, const TCHAR* Kind, const FString& Name, float Vol, float Fade);
+	void StoryAudioStop();
+	float StoryVoicePlay(const FString& Id);
 	FString StorySpeakerName, LastLine, AutoPath; FLinearColor StorySpeakerColor = FLinearColor(1, .82f, .2f); int32 AutoChoice = 0;
 	bool HasStory(const FString& Ep) const;
 	bool LoadStory(const FString& Ep);

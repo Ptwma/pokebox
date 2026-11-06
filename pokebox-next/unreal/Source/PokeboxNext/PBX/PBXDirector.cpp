@@ -2194,6 +2194,8 @@ void APBXDirector::ApplyAudioSettings()
 {
 	if (GEngine) if (FAudioDeviceHandle AD = GEngine->GetMainAudioDevice()) AD->SetTransientPrimaryVolume(VolMaster);
 	if (MusicComp) MusicComp->AdjustVolume(.1f, .32f * VolMusic);
+	if (StoryMusic) StoryMusic->AdjustVolume(.1f, .38f * VolMusic);
+	if (StoryAmb) StoryAmb->AdjustVolume(.1f, .55f * VolSfx);
 	if (UI) UI->bSubtitles = bSubs;
 }
 void APBXDirector::AdjustSetting(int32 Row, int32 Dir)
@@ -2653,7 +2655,7 @@ void APBXDirector::ToTitle()
 {
 	if (!IsTown()) { CloseChoice(); Menu = EMenu::None; UI->Fade = 1.f; UGameplayStatics::OpenLevel(this, FName(TEXT("/Game/PBX/Maps/L_Town"))); return; }   // the title screen lives in Lumen Harbor
 	CloseChoice(); Queue.Reset(); QueueGen++; StepT = 0.f;
-	bStoryMode = false; bHub = false; HubSpots.Reset(); SStack.Reset(); UI->FuseMax = UI->FuseT = 0.f; UI->bStoryChoice = false; OnFuse = nullptr;
+	bStoryMode = false; bHub = false; HubSpots.Reset(); SStack.Reset(); StoryAudioStop(); MusicHold = 0.f; UI->FuseMax = UI->FuseT = 0.f; UI->bStoryChoice = false; OnFuse = nullptr;
 	if (Bt.bActive) { Bt.bActive = false; }
 	ShowMenu(EMenu::Title);
 }

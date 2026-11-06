@@ -8,6 +8,9 @@
 // -pbxauto plays a story by itself; -pbxpath=0210 picks the n-th option at each choice (missing digits = 0, silence = 9).
 #include "PBX/PBXDirector.h"
 #include "PBX/PBXActors.h"
+#include "PBX/PBXAudio.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundWaveProcedural.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonReader.h"
@@ -114,7 +117,7 @@ FVector APBXDirector::StoryAt(const FString& At) const
 void APBXDirector::StoryBegin(const FString& Ep, const FString& Scene, bool bFromSave)
 {
 	if (!LoadStory(Ep)) { Toast(TEXT("Story file missing.")); return; }
-	bStoryMode = true; AutoChoice = 0;
+	bStoryMode = true; AutoChoice = 0; Music(TEXT("")); MusicHold = 1e9f;   // the story drives the music
 	const FString Start = Scene.IsEmpty() ? StoryData->GetStringField(TEXT("start")) : Scene;
 	if (bFromSave && Game && Game->State) SVars = Game->State->StoryVars; else SVars.Reset();
 	if (!bFromSave && Game && Game->State) Game->State->StoryChoices.Reset();
@@ -161,8 +164,20 @@ void APBXDirector::StoryPump()
 		if (N->TryGetObjectField(TEXT("rel"), Rel)) { for (const auto& KV : (*Rel)->Values) { const FString K(KV.Key); SVars.Add(K, FMath::Clamp(SVar(K) + (int32)KV.Value->AsNumber(), -5, 5)); } continue; }
 		if (N->TryGetStringField(TEXT("toast"), S)) { Toast(StoryText(S)); continue; }
 		if (N->TryGetStringField(TEXT("objective"), S)) { UI->Objective = StoryText(S); continue; }
-		if (N->TryGetStringField(TEXT("sfx"), S)) { Sfx(*S); continue; }
-		if (N->TryGetStringField(TEXT("music"), S)) { Music(*S); MusicHold = 9999.f; continue; }
+		if (N->TryGetStringField(TEXT("sfx"), S))
+		{
+			if (PBXAudio::Exists(TEXT("sfx"), S)) { if (USoundWaveProcedural* W = PBXAudio::Load(this, TEXT("sfx"), S, false)) UGameplayStatics::SpawnSound2D(this, W, .8f * VolSfx); }
+			else Sfx(*S);
+			continue;
+		}
+		if (N->TryGetStringField(TEXT("music"), S))
+		{
+			double Fade = 2.5; N->TryGetNumberField(TEXT("xfade"), Fade);
+			if (S.IsEmpty() || PBXAudio::Exists(TEXT("music"), S)) { Music(TEXT("")); MusicHold = 9999.f; StoryLoop(StoryMusic, StoryMusicName, TEXT("music"), S, .38f * VolMusic, Fade); }
+			else { Music(*S); MusicHold = 9999.f; }
+			continue;
+		}
+		if (N->TryGetStringField(TEXT("amb"), S)) { StoryLoop(StoryAmb, StoryAmbName, TEXT("amb"), S, .55f * VolSfx, 2.0f); continue; }
 		bool bB; if (N->TryGetBoolField(TEXT("blanked"), bB)) { ApplyBlanked(bB); continue; }
 		if (N->TryGetStringField(TEXT("log"), S)) { SLOG("[PBXSTORY] %s", *S); continue; }
 		if (N->TryGetStringField(TEXT("if"), S))
@@ -178,7 +193,14 @@ void APBXDirector::StoryPump()
 		{
 			FLinearColor C; const FString Name = StorySpeaker(S, C); const FString Line = StoryText(N->GetStringField(TEXT("line")));
 			FString Vo; N->TryGetStringField(TEXT("vo"), Vo);
-			if (!Vo.IsEmpty()) QDo([this, Vo] { if (USoundBase* V = Snd(*Vo)) UGameplayStatics::PlaySound2D(this, V); });
+			if (!Vo.IsEmpty())
+			{
+				// variants: _m / _f for lines that name the hero, _p1.._p3 for lines that name the Spark
+				bool bG = false, bS = false; N->TryGetBoolField(TEXT("vg"), bG); N->TryGetBoolField(TEXT("vs"), bS);
+				if (bG) Vo += (!Game || !Game->State || Game->State->bMale) ? TEXT("_m") : TEXT("_f");
+				if (bS) Vo += FString::Printf(TEXT("_p%d"), FMath::Clamp(SVar(TEXT("partner")), 1, 3));
+				QDo([this, Vo] { StoryVoicePlay(Vo); });
+			}
 			// QSay shows SpeakerName(Who): pass the resolved name through the "story" speaker slot
 			StorySpeakerName = Name; StorySpeakerColor = C;
 			QSay({ { FName(TEXT("__story")), Line } });
@@ -364,4 +386,36 @@ void APBXDirector::StoryEndEpisode()
 	{
 		if (i == N - 1) { CloseChoice(); bStoryMode = false; ToTitle(); }
 	});
+}
+
+// ---------------------------------------------------------------- story audio (voices, music, ambience: loose WAVs)
+float APBXDirector::StoryVoicePlay(const FString& Id)
+{
+	if (StoryVoice) { StoryVoice->Stop(); StoryVoice = nullptr; }
+	float Secs = 0.f;
+	if (USoundWaveProcedural* W = PBXAudio::Load(this, TEXT("vo"), Id, false, &Secs)) StoryVoice = UGameplayStatics::SpawnSound2D(this, W, 1.0f, 1.f, 0.f, nullptr, false, false);
+	else SLOG("[PBXSTORY] voice missing %s", *Id);
+	return Secs;
+}
+
+void APBXDirector::StoryLoop(TObjectPtr<UAudioComponent>& Comp, FString& Cur, const TCHAR* Kind, const FString& Name, float Vol, float Fade)
+{
+	if (Cur == Name && Comp) return;
+	if (Comp) { Comp->FadeOut(Fade, 0.f); Comp = nullptr; }
+	Cur = Name;
+	if (Name.IsEmpty()) return;
+	if (USoundWaveProcedural* W = PBXAudio::Load(this, Kind, Name, true))
+	{
+		Comp = UGameplayStatics::SpawnSound2D(this, W, Vol, 1.f, 0.f, nullptr, false, false);
+		if (Comp) Comp->FadeIn(Fade, Vol);
+	}
+	else SLOG("[PBXSTORY] %s missing %s", Kind, *Name);
+}
+
+void APBXDirector::StoryAudioStop()
+{
+	if (StoryVoice) { StoryVoice->Stop(); StoryVoice = nullptr; }
+	if (StoryMusic) { StoryMusic->FadeOut(1.f, 0.f); StoryMusic = nullptr; }
+	if (StoryAmb) { StoryAmb->FadeOut(1.f, 0.f); StoryAmb = nullptr; }
+	StoryMusicName.Empty(); StoryAmbName.Empty();
 }

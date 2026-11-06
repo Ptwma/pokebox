@@ -23,7 +23,7 @@ def rho_ends_alone():
 # =============================================================== SCENE 1 — Before the Rite
 S.scene('s1_harbour', 'Before the Rite',
     setf('rho', v=2), setf('gus', v=3), setf('omari', v=2), setf('rho_pages', v=0),
-    blanked(False),
+    blanked(False), music('harbour'), {'amb': 'harbour'},
     title('EPISODE ONE', 'The Unwritten'),
     nar('Tonight every sixteen-year-old in Lumen Harbor opens a Codex for the first time.'),
     nar('Tonight the Script decides who you are.'),
@@ -100,12 +100,12 @@ S.scene('s1_harbour', 'Before the Rite',
                 opt('"See you inside."', say('bruce', "I'll be on watch tonight. Somebody has to be.")),
             ], silent=say('bruce', "Go on. Bell's about to ring."), id='1e')),
     ]),
-    sfx('ui_page'), nar('The Scriptorium bell rings three times.'),
+    sfx('bell'), nar('The Scriptorium bell rings three times.'), music('', fade=3.0),
     fade(1, .8), goto('s2_rite'))
 
 # =============================================================== SCENE 2 — The Rite
 S.scene('s2_rite', 'The Rite of Pages',
-    fade(0, 1.0),
+    {'amb': 'hall'}, music('calm'), fade(0, 1.0),
     nar('Candles. Six lecterns in a ring, a closed Codex on each. The whole harbour on the benches. Rain on the high windows.'),
     say('rho', 'Benches are full. Dad\'s seat is empty. He said he\'d be here.'),
     choice('', 8, [
@@ -117,7 +117,7 @@ S.scene('s2_rite', 'The Rite of Pages',
     say('vale', 'By ink and by breath. Each of you will open your book. The Script will write what it finds in you.'),
     say('vale', 'Do not be afraid of what it writes. Be afraid of lying about it.'),
     nar('Two books open. A page each. A small Gale Spark and a Bloom Spark flicker into the air. Applause.'),
-    say('vale', 'Rho Calder.'),
+    say('vale', 'Rho Calder.'), music('riser', fade=1.0),
     nar('Light. One page writes itself — two — three. Three small Sparks circle him. The hall stands.'),
     nar('Rho looks for his father on the benches. Captain Bruce is not there.'),
     say('rho', 'Three. Three! Where\'s Dad?'),
@@ -125,7 +125,7 @@ S.scene('s2_rite', 'The Rite of Pages',
     say('vale', '{hero}.'),
     nar('You open your Codex. The page is white. It stays white.'),
     say('town', 'Blank...'),
-    panel('Your hands on the white page.'),
+    music('', fade=1.5), panel('Your hands on the white page.'),
     say('vale', 'Look at me. Did it write anything? Anything at all?'),
     choice('', 8, [
         opt('"It glowed. For a moment. I saw a mark."', say('vale', '...Then the Script is slow tonight.'),
@@ -143,7 +143,7 @@ S.scene('s2_rite', 'The Rite of Pages',
 
 # =============================================================== SCENE 3 — The White Page
 S.scene('s3_white', 'The White Page',
-    flash(1, 1, 1), nar('The high windows turn white. Not bright. White, like paper.'),
+    sfx('white'), music('action', fade=0.5), flash(1, 1, 1), nar('The high windows turn white. Not bright. White, like paper.'),
     nar('Below the hall, the sea gate grinds open. Fog pours in at floor level.'),
     say('eraser', 'No one will be hurt who does not hold on.'),
     blanked(True),
@@ -151,7 +151,7 @@ S.scene('s3_white', 'The White Page',
     say('vale', 'Out! Through the stacks! Kelvin, the children!'),
     nar('Kelvin is already gone.'),
     nar('An Eraser steps in front of Omari. Another grabs Rho\'s Codex and begins to pull the pages out.'),
-    say('rho', 'AAAH—!'),
+    sfx('tear'), say('rho', 'AAAH—!'),
     nar('Where the pages tear, the stubs bleed. Not ink. Blood, running down the spine of the book and over his fingers.'),
     panel('Rho\'s hands on the book, red to the wrists.'),
     choice('', 5, [
@@ -173,7 +173,7 @@ S.scene('s3_white', 'The White Page',
 
 # =============================================================== SCENE 4 — The Spark
 S.scene('s4_spark', 'The Spark',
-    fade(0, .8),
+    {'amb': 'fire'}, music('suspense'), fade(0, .8),
     nar('The stacks. Tall shelves, jars of sleeping Sparks. Fire in one aisle. Kelvin\'s lantern on the floor, still lit.'),
     if_('SAVED_PAGES', nar("Rho carries Omari's white, weightless body. He won't talk.")),
     nar('A shelf of jars breaks. Three young Sparks spill out and scatter. An Eraser\'s light sweeps the aisle.'),
@@ -196,6 +196,7 @@ S.scene('s4_spark', 'The Spark',
 
 # =============================================================== SCENE 5 — The Alley (Pact moment)
 S.scene('s5_alley', 'The Alley',
+    {'amb': 'rain'}, music('action'),
     nar('The fish-market alley. Fog. A Blanked Spark, big, grey, eyeless, blocks the only way to the lighthouse.'),
     spark('WRITE WITH ME.', "there's a word!! write the word!!", 'Trace. With. Me.'),
     pact('WRITE THE GLYPH',
@@ -207,7 +208,7 @@ S.scene('s5_alley', 'The Alley',
 
 # =============================================================== SCENE 6 — Dawn
 S.scene('s6_dawn', 'Dawn',
-    fade(0, 1.2),
+    {'amb': 'sea'}, music('lullaby'), fade(0, 1.2),
     nar('Grey dawn. Half the town stands in the streets, white and still. The White Page ships are gone.'),
     say('gus', "Thirty years I kept this lamp lit so I'd see them coming. And they came in fog."),
     say('gus', "Who's missing?"),
@@ -237,7 +238,7 @@ S.scene('s6_dawn', 'Dawn',
 
 # =============================================================== SCENE 6b — The lighthouse at night (quiet scene)
 S.scene('s6b_night', 'The Lamp Room',
-    fade(0, 1.0),
+    {'amb': 'rain'}, music('calm'), fade(0, 1.0),
     nar('Night. The lamp room at the top of the lighthouse. The beam sweeps over a harbour full of white statues.'),
     if_('partner==1', nar('Cindril sleeps curled in the warm brass of the lamp, smoking a little.'),
         if_('partner==2', nar('Glublet sleeps in the bucket of rain water, blowing bubbles.'), nar('Sporrow sits on the window sill, not sleeping, watching the beam.'))),
@@ -271,7 +272,7 @@ def clue(flag, *lines):
     return [setf(flag), add('CLUES'), lines, toast('A clue is written in your Codex.')]
 
 S.scene('s7_gate', 'Who Opened the Gate?',
-    setf('CLUES', v=0), fade(0, 1.0),
+    setf('CLUES', v=0), {'amb': 'rain'}, music('suspense'), fade(0, 1.0),
     nar('Morning. The harbour in daylight, silent. White figures everywhere, frozen mid-step.'),
     hub(objective='Find out who opened the sea gate', exit='seen.square', spots=[
         spot('c1', 'Climb to the green lamp', 'npc:bruce', clue('C1', note('The wick is burnt. Someone lit the all-clear at nine. Only the watch can.'))),
@@ -340,7 +341,7 @@ S.scene('s7_gate', 'Who Opened the Gate?',
 
 # =============================================================== SCENE 8 — The Road
 S.scene('s8_road', 'The Road',
-    fade(0, 1.0),
+    {'amb': 'wind'}, music('lullaby'), fade(0, 1.0),
     say('vale', 'They went north. They took the archive. They will come back for you.'),
     if_('ACCUSED_GUS', say('vale', 'Gus asked me to give you his coat. Even now.'), say('gus', 'Take the coat. North wind bites.')),
     if_('EGG_HIDDEN', note('In the coat pocket, the egg. Warm.')),
@@ -376,7 +377,7 @@ S.scene('s8_road', 'The Road',
     fade(1, 1.0), wait(.6), fade(0, .8),
     if_('EGG_HIDDEN', [nar('Night. In the pocket of Gus\'s coat, the egg cracks.'), panel('One ink-black eye opens.')],
         [nar('Night. On a white ship, the Eraser in the porcelain mask holds torn pages up to a lantern.'), say('eraser', 'Unwritten. How... interesting.')]),
-    title('END OF EPISODE ONE', 'Your choices wrote these pages.'),
+    music('riser', fade=1.0), title('END OF EPISODE ONE', 'Your choices wrote these pages.'),
     end())
 
 # =============================================================== "Your Codex"
