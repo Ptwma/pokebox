@@ -41,6 +41,11 @@
 #include "Misc/App.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Engine/PostProcessVolume.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/SkyLight.h"
+#include "Components/LightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "AudioDevice.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/Paths.h"
@@ -52,7 +57,7 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogPBX, Log, All);
 #define PBXLOG(Fmt, ...) UE_LOG(LogPBX, Display, TEXT(Fmt), ##__VA_ARGS__)
-static constexpr float PartnerFieldScale = .8f;   // the partner walking beside you (full size on the battle stage)
+static constexpr float PartnerFieldScale = .55f;   // r66: was .8 (the partner filled the foreground)   // the partner walking beside you (full size on the battle stage)
 static constexpr float BattleFOV = 55.f;
 
 static FVector JVec(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
@@ -117,7 +122,7 @@ bool APBXDirector::LoadData()
 	const FVector C = JVec(Bd, TEXT("center")); BoundsCenter = FVector2D(C.X, C.Y); BoundsRadius = Bd->GetNumberField(TEXT("radius")); WaterZ = Bd->GetNumberField(TEXT("water_z"));
 	SafeSpot = ReadSpot(Bd->GetObjectField(TEXT("safe")));
 	for (const TSharedPtr<FJsonValue>& V : Data->GetArrayField(TEXT("signs")))
-		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")), true });
+		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")).Replace(TEXT("POKEBOX LABS"), TEXT("THE SCRIPTORIUM")), true });   // r66: old map data
 	const TArray<TSharedPtr<FJsonValue>>* Notes = nullptr;
 	if (Data->TryGetArrayField(TEXT("notes"), Notes)) for (const TSharedPtr<FJsonValue>& V : *Notes)
 		Signs.Add({ JVec(V->AsObject(), TEXT("pos")), V->AsObject()->GetStringField(TEXT("text")), false });
@@ -174,6 +179,7 @@ void APBXDirector::BeginPlay()
 {
 	Super::BeginPlay();
 	bAuto = FParse::Param(FCommandLine::Get(), TEXT("pbxauto"));
+	bStyle = FParse::Param(FCommandLine::Get(), TEXT("pbxstyle")); if (bStyle) bAuto = true;   // r66: the ink/mood comparison sheet
 	if (GEngine) { GEngine->bEnableOnScreenDebugMessages = false; GEngine->Exec(GetWorld(), TEXT("DisableAllScreenMessages")); }
 	Game = GetGameInstance()->GetSubsystem<UPBXGameSubsystem>();
 	UI = MakeShared<FPBXUIModel>();
@@ -182,7 +188,7 @@ void APBXDirector::BeginPlay()
 		Hud = SNew(SPBXHud, UI);
 		GEngine->GameViewport->AddViewportWidgetContent(SNew(SWeakWidget).PossiblyNullContent(Hud.ToSharedRef()), 10);
 	}
-	LoadSettings(); ApplyInkStyle();
+	LoadSettings(); ApplyInkStyle(); ApplyMood(); ApplyPerf();
 	if (!LoadData()) { Toast(TEXT("Map data missing — rebuild the town (blender_town.py).")); }
 	SpawnWorld();
 	if (APBXNPC* Mom = NPCs.FindRef(TEXT("mom"))) { Mom->Destroy(); NPCs.Remove(TEXT("mom")); }   // r65: no mother in the story
@@ -672,7 +678,7 @@ void APBXDirector::Tick(float Dt)
 		UI->Partner.bShow = C != nullptr; if (C) { UI->Partner.Name = C->Name; UI->Partner.Lv = M.Lv; UI->Partner.MaxHP = FMath::RoundToInt(C->HP * PBXData::LvMult(M.Lv)); UI->Partner.HP = M.HP < 0 ? UI->Partner.MaxHP : M.HP; }
 	}
 	else UI->Partner.bShow = false;
-	if (bAuto) AutoTick(Dt);
+	if (bStyle) StyleTick(Dt); else if (bAuto) AutoTick(Dt);
 }
 
 // =================================================================== input
@@ -1086,6 +1092,7 @@ void APBXDirector::StartFirstFight()
 		if (!E) { DawnAfterRite(false); return; }
 		const FName Card = Pool[0]; const FPBXCardDef* C = PBXData::Card(Card);
 		E->Setup(Card, 90.f * (C ? C->Size : 1.f)); E->bWild = true; E->PlaceAt(P); E->Mode = APBXEcho::EMode::Idle;
+		E->SetBlanked(true);   // r66: the grey Spark is visibly erased
 		StartWildBattle(E);
 	});
 }
@@ -2116,8 +2123,9 @@ void APBXDirector::ShowMenu(EMenu M)
 			  Row(TEXT("Graphics quality"), Q[Ql]), Row(TEXT("Resolution"), FString::Printf(TEXT("%d x %d"), R.X, R.Y)), Row(TEXT("Display"), WMs),
 			  Row(TEXT("V-sync"), GS && GS->IsVSyncEnabled() ? TEXT("On") : TEXT("Off")), Row(TEXT("Frame limit"), Fps <= 0.f ? FString(TEXT("None")) : FString::Printf(TEXT("%d fps"), FMath::RoundToInt(Fps))),
 			  Row(TEXT("Camera sensitivity"), Pct(LookSens)), Row(TEXT("Invert camera Y"), bInvertY ? TEXT("On") : TEXT("Off")), Row(TEXT("Subtitles"), bSubs ? TEXT("On") : TEXT("Off")),
-			  Row(TEXT("Ink style"), bInkStyle ? TEXT("On") : TEXT("Off")), Opt(TEXT("Back"), TEXT("")) }, false,
-			[this](int32 i) { if (i == 12) { SaveSettings(); ShowMenu(SettingsBack); } else AdjustSetting(i, 1); });
+			  Row(TEXT("Ink style"), !bInkStyle ? FString(TEXT("Off")) : FString(InkPreset == 1 ? TEXT("Subtle") : InkPreset == 2 ? TEXT("Drawn") : InkPreset == 3 ? TEXT("Ink") : TEXT("Woodcut"))),
+			  Row(TEXT("Mood"), bMood ? TEXT("Dark") : TEXT("Daylight")), Opt(TEXT("Back"), TEXT("")) }, false,
+			[this](int32 i) { if (i == 13) { SaveSettings(); ShowMenu(SettingsBack); } else AdjustSetting(i, 1); });
 		break;
 	}
 	case EMenu::Complete:
@@ -2160,6 +2168,8 @@ void APBXDirector::LoadSettings()
 	GConfig->GetFloat(PBXSet, TEXT("VolSfx"), VolSfx, GGameUserSettingsIni); GConfig->GetFloat(PBXSet, TEXT("LookSens"), LookSens, GGameUserSettingsIni);
 	GConfig->GetBool(PBXSet, TEXT("InvertY"), bInvertY, GGameUserSettingsIni); GConfig->GetBool(PBXSet, TEXT("Subtitles"), bSubs, GGameUserSettingsIni);
 	GConfig->GetBool(PBXSet, TEXT("InkStyle"), bInkStyle, GGameUserSettingsIni);
+	GConfig->GetInt(PBXSet, TEXT("InkPreset"), InkPreset, GGameUserSettingsIni); GConfig->GetBool(PBXSet, TEXT("Mood"), bMood, GGameUserSettingsIni);
+	InkPreset = FMath::Clamp(InkPreset, 1, 4);
 	VolMaster = FMath::Clamp(VolMaster, 0.f, 1.f); VolMusic = FMath::Clamp(VolMusic, 0.f, 1.f); VolSfx = FMath::Clamp(VolSfx, 0.f, 1.f); LookSens = FMath::Clamp(LookSens, .2f, 3.f);
 	ApplyAudioSettings();
 }
@@ -2171,6 +2181,7 @@ void APBXDirector::SaveSettings()
 		GConfig->SetFloat(PBXSet, TEXT("VolSfx"), VolSfx, GGameUserSettingsIni); GConfig->SetFloat(PBXSet, TEXT("LookSens"), LookSens, GGameUserSettingsIni);
 		GConfig->SetBool(PBXSet, TEXT("InvertY"), bInvertY, GGameUserSettingsIni); GConfig->SetBool(PBXSet, TEXT("Subtitles"), bSubs, GGameUserSettingsIni);
 		GConfig->SetBool(PBXSet, TEXT("InkStyle"), bInkStyle, GGameUserSettingsIni);
+		GConfig->SetInt(PBXSet, TEXT("InkPreset"), InkPreset, GGameUserSettingsIni); GConfig->SetBool(PBXSet, TEXT("Mood"), bMood, GGameUserSettingsIni);
 		GConfig->Flush(false, GGameUserSettingsIni);
 	}
 	if (GEngine && GEngine->GetGameUserSettings()) GEngine->GetGameUserSettings()->SaveSettings();
@@ -2216,7 +2227,8 @@ void APBXDirector::AdjustSetting(int32 Row, int32 Dir)
 	case 8: Step(LookSens, .2f, 3.f, .1f); break;
 	case 9: bInvertY = !bInvertY; break;
 	case 10: bSubs = !bSubs; break;
-	case 11: bInkStyle = !bInkStyle; ApplyInkStyle(); break;
+	case 11: { const int32 k = (bInkStyle ? InkPreset : 0) + Dir; const int32 v = (k + 5) % 5; bInkStyle = v > 0; if (v > 0) InkPreset = v; ApplyInkStyle(); } break;
+	case 12: bMood = !bMood; ApplyMood(); break;
 	default: return;
 	}
 	if (bDisplay && GS) GS->ApplySettings(false);
@@ -2228,19 +2240,128 @@ void APBXDirector::ApplyInkStyle()
 {
 	if (!InkMID)
 		if (UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_AnimePP.M_PBX_AnimePP")))
-		{
-			// tuned for the Codex: a little less colour (aged ink), soft cel bands, light hatching in the shadows
 			InkMID = UMaterialInstanceDynamic::Create(Mat, this);
-			InkMID->SetScalarParameterValue(TEXT("Sat"), .9f); InkMID->SetScalarParameterValue(TEXT("Cel"), .35f);
-			InkMID->SetScalarParameterValue(TEXT("HatchAmt"), .4f); InkMID->SetScalarParameterValue(TEXT("InkAmt"), .75f);
-			InkMID->SetScalarParameterValue(TEXT("FadeDist"), 60000.f);
-		}
 	if (!InkMID) { PBXLOG("[PBXASSET] M_PBX_AnimePP missing — ink style off"); return; }
+	// presets (council 2026-11-06: the owner picks from a screenshot sheet): Thick, DepthT, NormT, Bands, Cel, Sat, HatchPx, HatchL, HatchAmt, InkAmt
+	static const float P[4][10] = {
+		{ 1.25f, .020f, .55f, 4.f, .35f, .90f, 5.f, .20f, .40f, .75f },   // 1 Subtle
+		{ 1.60f, .015f, .45f, 4.f, .50f, .80f, 5.f, .25f, .55f, .90f },   // 2 Drawn
+		{ 2.00f, .012f, .40f, 3.f, .65f, .65f, 4.f, .30f, .70f, 1.0f },   // 3 Ink
+		{ 2.40f, .010f, .35f, 3.f, .80f, .45f, 4.f, .35f, .85f, 1.0f } }; // 4 Woodcut
+	static const TCHAR* N[10] = { TEXT("Thick"), TEXT("DepthT"), TEXT("NormT"), TEXT("Bands"), TEXT("Cel"), TEXT("Sat"), TEXT("HatchPx"), TEXT("HatchL"), TEXT("HatchAmt"), TEXT("InkAmt") };
+	const int32 k = FMath::Clamp(InkPreset, 1, 4) - 1;
+	for (int32 i = 0; i < 10; i++) InkMID->SetScalarParameterValue(N[i], P[k][i]);
+	InkMID->SetScalarParameterValue(TEXT("FadeDist"), 60000.f);
 	APostProcessVolume* V = nullptr;
 	for (TActorIterator<APostProcessVolume> It(GetWorld()); It; ++It) if (It->bUnbound) { V = *It; break; }
 	if (!V) { V = GetWorld()->SpawnActor<APostProcessVolume>(); if (!V) return; V->bUnbound = true; V->Priority = 50.f; }
 	V->Settings.WeightedBlendables.Array.RemoveAll([this](const FWeightedBlendable& B) { return B.Object == InkMID; });
 	V->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(bInkStyle ? 1.f : 0.f, InkMID));
+}
+
+void APBXDirector::ApplyMood()
+{
+	// "Dark" mood: a colder, heavier world — less saturation, more contrast, warm-dark grade, vignette, grain, thicker fog
+	APostProcessVolume* V = nullptr;
+	for (TActorIterator<APostProcessVolume> It(GetWorld()); It; ++It) if (It->bUnbound) { V = *It; break; }
+	if (!V) { V = GetWorld()->SpawnActor<APostProcessVolume>(); if (!V) return; V->bUnbound = true; V->Priority = 50.f; }
+	FPostProcessSettings& S = V->Settings;
+	// r66b (owner: "darker"): an overcast, lower, colder light and a darker exposure — auto exposure would undo a plain
+	// light cut, so the exposure bias goes down too
+	S.bOverride_ColorSaturation = bMood; S.ColorSaturation = FVector4(.68f, .68f, .68f, 1.f);
+	S.bOverride_ColorContrast = bMood; S.ColorContrast = FVector4(1.14f, 1.14f, 1.14f, 1.f);
+	S.bOverride_ColorGain = bMood; S.ColorGain = FVector4(.98f, .96f, .93f, 1.f);
+	S.bOverride_ColorGamma = bMood; S.ColorGamma = FVector4(.97f, .97f, .99f, 1.f);
+	S.bOverride_ColorGainShadows = bMood; S.ColorGainShadows = FVector4(.86f, .9f, 1.02f, 1.f);   // cold shadows
+	S.bOverride_AutoExposureBias = bMood; S.AutoExposureBias = -.35f;   // r66c: -.85 crushed the interiors to black
+	S.bOverride_VignetteIntensity = bMood; S.VignetteIntensity = .65f;
+	S.bOverride_FilmGrainIntensity = bMood; S.FilmGrainIntensity = .2f;
+	for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It) if (UExponentialHeightFogComponent* FC = It->GetComponent())
+	{
+		if (!MoodBack.bSaved) { MoodBack.bSaved = true; MoodBack.FogDensity = FC->FogDensity; MoodBack.FogColor = FC->FogInscatteringLuminance; }
+		FC->SetFogDensity(bMood ? FMath::Max(MoodBack.FogDensity * 3.5f, .035f) : MoodBack.FogDensity);
+		FC->SetFogInscatteringColor(bMood ? FLinearColor(.26f, .28f, .33f) : MoodBack.FogColor);
+		break;
+	}
+	for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
+	{
+		if (!MoodBack.bSun) { MoodBack.bSun = true; MoodBack.SunI = LC->Intensity; MoodBack.SunC = LC->LightColor.ReinterpretAsLinear(); }
+		LC->SetIntensity(bMood ? MoodBack.SunI * .62f : MoodBack.SunI);
+		LC->SetLightColor(bMood ? FLinearColor(.86f, .88f, .95f) : MoodBack.SunC);
+		break;
+	}
+	for (TActorIterator<ASkyLight> It(GetWorld()); It; ++It) if (USkyLightComponent* SC = It->GetLightComponent())
+	{
+		if (!MoodBack.bSky) { MoodBack.bSky = true; MoodBack.SkyI = SC->Intensity; }
+		SC->SetIntensity(bMood ? MoodBack.SkyI * .8f : MoodBack.SkyI);
+		break;
+	}
+}
+
+void APBXDirector::ApplyPerf()
+{
+	// r66: the RTX 2060 target is 60 fps — TSR renders at 80 % and upscales, softer virtual shadow maps, cheaper Lumen
+	// reflections; Epic quality keeps the native image
+	UGameUserSettings* GS = GEngine ? GEngine->GetGameUserSettings() : nullptr;
+	const bool bEpic = GS && GS->GetOverallScalabilityLevel() >= 3;
+	auto CV = [](const TCHAR* Name, float V) { if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(Name)) C->Set(V, ECVF_SetByGameSetting); };
+	CV(TEXT("r.ScreenPercentage"), bEpic ? 100.f : 80.f);
+	CV(TEXT("r.Shadow.Virtual.ResolutionLodBiasDirectional"), bEpic ? -1.5f : .5f);
+	CV(TEXT("r.Lumen.Reflections.DownsampleFactor"), bEpic ? 1.f : 2.f);
+	CV(TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"), bEpic ? 16.f : 32.f);
+}
+
+void APBXDirector::StyleTick(float Dt)
+{
+	// -pbxstyle: 3 fixed views × (ink off, presets 1-4 without mood, preset 2 and 3 with the dark mood) → Saved/pbx_auto/style_*
+	if (ShotWait > 0) { if (--ShotWait == 0) ShotDoneName = ShotPendingName; return; }
+	StyleT += Dt;
+	struct FView { const TCHAR* Id; int32 Kind; const TCHAR* Key; FVector Off; };   // Kind 0 = door outside, 1 = NPC home, 2 = absolute
+	static const FView Views[] = { { TEXT("plaza"), 0, TEXT("lab"), FVector(650, 120, 0) }, { TEXT("harbour"), 2, TEXT(""), FVector(900, -4500, 700) }, { TEXT("people"), 1, TEXT("merchant"), FVector(420, 160, 0) } };
+	struct FLook { const TCHAR* Id; bool bInk; int32 Preset; bool bMood; };
+	static const FLook Looks[] = { { TEXT("0_off"), false, 1, false }, { TEXT("1_subtle"), true, 1, false }, { TEXT("2_drawn"), true, 2, false }, { TEXT("3_ink"), true, 3, false },
+		{ TEXT("4_woodcut"), true, 4, false }, { TEXT("5_drawn_dark"), true, 2, true }, { TEXT("6_ink_dark"), true, 3, true } };
+	const int32 NV = UE_ARRAY_COUNT(Views), NL = UE_ARRAY_COUNT(Looks);
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (StyleIdx < 0)
+	{
+		if (StyleT < 5.f) return;
+		CloseChoice(); Menu = EMenu::None; StopTitleLoop(); UI->Mode = EPBXUIMode::Explore; UI->Fade = 0.f; UI->bMenuLeft = false;
+		ApplyBlanked(true);   // the Blanked townsfolk in frame
+		StyleIdx = 0; StylePh = 0; StyleT = 0.f; return;
+	}
+	if (StyleIdx >= NV * NL) { PBXLOG("[PBXAUTO] style sheet DONE"); FPlatformMisc::RequestExit(false); StyleIdx = 1 << 20; return; }
+	const FView& V = Views[StyleIdx / NL]; const FLook& L = Looks[StyleIdx % NL];
+	if (StylePh == 0)
+	{
+		if (StyleIdx % NL == 0 && Cam && PC)
+		{
+			FVector P, Aim;
+			if (V.Kind == 2) { P = V.Off; Aim = FVector(3000, 2500, 600); }
+			else
+			{
+				FPBXSpot A;
+				if (V.Kind == 0) { for (const FPBXDoor& D : Doors) if (D.Id == V.Key) A = D.Outside; }
+				else if (APBXNPC* N = NPCs.FindRef(FName(V.Key))) { A.Pos = N->Home; A.Yaw = N->HomeYaw; }
+				P = A.Pos + FRotator(0, A.Yaw, 0).RotateVector(V.Off) + FVector(0, 0, 170.f); Aim = A.Pos + FVector(0, 0, 120.f);
+				// a Blanked Spark beside the anchor, so the erasure can be judged in every look
+				if (V.Kind == 0)
+					if (APBXEcho* E = GetWorld()->SpawnActor<APBXEcho>(APBXEcho::StaticClass(), FTransform(A.Pos)))
+					{
+						const TArray<FName> Pool = PBXData::WildPool();
+						if (Pool.Num()) { const FPBXCardDef* C = PBXData::Card(Pool[0]); E->Setup(Pool[0], 90.f * (C ? C->Size : 1.f)); E->PlaceAt(A.Pos + FRotator(0, A.Yaw, 0).RotateVector(FVector(250, -120, 0))); E->Mode = APBXEcho::EMode::Idle; E->SetBlanked(true); }
+					}
+			}
+			Cam->SetActorLocationAndRotation(P, (Aim - P).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(60.f); PC->SetViewTarget(Cam);
+		}
+		bInkStyle = L.bInk; InkPreset = L.Preset; bMood = L.bMood; ApplyInkStyle(); ApplyMood();
+		StylePh = 1; StyleT = 0.f; return;
+	}
+	if (StyleT < (StyleIdx % NL == 0 ? 3.f : 1.2f)) return;   // settle: streaming / exposure on a new view, the grade on a new look
+	const FString N = FString::Printf(TEXT("style_%s_%s"), V.Id, L.Id);
+	Shot(N); ShotPendingName = N; ShotWait = 3;
+	PBXLOG("[PBXAUTO] style %s fps %.1f", *N, 1.f / FMath::Max(Dt, 1e-3f));
+	StyleIdx++; StylePh = 0; StyleT = 0.f;
 }
 
 void APBXDirector::StartTitleLoop()

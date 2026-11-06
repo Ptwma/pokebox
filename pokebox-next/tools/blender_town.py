@@ -1505,7 +1505,7 @@ def gameplay_data():
     G['notes'] = [{'pos': _ue(x, y, gz(x, y) + 1.0), 'text': t} for ((x, y), t) in LORE_NOTES]
     G['signs'] = [{'pos': _ue(x, y, gz(x, y) + 1.15), 'yaw': _yaw(fx, fy), 'text': t} for ((x, y), (fx, fy), t) in LORE_SIGNS] + [{'pos': _ue(GATE[0] + 2.5, GATE[1] + 3.6, height(GATE[0] + 2.5, GATE[1] + 3.6) + 1.15), 'yaw': _yaw(1, 0), 'text': 'ROUTE 1\nwest to Mistvale'},
                   {'pos': _ue(4, 9, height(4, 9) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN HARBOR'},
-                  {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'POKEBOX LABS'},
+                  {'pos': _ue(-4, -20, height(-4, -20) + 1.15), 'yaw': _yaw(0, 1), 'text': 'THE SCRIPTORIUM'},
                   {'pos': _ue(26.5, 9.2, height(26.5, 9.2) + 1.15), 'yaw': _yaw(0, 1), 'text': 'LUMEN STATION\ntrains to Mistvale'}]
     # railway: where you board, which way the train leaves (north = Unreal +Y) and where it disappears (the tunnel)
     pz = height(36.5, 1.0) + .55

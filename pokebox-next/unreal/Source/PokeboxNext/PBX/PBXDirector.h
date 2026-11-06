@@ -231,6 +231,10 @@ private:
 	// the ink / Codex look over the whole world (user 2026-11-01): M_PBX_AnimePP (ink outlines, cel bands, hatching) on an unbound PP volume
 	UPROPERTY() TObjectPtr<class UMaterialInstanceDynamic> InkMID;
 	void ApplyInkStyle();
+	// r66 (council 2026-11-06): ink strength presets 1..4 (0 = off) + a "mood" grade (darker, colder, film grain, fog)
+	int32 InkPreset = 3; bool bMood = true; bool bStyle = false; int32 StyleIdx = -1, StylePh = 0; float StyleT = 0.f;   // owner 2026-11-06: preset 3 "Ink" + the darker mood
+	struct FMoodBack { bool bSaved = false, bSun = false, bSky = false; float FogDensity = 0.f, SunI = 0.f, SkyI = 0.f; FLinearColor FogColor, SunC; } MoodBack;
+	void ApplyMood(); void ApplyPerf(); void StyleTick(float Dt);
 	EMenu SettingsBack = EMenu::Title;
 	void LoadSettings(); void SaveSettings(); void ApplyAudioSettings();
 	void AdjustSetting(int32 Row, int32 Dir);

@@ -448,6 +448,14 @@ void APBXEcho::Flash(const FLinearColor& C, float S) { FlashT = .35f; FlashCol =
 void APBXEcho::Lunge(const FVector& Dir, float Dist) { LungeT = 0.f; LungeDir = Dir.GetSafeNormal2D(); LungeDist = Dist; PlayClip(TEXT("attack"), false, .9f); }
 void APBXEcho::Hurt() { HurtT = 0.f; Flash(FLinearColor(1, .25f, .2f), 2.5f); PlayClip(TEXT("hit"), false, .55f); }
 void APBXEcho::SetFaint(bool b) { bFaint = b; if (!b) { FaintK = 0.f; ClipLock = 0.f; CurClip = NAME_None; } else PlayClip(TEXT("death"), false, 1e6f); }
+void APBXEcho::SetBlanked(bool bOn)
+{
+	bBlanked = bOn;
+	UMaterialInterface* Over = bOn ? LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/PBX/Materials/M_PBX_Blanked.M_PBX_Blanked")) : nullptr;
+	TArray<UMeshComponent*> Ms; GetComponents<UMeshComponent>(Ms);
+	for (UMeshComponent* M : Ms) if (M) M->SetOverlayMaterial(bOn ? Over : nullptr);
+	if (Body) Body->SetPlayRate(bOn ? .35f : 1.f);   // still moves, but slow and empty
+}
 void APBXEcho::PopIn() { PopT = 0.f; PlayClip(TEXT("happy"), false, 1.1f); }
 
 void APBXEcho::Tick(float Dt)
@@ -471,7 +479,7 @@ void APBXEcho::Tick(float Dt)
 		if (Mode == EMode::Follow && FollowTarget.IsValid())
 		{
 			const AActor* A = FollowTarget.Get();
-			const FVector Want = A->GetActorLocation() - A->GetActorForwardVector() * 20.f + A->GetActorRightVector() * 150.f;   // beside you, not between you and the camera
+			const FVector Want = A->GetActorLocation() - A->GetActorForwardVector() * 60.f + A->GetActorRightVector() * 165.f;   // beside you, not between you and the camera (r66: a step back, smaller)
 			const float Dist = FVector::Dist2D(Want, Loc);
 			if (Dist > 900.f) Loc = FVector(Want.X, Want.Y, PBXWorld::GroundZ(W, Want, 300.f, 1500.f, Loc.Z)); // teleported (doors)
 			else if (Dist > 60.f) StepTowards(Want, FMath::Clamp(Dist * 2.2f, 150.f, 700.f));

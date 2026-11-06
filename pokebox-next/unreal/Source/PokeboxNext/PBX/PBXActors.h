@@ -126,6 +126,8 @@ public:
 	void Lunge(const FVector& Dir, float Dist = 120.f);
 	void Hurt();
 	void SetFaint(bool b);
+	/** r66: a Blanked Spark — chalk-white overlay, frozen (the White Page's erasure made visible) */
+	void SetBlanked(bool bOn); bool bBlanked = false;
 	void PopIn();
 	void PlaceAt(const FVector& P);
 	virtual void Tick(float Dt) override;
