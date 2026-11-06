@@ -78,11 +78,39 @@ def actor(name, outfit, hair, loc, face_to, tint):
     arm.scale = (0.9, 0.9, 0.9); arm.name = 'ACT_' + name
     return arm
 
-pos = {k: Vector((v[0][0] / 100, -v[0][1] / 100, 0)) for k, v in CAST.items()}
+# staging: the game's spots are for capsules that physics pushes out of crates; here nobody may stand inside a stall, so
+# each actor goes to the nearest free spot (a 0.45 m ring of rays at knee, hip and chest height hits nothing) and the
+# pair stands 1.4 m apart facing each other
+def free(p):
+    dg = bpy.context.evaluated_depsgraph_get()
+    def ok(q):
+        for z in (0.35, 0.95, 1.5):
+            for k in range(10):
+                a = k * math.tau / 10; d = Vector((math.cos(a), math.sin(a), 0))
+                if sc.ray_cast(dg, Vector((q.x, q.y, z)), d, distance=0.45)[0]: return False
+        hit, loc = sc.ray_cast(dg, Vector((q.x, q.y, 2.5)), Vector((0, 0, -1)), distance=3.2)[:2]
+        return hit and abs(loc.z) < 0.3
+    for r in [0.0] + [0.3 * i for i in range(1, 20)]:
+        for k in range(1 if r == 0 else 16):
+            a = k * math.tau / 16; q = Vector((p.x + r * math.cos(a), p.y + r * math.sin(a), 0))
+            if ok(q): return q
+    print('NO FREE SPOT near', p); return p
+bpy.context.view_layer.update()
+names = list(CAST.keys())
+pos = {}
+pos[names[0]] = free(Vector((CAST[names[0]][0][0] / 100, -CAST[names[0]][0][1] / 100, 0)))
+want = Vector((CAST[names[1]][0][0] / 100, -CAST[names[1]][0][1] / 100, 0)) - pos[names[0]]; want.z = 0
+want = want.normalized() if want.length > 0.01 else Vector((1, 0, 0))
+for k in range(16):   # the partner: 1.4 m away, turning around the first actor until the spot is free
+    a = math.radians(25 * ((k + 1) // 2) * (1 if k % 2 else -1)); d = Vector((want.x * math.cos(a) - want.y * math.sin(a), want.x * math.sin(a) + want.y * math.cos(a), 0))
+    q = pos[names[0]] + d * 1.4; f = free(q)
+    if (f - q).length < 0.05: pos[names[1]] = f; break
+else: pos[names[1]] = free(pos[names[0]] + want * 1.4)
+print('STAGING', {k: tuple(round(c, 2) for c in v) for k, v in pos.items()})
 ACT = {}
 for k, (loc, outfit, hair, tint) in CAST.items():
     other = next(o for o in CAST if o != k)
-    ACT[k] = actor(k, outfit, hair, loc, pos[other], tint)
+    ACT[k] = actor(k, outfit, hair, (pos[k].x * 100, -pos[k].y * 100), pos[other], tint)
 
 # ------------------------------------------------------------------ UAL clips (same rig as the Quaternius bodies)
 b3 = set(bpy.data.objects)
@@ -90,8 +118,10 @@ bpy.ops.import_scene.gltf(filepath=os.path.join(SRC, 'kits', 'q_anim1', 'Univers
 for a in bpy.data.actions: a.use_fake_user = True
 for o in [o for o in bpy.data.objects if o not in b3]: bpy.data.objects.remove(o)
 def action(key):
+    for a in bpy.data.actions:   # exact name first ('Idle_Loop' must not pick 'Crouch_Idle_Loop')
+        if a.name.split('|')[-1] == key or a.name == key: return a
     for a in bpy.data.actions:
-        if a.name.split('|')[-1] == key or a.name.endswith(key): return a
+        if a.name.endswith('|' + key) or a.name.endswith('_' + key) and 'Crouch' not in a.name: return a
     print('NO ACTION', key, [a.name for a in bpy.data.actions][:40]); return None
 def play(arm, key, start, frames):
     act = action(key)
@@ -150,10 +180,24 @@ for bid, spk, lis, n, wav, text in plan:
     play(ACT[spk], 'Idle_Talking_Loop', frame0, n); play(ACT[lis], 'Idle_Loop', frame0, n)
     sc.frame_set(frame0); hs, hl = head(spk), head(lis)
     to = (hl - hs); to.z = 0; to.normalize(); side = Vector((-to.y, to.x, 0))
+    # keep every lens clear: try mirrored / closer / higher variants until nothing but characters stands between lens and face
+    def clear(p, t):
+        dg = bpy.context.evaluated_depsgraph_get(); d = Vector(t) - Vector(p); dist = d.length; d.normalize()
+        hit, loc, nrm, idx, obj, mtx = sc.ray_cast(dg, Vector(p), d, distance=dist - 0.15)
+        if not hit: return True
+        o = obj
+        while o is not None and not o.name.startswith('ACT_'): o = o.parent
+        return o is not None
+    def pick(fn):
+        for sx, k, up in ((1, 1.0, 0), (-1, 1.0, 0), (1, 0.75, 0.15), (-1, 0.75, 0.15), (1, 0.55, 0.3), (-1, 0.55, 0.3)):
+            def g(t, fn=fn, sx=sx, k=k, up=up):
+                p, tg, lens = fn(t, sx, k); return p + Vector((0, 0, up)), tg, lens
+            if clear(*g(0.0)[:2]) and clear(*g(1.0)[:2]): return g
+        return lambda t: fn(t, 1, 0.5)
     shots = {
-        'A': (lambda t: (hs + to * (1.15 - 0.18 * t) + side * 0.32 + Vector((0, 0, 0.04)), hs - Vector((0, 0, 0.06)), 50)),
-        'B': (lambda t: (hl - to * 1.3 + side * 0.25 + Vector((0, 0, 0.0)), hl - Vector((0, 0, 0.1)), 45)),
-        'C': (lambda t: ((hs + hl) / 2 + side * (5.5 + 0.3 * t) + Vector((0, 0, 0.9)), (hs + hl) / 2 - Vector((0, 0, 0.4)), 28)),
+        'A': pick(lambda t, sx, k: (hs + to * (1.15 - 0.18 * t) * k + side * 0.32 * sx + Vector((0, 0, 0.04)), hs - Vector((0, 0, 0.06)), 50)),
+        'B': pick(lambda t, sx, k: (hl - to * 1.3 * k + side * 0.25 * sx, hl - Vector((0, 0, 0.1)), 45)),
+        'C': pick(lambda t, sx, k: ((hs + hl) / 2 + side * (5.5 + 0.3 * t) * sx * k + Vector((0, 0, 0.9)), (hs + hl) / 2 - Vector((0, 0, 0.4)), 28)),
     }
     for sh, f in shots.items():
         sc.render.resolution_x, sc.render.resolution_y = SHOTS[sh]; sc.render.resolution_percentage = 100

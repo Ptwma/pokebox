@@ -10,6 +10,9 @@
 #include "PBX/PBXActors.h"
 #include "PBX/PBXAudio.h"
 #include "EngineUtils.h"
+#include "MediaPlayer.h"
+#include "MediaTexture.h"
+#include "FileMediaSource.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Components/SkyLightComponent.h"
@@ -276,7 +279,9 @@ void APBXDirector::StoryPump()
 				if (bG) Vo += (!Game || !Game->State || Game->State->bMale) ? TEXT("_m") : TEXT("_f");
 				if (bS) Vo += FString::Printf(TEXT("_p%d"), FMath::Clamp(SVar(TEXT("partner")), 1, 3));
 			}
-			QDo([this, S, Vo, Line] { const float Secs = Vo.IsEmpty() ? 0.f : StoryVoicePlay(Vo); StoryShot(S); StoryAct(S, Line, Secs > 0.f ? Secs : 1.2f + Line.Len() * .055f); });
+			FString ClipId; N->TryGetStringField(TEXT("vo"), ClipId);
+			QDo([this, S, Vo, Line, ClipId] { const float Secs = Vo.IsEmpty() ? 0.f : StoryVoicePlay(Vo);
+				if (!StoryFilm(ClipId)) { StoryShot(S); StoryAct(S, Line, Secs > 0.f ? Secs : 1.2f + Line.Len() * .055f); } });
 			// QSay shows SpeakerName(Who): pass the resolved name through the "story" speaker slot
 			StorySpeakerName = Name; StorySpeakerColor = C;
 			QSay({ { FName(TEXT("__story")), Line } });
@@ -601,8 +606,35 @@ void APBXDirector::StoryCamTick(float Dt)
 	UI->Letterbox = FMath::Min(1.f, UI->Letterbox + Dt * 3.f);
 }
 
+bool APBXDirector::StoryFilm(const FString& Id)
+{
+	static const bool bNoFilm = FParse::Param(FCommandLine::Get(), TEXT("pbxnofilm"));
+	if (bNoFilm || Id.IsEmpty()) { StoryFilmStop(); return false; }
+	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Movies") / StoryEp / (Id + TEXT(".mp4")));
+	if (!FPaths::FileExists(File)) { FilmMissed++; StoryFilmStop(); return false; }
+	if (!FilmPlayer)
+	{
+		FilmPlayer = NewObject<UMediaPlayer>(this); FilmPlayer->PlayOnOpen = true; FilmPlayer->SetLooping(false);
+		FilmTex = NewObject<UMediaTexture>(this); FilmTex->AutoClear = false; FilmTex->SetMediaPlayer(FilmPlayer); FilmTex->UpdateResource();   // keep the last frame: no black flash between beats
+		FilmSrc = NewObject<UFileMediaSource>(this);
+		UI->FilmBrush = MakeShared<FSlateBrush>(); UI->FilmBrush->SetResourceObject(FilmTex); UI->FilmBrush->ImageSize = FVector2D(1920, 1080);
+	}
+	FilmSrc->SetFilePath(File); FilmPlayer->OpenSource(FilmSrc);
+	UI->FilmA = 1.f; UI->Letterbox = 0.f; bFilmOn = true; FilmPlayed++;
+	SLOG("[PBXSTORY] film %s", *Id);
+	return true;
+}
+
+void APBXDirector::StoryFilmStop()
+{
+	if (!bFilmOn) return;
+	bFilmOn = false; UI->FilmA = 0.f;
+	if (FilmPlayer) FilmPlayer->Close();
+}
+
 void APBXDirector::StoryCamRelease()
 {
+	StoryFilmStop();
 	for (TActorIterator<APBXCharacterBase> It(GetWorld()); It; ++It) It->SetLookAt(FVector::ZeroVector, false);
 	if (APBXCharacterBase* A = ActSpk.Get()) A->StopAction(.4f); ActSpk = nullptr;
 	if (!bStoryCam) return;

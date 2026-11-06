@@ -371,6 +371,17 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 	[
 		SNew(SOverlay).Visibility(EVisibility::SelfHitTestInvisible)
 
+		// ---------------- film mode: the beat clip, full screen, under every other layer (subtitles, choices, QTE draw over it)
+		+ SOverlay::Slot()
+		[
+			SNew(SBorder).BorderImage(White()).BorderBackgroundColor(FLinearColor::Black).Padding(0)
+			.Visibility_Lambda([this] { return M->FilmA > .001f && M->FilmBrush.IsValid() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			[
+				SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+				[ SNew(SImage).Image_Lambda([this] { return M->FilmBrush.Get(); }).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->FilmA)); }) ]
+			]
+		]
+
 		// ---------------- explore HUD: objective (top-left)
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(28, 24)
 		[

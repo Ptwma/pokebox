@@ -58,7 +58,8 @@ struct FPBXUIModel
 	// Sigil & Spark intro (2026-10-31): the "ink myth" overlay (glyphs drawing themselves) and timed subtitles
 	float Ink = 0.f, InkT = 0.f, InkWipe = 0.f; int32 InkMode = 0; FString InkTitle;
 	FString Subtitle, SubSpeaker; float SubA = 0.f;
-	TSharedPtr<FSlateBrush> MovieBrush; float MovieA = 0.f;   // the drawn saga intro (a video, 2026-11-01)
+	TSharedPtr<FSlateBrush> MovieBrush; float MovieA = 0.f;
+	TSharedPtr<FSlateBrush> FilmBrush; float FilmA = 0.f;   // film mode: the current beat's clip (under subtitles, choices, QTE)   // the drawn saga intro (a video, 2026-11-01)
 	float MovieBgA = 0.f; bool bSubtitles = true; bool bMenuLeft = false;   // bMenuLeft: menus slide to the left third (the hero preview stands on the right)              // r65: the title loop is drawn UNDER the menus; subtitles can be turned off
 	TArray<FPBXSpark> Sparks; FVector2D ViewSize = FVector2D(1920, 1080); float Time = 0.f;
 };
