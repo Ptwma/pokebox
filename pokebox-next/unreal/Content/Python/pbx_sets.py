@@ -7,7 +7,7 @@ G = '/Game/PBX'
 AT = unreal.AssetToolsHelpers.get_asset_tools(); EAL = unreal.EditorAssetLibrary
 EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 MEL = unreal.MaterialEditingLibrary
-STAGES = {'Pier': (120000.0, 0.0, 0.0), 'Scriptorium': (150000.0, 0.0, 0.0), 'Alley': (180000.0, 0.0, 0.0), 'Lighthouse': (210000.0, 0.0, 3000.0)}   # stage origins (cm): far east of the old town, at sea level
+STAGES = {'Pier': (120000.0, 0.0, 0.0), 'Scriptorium': (150000.0, 0.0, 0.0), 'Alley': (180000.0, 0.0, 0.0), 'Lighthouse': (210000.0, 0.0, 3000.0), 'Road': (240000.0, 0.0, 1500.0)}   # stage origins (cm): far east of the old town, at sea level
 def log(*a): print('[pbx]', *a)
 
 def _emissive():

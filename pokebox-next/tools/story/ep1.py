@@ -8,9 +8,11 @@ S.stage('Scriptorium', (150000, 0, 0))
 S.stage('Alley', (180000, 0, 0))   # v4 set #3: the fish-market alley (tools/sets/set_alley.py)
 def AL(x, y, z=0): return f'stage:Alley:{x},{y},{z}'
 S.stage('Lighthouse', (210000, 0, 3000))   # v4 set #4: the lamp room, 30 m above the sea (tools/sets/set_lighthouse.py)
+S.stage('Road', (240000, 0, 1500))   # v4 set #5: the north road, 15 m up the cliff
 def LH(x, y, z=0): return f'stage:Lighthouse:{x},{y},{z}'   # v4 set #2: the hall + the stacks (tools/sets/set_scriptorium.py)
 def SC(x, y, z=0): return f'stage:Scriptorium:{x},{y},{z}'   # v4 set #1: the pier at dusk (tools/sets/set_pier.py → pbx_sets.import_set)
 def P(x, y, z=0): return f'stage:Pier:{x},{y},{z}'
+def RD(x, y, z=0): return f'stage:Road:{x},{y},{z}'   # v4 set #5: the north road / milestone (tools/sets/set_road.py)
 S.cast('rho', 'Rho', 'rho', (.4, .75, 1))
 S.cast('bruce', 'Captain Bruce', 'guard', (.75, .7, .6))
 S.cast('vale', 'Archivist Vale', 'vale', (.8, .8, .85))
@@ -369,7 +371,8 @@ S.scene('s7_gate', 'Who Opened the Gate?',
 
 # =============================================================== SCENE 8 — The Road
 S.scene('s8_road', 'The Road',
-    place('spot:rho_gate'),
+    place(RD(-300, 0) + ':0'), sun(-3, 300, 0.45, (.72, .55, .92)),   # violet dusk, the gate behind, the road north
+    npc('vale', RD(150, -120), 180), npc('gus', RD(100, 160), 200), npc('rho', RD(640, -160), 200),
     {'amb': 'wind'}, music('lullaby'), fade(0, 1.0),
     say('vale', 'They went north. They took the archive. They will come back for you.'),
     if_('ACCUSED_GUS', say('vale', 'Gus asked me to give you his coat. Even now.'), say('gus', 'Take the coat. North wind bites.')),
