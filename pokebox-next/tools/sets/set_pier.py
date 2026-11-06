@@ -38,8 +38,16 @@ def piece(name, loc, rot=0.0, scale=1.0):
 
 # ------------------------------------------------------------------ layout (metres; X along the quay, Y = inland +)
 # a row of three narrow harbour houses on the left of the quay, the pier going out into the water on the right
+PLASTER_TINTS = [(1, 1, 1), (0.82, 0.86, 0.95), (0.95, 0.80, 0.72), (0.78, 0.84, 0.76), (0.70, 0.66, 0.72)]
+def tint_obj(o, rgb, tag):
+    """give this piece its own copies of the plaster materials, multiplied by a colour (houses painted differently)"""
+    for i, m in enumerate(o.data.materials):
+        if m and 'Plaster' in m.name:
+            k = f'{m.name}_{tag}'
+            mm = bpy.data.materials.get(k) or m.copy(); mm.name = k; mm['tint'] = rgb
+            o.data.materials[i] = mm
 def house(x0, floors, w=2, style='UnevenBrick', upper='Plaster', door_at=0, seed=0):
-    rr = random.Random(seed)
+    rr = random.Random(seed); tint = rr.choice(PLASTER_TINTS); tag = f'h{seed}'
     for f in range(floors):
         z = f * 3.12
         mat = style if f == 0 else upper
@@ -47,13 +55,18 @@ def house(x0, floors, w=2, style='UnevenBrick', upper='Plaster', door_at=0, seed
             x = x0 + i * 2 + 1
             if f == 0 and i == door_at: n = f'Wall_{mat}_Door_Round'
             else: n = rr.choice([f'Wall_{mat}_Window_Wide_Round', f'Wall_{mat}_Window_Thin_Round', f'Wall_{mat}_Straight'])
-            piece(n, (x, 0, z), 180)                       # facade faces -Y (the quay)
+            fo = piece(n, (x, 0, z), 180)                  # facade faces -Y (the quay)
+            fo.data = fo.data.copy(); tint_obj(fo, tint, tag)
+            if 'Window_Wide' in n and rr.random() < 0.5:
+                piece(rr.choice(['WindowShutters_Wide_Round_Open', 'WindowShutters_Wide_Round_Closed']), (x, -0.05, z), 180)
+            if f == 1 and rr.random() < 0.25: piece('Balcony_Simple_Straight', (x, -0.1, z), 180)
             piece(f'Wall_{mat}_Straight', (x, 2 * 2, z), 0) # back
         for j in range(2):
             piece(f'Wall_{mat}_Straight', (x0, j * 2 + 1, z), 90)
             piece(f'Wall_{mat}_Straight', (x0 + w * 2, j * 2 + 1, z), -90)
         if f > 0: piece('Floor_WoodDark', (x0 + 1, 1, z), 0)
-    piece('Roof_RoundTiles_4x4', (x0 + w, 2, floors * 3.12), 0)
+    piece(rr.choice(['Roof_RoundTiles_4x4', 'Roof_RoundTiles_4x4', 'Roof_RoundTiles_4x6']), (x0 + w, 2, floors * 3.12), 0)
+    if rr.random() < 0.5: piece('Prop_Vine' + rr.choice(['1', '2', '4', '5']), (x0 + 0.6, -0.25, 0.1), 180)
     # the rooms behind the windows: a backdrop plane per floor, some lit warm (people at home), most dark
     for f in range(floors):
         bpy.ops.mesh.primitive_plane_add(size=1, location=(x0 + w, 1.2, f * 3.12 + 1.6), rotation=(math.radians(90), 0, 0))
@@ -99,8 +112,17 @@ piece('Prop_Vine2', (-4.95, -0.25, 0.2), 180)
 
 # water, sky, the lighthouse far out on its rock
 bpy.ops.mesh.primitive_plane_add(size=400, location=(0, -150, -0.6)); water = bpy.context.object; noink(water)
-bpy.ops.mesh.primitive_cylinder_add(radius=1.6, depth=16, location=(26, -70, 7)); tower = bpy.context.object
-bpy.ops.mesh.primitive_cone_add(radius1=2.1, depth=2.4, location=(26, -70, 16.2)); cap = bpy.context.object
+bpy.ops.mesh.primitive_cone_add(radius1=2.0, radius2=1.3, depth=16, vertices=24, location=(26, -70, 7)); tower = bpy.context.object
+bpy.ops.mesh.primitive_cylinder_add(radius=1.45, depth=1.6, vertices=24, location=(26, -70, 15.8)); lamp_room = bpy.context.object
+bpy.ops.mesh.primitive_cone_add(radius1=1.8, depth=1.8, vertices=24, location=(26, -70, 17.5)); cap = bpy.context.object
+for zb in (3.0, 9.0):
+    bpy.ops.mesh.primitive_cylinder_add(radius=1.9 - zb * 0.04, depth=2.2, vertices=24, location=(26, -70, zb)); band = bpy.context.object; band['band'] = 1
+bpy.ops.mesh.primitive_cone_add(radius1=0.2, radius2=7.0, depth=60, vertices=24, location=(26 - 30 * 0.8, -70 + 30 * 0.6, 15.8), rotation=(0, math.radians(90), math.radians(143))); beam = bpy.context.object; noink(beam)
+bm_ = bpy.data.materials.new('Beam'); bm_.use_nodes = True; bnt = bm_.node_tree
+be = bnt.nodes.new('ShaderNodeEmission'); be.inputs['Color'].default_value = (1.0, 0.85, 0.55, 1); be.inputs['Strength'].default_value = 0.35
+tr = bnt.nodes.new('ShaderNodeBsdfTransparent'); mx = bnt.nodes.new('ShaderNodeAddShader')
+bnt.links.new(be.outputs[0], mx.inputs[0]); bnt.links.new(tr.outputs[0], mx.inputs[1]); bnt.links.new(mx.outputs[0], bnt.nodes['Material Output'].inputs['Surface'])
+bm_.surface_render_method = 'BLENDED' if hasattr(bm_, 'surface_render_method') else bm_.blend_method; beam.data.materials.append(bm_); bm_['toon'] = 1
 bpy.ops.mesh.primitive_ico_sphere_add(radius=7, location=(26, -70, -3)); rock = bpy.context.object; rock.scale = (1.4, 1, .6)
 
 # ------------------------------------------------------------------ Rho (Quaternius base + fantasy outfit)
@@ -145,13 +167,25 @@ def character(outfit, hair, loc, yaw, body='Superhero_Male_FullBody'):
             mw = o.matrix_world.copy(); o.parent = arm; o.parent_type = 'BONE'; o.parent_bone = 'Head'
             o.matrix_world = arm.matrix_world @ arm.pose.bones['Head'].matrix @ arm.pose.bones['Head'].bone.matrix_local.inverted() @ mw
         else: bpy.data.objects.remove(o)
-    arm.location = loc; arm.rotation_euler = (0, 0, math.radians(yaw)); arm.scale = (0.9, 0.9, 0.9)
+    for o in arm.children:
+        if o.type == 'MESH' and ('Hair' in o.name or 'Eyebrow' in o.name):
+            for i, m in enumerate(o.data.materials):
+                if m: mm = m.copy(); mm['tint'] = (0.12, 0.13, 0.2); o.data.materials[i] = mm
+    for o in base:
+        if o.type == 'MESH' and 'Eyebrow' in o.name:
+            for i, m in enumerate(o.data.materials):
+                if m: mm = m.copy(); mm['tint'] = (0.12, 0.13, 0.2); o.data.materials[i] = mm
+    arm.location = loc; arm.rotation_euler = (0, 0, math.radians(yaw)); arm.scale = (0.88, 0.88, 0.88)
     for bn in ('spine_01', 'spine_02', 'spine_03'):
         pb = arm.pose.bones.get(bn)
         if pb: pb.scale = (0.88, 1.0, 0.9)
     for side, s_ in (('l', 1), ('r', -1)):
         b = arm.pose.bones.get('upperarm_' + side)
-        if b: b.rotation_mode = 'XYZ'; b.rotation_euler = (0, 0, math.radians(-62 * s_))
+        if b: b.rotation_mode = 'XYZ'; b.rotation_euler = (0, 0, math.radians(-74 * s_))
+        lb = arm.pose.bones.get('lowerarm_' + side)
+        if lb: lb.rotation_mode = 'XYZ'; lb.rotation_euler = (0, 0, math.radians(-12 * s_))
+    hd = arm.pose.bones.get('Head')
+    if hd: hd.rotation_mode = 'XYZ'; hd.rotation_euler = (math.radians(6), 0, math.radians(-10))
     return arm, base + fit
 
 rho, rho_objs = character('Male_Peasant', 'Hair_Buzzed', (7.0, -8.0, 0.02), 150)
@@ -174,8 +208,12 @@ def toonify(mat, tint=(1, 1, 1), shadow=(0.10, 0.12, 0.24)):
     bw = N.new('ShaderNodeRGBToBW'); mul = N.new('ShaderNodeMix'); mul.data_type = 'RGBA'; mul.blend_type = 'MULTIPLY'; mul.inputs['Factor'].default_value = 1.0
     emit = N.new('ShaderNodeEmission')
     L.new(diff.outputs[0], s2r.inputs[0]); L.new(s2r.outputs['Color'], bw.inputs[0]); L.new(bw.outputs[0], ramp.inputs[0])
-    if col_src: L.new(col_src, mul.inputs[6])
-    else: mul.inputs[6].default_value = base
+    if col_src:
+        if mat.get('tint'):
+            tm = N.new('ShaderNodeMix'); tm.data_type = 'RGBA'; tm.blend_type = 'MULTIPLY'; tm.inputs['Factor'].default_value = 1.0
+            L.new(col_src, tm.inputs[6]); tm.inputs[7].default_value = (*mat['tint'], 1); L.new(tm.outputs[2], mul.inputs[6])
+        else: L.new(col_src, mul.inputs[6])
+    else: mul.inputs[6].default_value = tuple(b * t for b, t in zip(base, (*mat.get('tint', (1, 1, 1)), 1)))
     L.new(ramp.outputs['Color'], mul.inputs[7])
     L.new(mul.outputs[2], emit.inputs['Color']); emit.inputs['Strength'].default_value = 1.0
     L.new(emit.outputs[0], out.inputs['Surface'])
@@ -190,28 +228,36 @@ def flat(obj, rgb, emit=1.0):
 flat(water, (0.05, 0.16, 0.20)); flat(hill, (0.06, 0.07, 0.10))
 for ob in bpy.data.objects:
     if ob.get('wood'): flat(ob, (0.22, 0.14, 0.09))
-flat(tower, (0.75, 0.72, 0.66)); flat(cap, (0.45, 0.12, 0.10)); flat(rock, (0.16, 0.15, 0.16))
+flat(tower, (0.80, 0.77, 0.70)); flat(cap, (0.35, 0.08, 0.07)); flat(rock, (0.12, 0.11, 0.12))
+lm = bpy.data.materials.new('LampRoom'); lm.use_nodes = True; lnt = lm.node_tree
+le = lnt.nodes.new('ShaderNodeEmission'); le.inputs['Color'].default_value = (1.0, 0.8, 0.45, 1); le.inputs['Strength'].default_value = 3.0
+lnt.links.new(le.outputs[0], lnt.nodes['Material Output'].inputs['Surface']); lamp_room.data.materials.append(lm); lm['toon'] = 1
+for ob in bpy.data.objects:
+    if ob.get('band'): flat(ob, (0.45, 0.07, 0.06))
 
 # lanterns along the quay: small warm emissive boxes + point lights (the ember key)
-for i, x in enumerate([-7, -1, 5, 8.6]):
-    y = -0.5 if i < 3 else -16.6
-    bpy.ops.mesh.primitive_cube_add(size=0.28, location=(x, y - 0.3, 2.6 if i < 3 else 1.4)); lb = bpy.context.object
-    m = bpy.data.materials.new('Lantern'); m.use_nodes = True; nt = m.node_tree
-    em = nt.nodes.new('ShaderNodeEmission'); em.inputs['Color'].default_value = (1.0, 0.45, 0.12, 1); em.inputs['Strength'].default_value = 2.2
-    nt.links.new(em.outputs[0], nt.nodes['Material Output'].inputs['Surface']); lb.data.materials.append(m)
-    bpy.ops.object.light_add(type='POINT', location=(x, y - 0.6, 2.4 if i < 3 else 1.3)); L_ = bpy.context.object
-    L_.data.energy = 260; L_.data.color = (1.0, 0.55, 0.22); L_.data.shadow_soft_size = 0.2
+LANTERNS = [(-11, -0.45, 2.7), (-7, -0.45, 2.7), (-1, -0.45, 2.7), (5, -0.45, 2.7), (7.95, -12.0, 1.5)]
+iron = bpy.data.materials.new('Iron'); iron.use_nodes = True; iron.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.03, 0.03, 0.035, 1); toonify(iron)
+glass = bpy.data.materials.new('LanternGlass'); glass.use_nodes = True; gnt = glass.node_tree
+ge = gnt.nodes.new('ShaderNodeEmission'); ge.inputs['Color'].default_value = (1.0, 0.48, 0.14, 1); ge.inputs['Strength'].default_value = 2.4
+gnt.links.new(ge.outputs[0], gnt.nodes['Material Output'].inputs['Surface']); glass['toon'] = 1
+for (x, y, z) in LANTERNS:
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y - 0.25, z)); fr = bpy.context.object; fr.scale = (0.26, 0.26, 0.34); fr.data.materials.append(iron)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y - 0.25, z)); gl = bpy.context.object; gl.scale = (0.2, 0.28, 0.26); gl.data.materials.append(glass)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y - 0.1, z + 0.22)); br = bpy.context.object; br.scale = (0.04, 0.3, 0.04); br.data.materials.append(iron)
+    bpy.ops.object.light_add(type='POINT', location=(x, y - 0.7, z - 0.1)); L_ = bpy.context.object
+    L_.data.energy = 420; L_.data.color = (1.0, 0.5, 0.2); L_.data.shadow_soft_size = 0.15
 
 # key: a low dusk sun from the sea side (ember), fill: cold teal sky
 bpy.ops.object.light_add(type='SUN', rotation=(math.radians(78), 0, math.radians(-35))); sun = bpy.context.object
-sun.data.energy = 1.6; sun.data.color = (1.0, 0.52, 0.30); sun.data.angle = math.radians(2)
+sun.data.energy = 0.9; sun.data.color = (1.0, 0.52, 0.30); sun.data.angle = math.radians(2)
 w = bpy.data.worlds.new('Dusk'); sc.world = w; w.use_nodes = True
 wn = w.node_tree.nodes; bg = wn['Background']
 tc = wn.new('ShaderNodeTexCoord'); sep = wn.new('ShaderNodeSeparateXYZ'); rp = wn.new('ShaderNodeValToRGB')
 ce = rp.color_ramp.elements
-ce[0].position = 0.50; ce[0].color = (0.85, 0.30, 0.12, 1)      # the last of the sun at the horizon
-ce[1].position = 0.62; ce[1].color = (0.05, 0.07, 0.14, 1)      # night coming down
-m2 = ce.new(0.545); m2.color = (0.45, 0.20, 0.28, 1)
+ce[0].position = 0.50; ce[0].color = (0.70, 0.22, 0.10, 1)      # the last of the sun at the horizon
+ce[1].position = 0.60; ce[1].color = (0.025, 0.035, 0.08, 1)      # night coming down
+m2 = ce.new(0.535); m2.color = (0.28, 0.12, 0.20, 1)
 mr = wn.new('ShaderNodeMapRange'); mr.inputs['From Min'].default_value = -1; mr.inputs['From Max'].default_value = 1
 wl = w.node_tree.links
 wl.new(tc.outputs['Generated'], sep.inputs[0]); wl.new(sep.outputs['Z'], mr.inputs['Value']); wl.new(mr.outputs[0], rp.inputs[0]); wl.new(rp.outputs[0], bg.inputs[0])
@@ -220,7 +266,7 @@ bg.inputs['Strength'].default_value = 1.0
 # fog: a volume cube (thin) over the water and the quay
 bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -40, 4)); fog = bpy.context.object; fog.scale = (120, 120, 10); noink(fog)
 fm = bpy.data.materials.new('Fog'); fm.use_nodes = True; fnt = fm.node_tree
-vol = fnt.nodes.new('ShaderNodeVolumePrincipled'); vol.inputs['Density'].default_value = 0.012; vol.inputs['Color'].default_value = (0.55, 0.6, 0.7, 1)
+vol = fnt.nodes.new('ShaderNodeVolumePrincipled'); vol.inputs['Density'].default_value = 0.02; vol.inputs['Color'].default_value = (0.55, 0.6, 0.7, 1)
 fnt.nodes.remove(fnt.nodes['Principled BSDF']); fnt.links.new(vol.outputs[0], fnt.nodes['Material Output'].inputs['Volume']); fog.data.materials.append(fm)
 
 # ink outlines: Freestyle (works in EEVEE; the Unreal port uses our ink post-process instead)
@@ -231,14 +277,14 @@ if ls.linestyle is None: ls.linestyle = bpy.data.linestyles.new('Ink')
 ls.linestyle.color = (0.03, 0.02, 0.03); ls.linestyle.thickness = 1.8
 
 # camera
-cams = {'wide': ((10.5, -19.0, 1.9), (0.0, -2.0, 3.0), 28), 'rho': ((8.9, -11.2, 1.55), (6.8, -7.6, 1.45), 40), 'sea': ((5.6, -5.5, 1.7), (24.0, -70.0, 6.0), 35)}
+cams = {'wide': ((15.5, -15.0, 2.3), (1.0, -3.0, 3.4), 27), 'rho': ((8.9, -11.2, 1.55), (6.8, -7.6, 1.45), 40), 'sea': ((5.6, -5.5, 1.7), (24.0, -70.0, 6.0), 35)}
 p, t, lens = cams[CAMNAME]
 bpy.ops.object.camera_add(location=p); cam = bpy.context.object; cam.data.lens = lens
 d = Vector(t) - Vector(p); cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler(); sc.camera = cam
 
 sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items] else 'BLENDER_EEVEE'
 sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = 1600, 900, 100
-sc.view_settings.view_transform = 'Standard'; sc.view_settings.look = 'None'; sc.view_settings.exposure = -0.6
+sc.view_settings.view_transform = 'Standard'; sc.view_settings.look = 'None'; sc.view_settings.exposure = -0.75
 os.makedirs(os.path.dirname(OUT), exist_ok=True); sc.render.filepath = OUT
 bpy.ops.render.render(write_still=True)
 bpy.ops.wm.save_as_mainfile(filepath=os.path.splitext(OUT)[0] + '.blend')
