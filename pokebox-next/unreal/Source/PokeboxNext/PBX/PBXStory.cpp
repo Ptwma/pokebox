@@ -158,7 +158,7 @@ void APBXDirector::StoryPump()
 		if (N->TryGetStringField(TEXT("unset"), S)) { SVars.Remove(S); continue; }
 		if (N->TryGetStringField(TEXT("add"), S)) { SVars.Add(S, SVar(S) + (N->HasField(TEXT("v")) ? (int32)N->GetNumberField(TEXT("v")) : 1)); continue; }
 		const TSharedPtr<FJsonObject>* Rel;
-		if (N->TryGetObjectField(TEXT("rel"), Rel)) { for (const auto& KV : (*Rel)->Values) SVars.Add(KV.Key, FMath::Clamp(SVar(KV.Key) + (int32)KV.Value->AsNumber(), -5, 5)); continue; }
+		if (N->TryGetObjectField(TEXT("rel"), Rel)) { for (const auto& KV : (*Rel)->Values) { const FString K(KV.Key); SVars.Add(K, FMath::Clamp(SVar(K) + (int32)KV.Value->AsNumber(), -5, 5)); } continue; }
 		if (N->TryGetStringField(TEXT("toast"), S)) { Toast(StoryText(S)); continue; }
 		if (N->TryGetStringField(TEXT("objective"), S)) { UI->Objective = StoryText(S); continue; }
 		if (N->TryGetStringField(TEXT("sfx"), S)) { Sfx(*S); continue; }
