@@ -31,7 +31,7 @@ def piece(name, loc, rot=0.0, scale=1.0):
         src = next(o for o in new if o.type == 'MESH')
         for o in new:
             if o is not src: bpy.data.objects.remove(o)
-        src.parent = None; _cache[name] = src; src.location = loc; src.rotation_euler = (0, 0, math.radians(rot)); src.scale = (scale,) * 3
+        src.parent = None; src.rotation_mode = 'XYZ'; _cache[name] = src; src.location = loc; src.rotation_euler = (0, 0, math.radians(rot)); src.scale = (scale,) * 3
         return src
     o = _cache[name].copy(); sc.collection.objects.link(o)
     o.location = loc; o.rotation_euler = (0, 0, math.radians(rot)); o.scale = (scale,) * 3
@@ -306,6 +306,10 @@ prop('k_pirate/mast', (11.5, -20.0, -0.6), 0, height=9.0)   # a moored ship's ma
 for x in (-9.0, -3.0, 1.0, 6.0): prop('Lantern_Wall', (x, -0.3, 2.2), 180, height=0.55)
 for x in (-8.0, -4.0, 4.0): prop('planter_box_01', (x, -0.35, 0), 0, height=0.45)
 for m in bpy.data.materials: toonify(m)
+
+_k = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kit.py')).read()
+exec(_k[_k.index('# ------------------------------------------------------------------ DETAIL builder'):_k.index('def finish(cams')])
+unclip(ref=(6.0, -10.0, 2.0)); build_details()
 
 if EXPORT:
     import json
