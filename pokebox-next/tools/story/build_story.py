@@ -21,6 +21,8 @@ for sid, sc in S.d['scenes'].items():
         elif isinstance(x, list):
             for v in x: walk(v)
     walk(sc['nodes'])
+for i, c in enumerate(S.d.get('prologue', [])):
+    c['vo'] = f'pro_{i + 1:02d}'; lines.append({'id': c['vo'], 'who': 'narrator', 'text': (c['text'] + ' ' + c['sub']).strip(), 'g': False, 's': False})
 p = os.path.join(out, ep + '.json'); open(p, 'w', encoding='utf-8').write(S.json()); print('wrote', p)
 lp = os.path.join(out, ep + '_lines.json'); json.dump(lines, open(lp, 'w', encoding='utf-8'), indent=0, ensure_ascii=False); print('lines', len(lines), '->', lp)
 import story_bot; sys.exit(story_bot.Bot(S.d).run().report())

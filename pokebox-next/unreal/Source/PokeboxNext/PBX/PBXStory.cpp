@@ -20,6 +20,11 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Kismet/GameplayStatics.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Engine/World.h"
+#include "CollisionQueryParams.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Sound/SoundBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogPBXStory, Log, All);
@@ -130,7 +135,7 @@ void APBXDirector::StoryGoto(const FString& Scene)
 {
 	const TSharedPtr<FJsonObject>* Scenes; const TSharedPtr<FJsonObject>* S;
 	if (!StoryData->TryGetObjectField(TEXT("scenes"), Scenes) || !(*Scenes)->TryGetObjectField(Scene, S)) { SLOG("[PBXSTORY] ERROR no scene %s", *Scene); Toast(TEXT("Missing scene: ") + Scene); return; }
-	StoryScene = Scene; SStack.Reset(); HubSpots.Reset(); bHub = false;
+	StoryScene = Scene; SStack.Reset(); HubSpots.Reset(); bHub = false; StoryCamRelease(); ShotOther = nullptr;
 	FStoryFrame F; F.Nodes = (*S)->GetArrayField(TEXT("nodes")); SStack.Add(F);
 	UI->Chapter = (*S)->GetStringField(TEXT("title"));
 	// autosave at the start of every scene: the vars as they were when the scene began (a reload replays the scene)
@@ -214,6 +219,7 @@ void APBXDirector::StoryPump()
 				if (bS) Vo += FString::Printf(TEXT("_p%d"), FMath::Clamp(SVar(TEXT("partner")), 1, 3));
 				QDo([this, Vo] { StoryVoicePlay(Vo); });
 			}
+			QDo([this, S] { StoryShot(S); });
 			// QSay shows SpeakerName(Who): pass the resolved name through the "story" speaker slot
 			StorySpeakerName = Name; StorySpeakerColor = C;
 			QSay({ { FName(TEXT("__story")), Line } });
@@ -356,7 +362,7 @@ bool APBXDirector::StoryHub(const TSharedPtr<FJsonObject>& N)
 	}
 	if (StoryCond(Exit) && !Exit.IsEmpty()) { HubSpots.Reset(); bHub = false; UI->Objective.Empty(); return true; }
 	if (!HubSpots.Num()) { SLOG("[PBXSTORY] ERROR hub in %s has no spots left and exit '%s' is false", *StoryScene, *Exit); HubSpots.Reset(); bHub = false; return true; }
-	bHub = true;
+	bHub = true; StoryCamRelease();
 	if (bAuto) QDo([this] { if (bHub && HubSpots.Num()) StoryUseSpot(0); });   // autotest: visit the spots in order
 	return false;
 }
@@ -374,7 +380,7 @@ void APBXDirector::StoryUseSpot(int32 i)
 // ---------------------------------------------------------------- the end of an episode: "Your Codex"
 void APBXDirector::StoryEndEpisode()
 {
-	SLOG("[PBXSTORY] END %s", *StoryEp);
+	SLOG("[PBXSTORY] END %s", *StoryEp); StoryCamRelease();
 	TArray<FPBXOption> Pages; TArray<FString> Lines;
 	const TArray<TSharedPtr<FJsonValue>>* Codex;
 	if (StoryData->TryGetArrayField(TEXT("codex"), Codex))
@@ -431,4 +437,109 @@ void APBXDirector::StoryAudioStop()
 	if (StoryMusic) { StoryMusic->FadeOut(1.f, 0.f); StoryMusic = nullptr; }
 	if (StoryAmb) { StoryAmb->FadeOut(1.f, 0.f); StoryAmb = nullptr; }
 	StoryMusicName.Empty(); StoryAmbName.Empty();
+}
+
+// ---------------------------------------------------------------- cinematic dialogue cameras
+AActor* APBXDirector::StoryActor(const FString& Who) const
+{
+	if (Who == TEXT("hero")) return Player;
+	FString Id = Who; const TSharedPtr<FJsonObject>* Cast_;
+	if (StoryData.IsValid() && StoryData->TryGetObjectField(TEXT("cast"), Cast_)) { const TSharedPtr<FJsonObject>* C; if ((*Cast_)->TryGetObjectField(Who, C)) (*C)->TryGetStringField(TEXT("npc"), Id); }
+	if (const TObjectPtr<APBXNPC>* N = NPCs.Find(FName(*Id))) if (*N && !(*N)->IsHidden()) return *N;
+	return nullptr;
+}
+
+FVector APBXDirector::HeadOf(AActor* A) const
+{
+	if (ACharacter* C = Cast<ACharacter>(A)) if (C->GetMesh() && C->GetMesh()->DoesSocketExist(TEXT("head"))) return C->GetMesh()->GetSocketLocation(TEXT("head")) + FVector(0, 0, 4);
+	return A ? A->GetActorLocation() + FVector(0, 0, 70) : FVector::ZeroVector;
+}
+
+void APBXDirector::StoryShot(const FString& Who)
+{
+	if (!Cam || !Player || Who == TEXT("narrator") || Who == TEXT("codex") || Who == TEXT("spark")) return;
+	AActor* Spk = StoryActor(Who);
+	AActor* Lis = nullptr;
+	if (Spk == Player) Lis = ShotOther.Get();
+	else if (Spk) { Lis = Player; ShotOther = Spk; }
+	if (!Spk || !Lis || FVector::Dist(Spk->GetActorLocation(), Lis->GetActorLocation()) > 2200.f) return;   // nobody to frame: keep the shot
+	const FVector Hs = HeadOf(Spk), Hl = HeadOf(Lis);
+	FVector Dir = (Hs - Hl).GetSafeNormal2D(); if (Dir.IsNearlyZero()) Dir = FVector(1, 0, 0);
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Dir);
+	// the two face each other (people turn to whoever speaks)
+	if (APBXNPC* N = Cast<APBXNPC>(Spk == Player ? Lis : Spk)) N->SetActorRotation(FRotator(0, (-Dir * (Spk == Player ? -1.f : 1.f)).Rotation().Yaw, 0));
+	Player->SetActorRotation(FRotator(0, ((Spk == Player ? Lis : Spk)->GetActorLocation() - Player->GetActorLocation()).GetSafeNormal2D().Rotation().Yaw, 0));
+	const int32 K = ShotN++ % 4;
+	FVector Eye, Look = Hs; float Fov = 40.f;
+	if (K == 0 || K == 2)   // over the listener's shoulder
+	{ Eye = Hl - Dir * 150.f + Right * (K == 0 ? 62.f : -62.f) + FVector(0, 0, 10); Fov = 36.f; }
+	else if (K == 1)        // close-up, a little off-axis
+	{ Eye = Hs - Dir * 150.f + Right * 38.f - FVector(0, 0, 4); Fov = 30.f; }
+	else                    // two-shot from the side
+	{ const FVector Mid = (Hs + Hl) * .5f; Eye = Mid + Right * 330.f + FVector(0, 0, -8); Look = Mid; Fov = 42.f; }
+	// keep the lens out of walls: pull it in front of anything between the face and the camera
+	FHitResult Hit; FCollisionQueryParams Q(SCENE_QUERY_STAT(StoryCam), false); Q.AddIgnoredActor(Spk); Q.AddIgnoredActor(Lis); Q.AddIgnoredActor(Player);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Look, Eye, ECC_Camera, Q)) Eye = Hit.Location + (Look - Eye).GetSafeNormal() * 25.f;
+	ShotA = Eye; ShotB = Eye + (Look - Eye).GetSafeNormal() * 22.f; ShotLook = Look; ShotFov = Fov; ShotT = 0.f;
+	if (!bStoryCam) { bStoryCam = true; if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Cam); }
+	StoryCamTick(0.f);
+}
+
+void APBXDirector::StoryCamTick(float Dt)
+{
+	if (!bStoryCam || !Cam) { if (UI->Letterbox > 0.f && !Busy()) UI->Letterbox = FMath::Max(0.f, UI->Letterbox - Dt * 3.f); return; }
+	ShotT += Dt; const float a = FMath::Clamp(ShotT / 6.f, 0.f, 1.f);
+	const FVector E = FMath::Lerp(ShotA, ShotB, a * a * (3.f - 2.f * a));   // a slow push-in over each line
+	Cam->SetActorLocationAndRotation(E, (ShotLook - E).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(ShotFov);
+	UI->Letterbox = FMath::Min(1.f, UI->Letterbox + Dt * 3.f);
+}
+
+void APBXDirector::StoryCamRelease()
+{
+	if (!bStoryCam) return;
+	bStoryCam = false;
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) if (Player) { PC->SetViewTarget(Player); Player->SnapCamera(); }
+	if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f);
+}
+
+// ---------------------------------------------------------------- hub marks: soft ink dots over what you can look at
+void APBXDirector::StoryMarksTick()
+{
+	UI->Marks.Reset();
+	if (!bHub || UI->Mode != EPBXUIMode::Explore || !Player) return;
+	APlayerController* PC = GetWorld()->GetFirstPlayerController(); if (!PC) return;
+	const float Scale = FMath::Max(.1f, UWidgetLayoutLibrary::GetViewportScale(this));
+	int32 VX = 0, VY = 0; PC->GetViewportSize(VX, VY); const FVector2D View = FVector2D(VX, VY) / Scale;
+	const FVector P = PlayerLoc();
+	for (int32 i = 0; i < HubSpots.Num(); i++)
+	{
+		const FVector W = HubSpots[i].Pos + FVector(0, 0, 120.f);
+		const float D = FVector::Dist(P, W);
+		FPBXUIModel::FMark K; K.A = FMath::Clamp(1.f - (D - 400.f) / 3200.f, .25f, 1.f) * (NearKind == EKind::Story && NearIndex == i ? .35f : .8f);   // fades out when you stand on it (the [E] prompt takes over)
+		FVector2D S; const bool bOn = PC->ProjectWorldLocationToScreen(W, S, true);
+		S /= Scale;
+		const bool bInside = bOn && S.X > 30 && S.Y > 30 && S.X < View.X - 30 && S.Y < View.Y - 30;
+		if (!bInside)   // off screen: a smaller dot pinned to the edge, in the direction to turn
+		{
+			const FVector L = PC->PlayerCameraManager->GetCameraRotation().UnrotateVector(W - PC->PlayerCameraManager->GetCameraLocation());
+			FVector2D Dir2(L.Y, -L.Z); if (Dir2.IsNearlyZero()) Dir2 = FVector2D(1, 0); Dir2.Normalize();
+			const FVector2D C = View * .5f; const float T = FMath::Min((View.X * .5f - 40.f) / FMath::Max(.01f, FMath::Abs(Dir2.X)), (View.Y * .5f - 40.f) / FMath::Max(.01f, FMath::Abs(Dir2.Y)));
+			S = C + Dir2 * T; K.bEdge = true; K.A *= .55f;
+		}
+		K.P = S; UI->Marks.Add(K);
+	}
+}
+
+// ---------------------------------------------------------------- prologue cards
+void APBXDirector::QCard(const FString& Text, const FString& Sub, const FString& Vo)
+{
+	TSharedPtr<float> Len = MakeShared<float>(-1.f);
+	Q([this, Text, Sub, Vo, Len](float T)
+	{
+		if (*Len < 0.f) { *Len = FMath::Max(3.5f, StoryVoicePlay(Vo) + 1.2f); UI->CardText = Text; UI->CardSub = Sub; bConfirm = false; }
+		const float Out = *Len;
+		UI->CardA = FMath::Clamp(FMath::Min(T * 1.6f, (Out - T) * 1.6f + 1.f), 0.f, 1.f);
+		if ((bConfirm && T > .4f) || T >= Out + .6f) { bConfirm = false; UI->CardA = 0.f; if (StoryVoice) StoryVoice->FadeOut(.3f, 0.f); return true; }
+		return false;
+	});
 }

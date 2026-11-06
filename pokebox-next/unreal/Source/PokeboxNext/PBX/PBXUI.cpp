@@ -266,6 +266,31 @@ private:
 	TSharedPtr<FPBXUIModel> M; TSharedPtr<FSlateBrush> Dot;
 };
 
+class SPBXMarks : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SPBXMarks) {}
+	SLATE_END_ARGS()
+	void Construct(const FArguments&, TSharedPtr<FPBXUIModel> InM) { M = InM; Dot = MakeShared<FSlateRoundedBoxBrush>(FLinearColor::White, 64.f); }
+	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(8, 8); }
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+	{
+		if (!M.IsValid() || M->Mode != EPBXUIMode::Explore) return Layer;
+		for (const FPBXUIModel::FMark& K : M->Marks)
+		{
+			if (K.A <= .01f) continue;
+			const float Pulse = .5f + .5f * FMath::Sin(M->Time * 2.2f + K.P.X * .01f);
+			const float R = (K.bEdge ? 9.f : 11.f) + Pulse * 3.f;
+			FLinearColor Halo(1.f, .78f, .42f, K.A * (.18f + .12f * Pulse)), Core(1.f, .9f, .7f, K.A * .85f), Ring(.08f, .05f, .04f, K.A * .7f);
+			auto Box = [&](float Sz, const FLinearColor& C, int32 L) { FSlateDrawElement::MakeBox(Out, L, G.ToPaintGeometry(FVector2f(Sz, Sz), FSlateLayoutTransform(FVector2f(K.P) - FVector2f(Sz, Sz) * .5f)), Dot.Get(), ESlateDrawEffect::None, C); };
+			Box(R * 3.2f, Halo, Layer); Box(R * 1.15f, Ring, Layer + 1); Box(R * .8f, Core, Layer + 2);
+		}
+		return Layer + 2;
+	}
+private:
+	TSharedPtr<FPBXUIModel> M; TSharedPtr<FSlateBrush> Dot;
+};
+
 TSharedRef<SWidget> SPBXHud::Panel(TSharedRef<SWidget> Content, FLinearColor Fill, float Pad)
 {
 	// light fills = a parchment page (ink text), dark fills = an ink-wash strip (ivory text). Small panels use a smaller
@@ -309,7 +334,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		// ---------------- explore HUD: objective (top-left)
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(28, 24)
 		[
-			SNew(SBox).WidthOverride(560).Visibility_Lambda([this] { return Vis(M->Mode == EPBXUIMode::Explore && !M->Objective.IsEmpty()); })
+			SNew(SBox).WidthOverride(560).Visibility_Lambda([this] { return Vis(M->Mode == EPBXUIMode::Explore && !M->Objective.IsEmpty() && M->BigT <= 0.f && M->Letterbox < .05f); })
 			[
 				Panel(SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->Chapter.ToUpper()); }).Font(PBXUI::Font(TEXT("label"), 14)).ColorAndOpacity(CrimsonC)]
@@ -519,6 +544,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			]
 		]
 		// ---------------- intro "ink myth" overlay (Sigil & Spark)
+		+ SOverlay::Slot()[ SNew(SPBXMarks, M).Visibility(EVisibility::HitTestInvisible) ]
 		+ SOverlay::Slot()[ SNew(SPBXInk, M).Visibility(EVisibility::HitTestInvisible) ]
 		// ---------------- cutscene letterbox + caption (phase 6)
 		+ SOverlay::Slot().VAlign(VAlign_Top)
@@ -563,6 +589,15 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		+ SOverlay::Slot()
 		[
 			SNew(SImage).Image(White()).Visibility(EVisibility::HitTestInvisible).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(0, 0, 0, M->Fade)); })
+		]
+		// ---------------- prologue cards (over the fade: white words on black)
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+		[
+			SNew(SVerticalBox).Visibility_Lambda([this] { return M->CardA > .01f ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->CardText); }).Font(PBXUI::Font(TEXT("body"), 40)).Justification(ETextJustify::Center).WrapTextAt(1200.f)
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1.f, .96f, .9f, M->CardA)); })]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 22, 0, 0)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->CardSub); }).Font(PBXUI::Font(TEXT("italic"), 28)).Justification(ETextJustify::Center).WrapTextAt(1100.f)
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(.85f, .25f, .2f, M->CardA)); })]
 		]
 	];
 }

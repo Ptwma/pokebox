@@ -605,7 +605,7 @@ void APBXDirector::Tick(float Dt)
 		FPostProcessSettings& PP = Player->Camera->PostProcessSettings;
 		if (PP.bOverride_AutoExposureBias != bIn)
 		{
-			PP.bOverride_AutoExposureBias = bIn; PP.AutoExposureBias = -1.0f;
+			PP.bOverride_AutoExposureBias = bIn; PP.AutoExposureBias = -0.35f;   // r68: interiors were too dark to read
 			PP.bOverride_AutoExposureMinBrightness = bIn; PP.AutoExposureMinBrightness = 4.5f;   // EV100 floor: don't brighten a lamp-lit room like a cave
 			Player->Camera->PostProcessBlendWeight = 1.f;
 		}
@@ -669,7 +669,7 @@ void APBXDirector::Tick(float Dt)
 	if (Player && Menu == EMenu::None && !Bt.bActive)
 	{
 		if (bBoating) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) UI->Mode = EPBXUIMode::Explore; TickBoat(Busy() ? 0.f : Dt); UpdatePrompt(); }
-		else if (bStoryMode) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); } StoryFuseTick(Dt); }
+		else if (bStoryMode) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); } StoryFuseTick(Dt); StoryCamTick(Dt); StoryMarksTick(); }
 		else if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); StoryTick(Dt); UpdateWilds(Dt); CheckCutscenes(); }
 		if (!bStoryMode) UpdateObjective();
 	}
@@ -2274,32 +2274,32 @@ void APBXDirector::ApplyMood()
 	FPostProcessSettings& S = V->Settings;
 	// r66b (owner: "darker"): an overcast, lower, colder light and a darker exposure — auto exposure would undo a plain
 	// light cut, so the exposure bias goes down too
-	S.bOverride_ColorSaturation = bMood; S.ColorSaturation = FVector4(.68f, .68f, .68f, 1.f);
-	S.bOverride_ColorContrast = bMood; S.ColorContrast = FVector4(1.14f, 1.14f, 1.14f, 1.f);
+	S.bOverride_ColorSaturation = bMood; S.ColorSaturation = FVector4(.84f, .84f, .84f, 1.f);   // r68: owner "too dark, can't see well" → softer grade
+	S.bOverride_ColorContrast = bMood; S.ColorContrast = FVector4(1.06f, 1.06f, 1.06f, 1.f);
 	S.bOverride_ColorGain = bMood; S.ColorGain = FVector4(.98f, .96f, .93f, 1.f);
 	S.bOverride_ColorGamma = bMood; S.ColorGamma = FVector4(.97f, .97f, .99f, 1.f);
 	S.bOverride_ColorGainShadows = bMood; S.ColorGainShadows = FVector4(.86f, .9f, 1.02f, 1.f);   // cold shadows
-	S.bOverride_AutoExposureBias = bMood; S.AutoExposureBias = -.35f;   // r66c: -.85 crushed the interiors to black
-	S.bOverride_VignetteIntensity = bMood; S.VignetteIntensity = .65f;
-	S.bOverride_FilmGrainIntensity = bMood; S.FilmGrainIntensity = .2f;
+	S.bOverride_AutoExposureBias = bMood; S.AutoExposureBias = .25f;   // r66c: -.85 crushed the interiors to black
+	S.bOverride_VignetteIntensity = bMood; S.VignetteIntensity = .38f;
+	S.bOverride_FilmGrainIntensity = bMood; S.FilmGrainIntensity = .1f;
 	for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It) if (UExponentialHeightFogComponent* FC = It->GetComponent())
 	{
 		if (!MoodBack.bSaved) { MoodBack.bSaved = true; MoodBack.FogDensity = FC->FogDensity; MoodBack.FogColor = FC->FogInscatteringLuminance; }
-		FC->SetFogDensity(bMood ? FMath::Max(MoodBack.FogDensity * 3.5f, .035f) : MoodBack.FogDensity);
-		FC->SetFogInscatteringColor(bMood ? FLinearColor(.26f, .28f, .33f) : MoodBack.FogColor);
+		FC->SetFogDensity(bMood ? FMath::Max(MoodBack.FogDensity * 1.8f, .02f) : MoodBack.FogDensity);
+		FC->SetFogInscatteringColor(bMood ? FLinearColor(.40f, .42f, .47f) : MoodBack.FogColor);
 		break;
 	}
 	for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
 	{
 		if (!MoodBack.bSun) { MoodBack.bSun = true; MoodBack.SunI = LC->Intensity; MoodBack.SunC = LC->LightColor.ReinterpretAsLinear(); }
-		LC->SetIntensity(bMood ? MoodBack.SunI * .62f : MoodBack.SunI);
+		LC->SetIntensity(bMood ? MoodBack.SunI * .88f : MoodBack.SunI);
 		LC->SetLightColor(bMood ? FLinearColor(.86f, .88f, .95f) : MoodBack.SunC);
 		break;
 	}
 	for (TActorIterator<ASkyLight> It(GetWorld()); It; ++It) if (USkyLightComponent* SC = It->GetLightComponent())
 	{
 		if (!MoodBack.bSky) { MoodBack.bSky = true; MoodBack.SkyI = SC->Intensity; }
-		SC->SetIntensity(bMood ? MoodBack.SkyI * .8f : MoodBack.SkyI);
+		SC->SetIntensity(bMood ? MoodBack.SkyI * 1.0f : MoodBack.SkyI);
 		break;
 	}
 }
@@ -2606,6 +2606,14 @@ void APBXDirector::StartNewGame(bool bMale)
 	PlacePlayer(NewGameSpot);
 	RefreshWorld();
 	// Sigil & Spark: the legend film ("Tonight, a Codex opens") → straight into the Rite of Pages (r65: no wake-up at home)
+	// v3 (owner 2026-11-06): first, in plain words, what kind of game this is — then the film, now with music under it
+	if (HasStory(TEXT("ep1")) && LoadStory(TEXT("ep1")))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Pro;
+		if (StoryData->TryGetArrayField(TEXT("prologue"), Pro))
+			for (const TSharedPtr<FJsonValue>& V : *Pro) { const TSharedPtr<FJsonObject> C = V->AsObject(); FString Sub, Vo; C->TryGetStringField(TEXT("sub"), Sub); C->TryGetStringField(TEXT("vo"), Vo); QCard(C->GetStringField(TEXT("text")), Sub, Vo); }
+		QDo([this] { StoryLoop(StoryMusic, StoryMusicName, TEXT("music"), TEXT("lullaby"), .3f * VolMusic, 2.0f); MusicHold = 1e9f; });
+	}
 	if (!(bAuto && FParse::Param(FCommandLine::Get(), TEXT("pbxnointro")))) { QFade(0.f, 1.f); PlayIntro(); QFade(1.f, .4f); }   // -pbxnointro: story autotests skip the film
 	if (HasStory(TEXT("ep1"))) QDo([this] { UI->Fade = 0.f; ApplyBlanked(false); StoryBegin(TEXT("ep1"), FString(), false); });   // v3: the choice-driven Episode 1
 	else QDo([this] { BeginRite(); });

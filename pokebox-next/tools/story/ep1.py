@@ -20,6 +20,15 @@ def rho_ends_alone():
                [setf('END_ALONE'), nar('He walked north along the cliffs, three small lights circling him. He did not look back.')],
                [setf('END_TAKEN'), wait(1.0), sfx('ui_page'), nar('Far off on the cliff road, a white light. A shout, cut short. Then only the sea.')])
 
+# =============================================================== prologue (owner 2026-11-06: "at the start, in simple words,
+# explain the basics — what kind of game it is and what it will be about, without details")
+S.prologue('Sigil & Spark is a story game.', 'You will not win it by fighting. You will write it by choosing.')
+S.prologue('Every choice you make is remembered.', 'Some change how people see you. Some change who lives... and who is lost.')
+S.prologue('Sometimes there is no time to think.', 'When the line of ink burns down, silence is a choice too.')
+S.prologue('There are no right answers.', 'Only the story you write.')
+S.prologue('In a small harbour town, on the night every sixteen-year-old opens a book of magic...', 'something is coming to erase it all.')
+S.prologue('Your book is blank.', 'What you write in it is up to you.')
+
 # =============================================================== SCENE 1 — Before the Rite
 S.scene('s1_harbour', 'Before the Rite',
     setf('rho', v=2), setf('gus', v=3), setf('omari', v=2), setf('rho_pages', v=0),

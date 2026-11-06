@@ -197,6 +197,12 @@ private:
 	void StoryLoop(TObjectPtr<UAudioComponent>& Comp, FString& Cur, const TCHAR* Kind, const FString& Name, float Vol, float Fade);
 	void StoryAudioStop();
 	float StoryVoicePlay(const FString& Id);
+	// cinematic dialogue cameras (owner: "the talks cinematic, like we said"): a cut per line — over the shoulder, close-up,
+	// two-shot — with a slow push-in; released when the player walks again
+	TWeakObjectPtr<AActor> ShotOther; bool bStoryCam = false; FVector ShotA = FVector::ZeroVector, ShotB = FVector::ZeroVector, ShotLook = FVector::ZeroVector; float ShotT = 0.f, ShotFov = 40.f; int32 ShotN = 0;
+	void StoryShot(const FString& Who); void StoryCamRelease(); void StoryCamTick(float Dt); void StoryMarksTick();
+	AActor* StoryActor(const FString& Who) const; FVector HeadOf(AActor* A) const;
+	void QCard(const FString& Text, const FString& Sub, const FString& Vo);
 	FString StorySpeakerName, LastLine, AutoPath; FLinearColor StorySpeakerColor = FLinearColor(1, .82f, .2f); int32 AutoChoice = 0;
 	bool HasStory(const FString& Ep) const;
 	bool LoadStory(const FString& Ep);

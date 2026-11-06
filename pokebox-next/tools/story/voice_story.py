@@ -33,7 +33,7 @@ def blend(k, spec):
     return v
 
 def clean(t):
-    t = t.replace('—', ', ').replace('...', '…').replace('"', '')
+    t = t.replace('—', ', ').replace('...', '…').replace('"', '').replace('&', 'and')
     return re.sub(r'\s+', ' ', t).strip()
 
 def say(k, text, voice, speed):
