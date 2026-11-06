@@ -43,8 +43,10 @@ def blanked(b): return {'blanked': b}
 def log(t): return {'log': t}
 def end(): return {'end': True}
 
-def opt(text, *do, cond=None, hint=None):
-    d = {'text': text, 'do': _flat(do)}
+def opt(text, *do, cond=None, hint=None, voiced=True):
+    # owner 2026-11-06: the hero speaks — a quoted option is said aloud by the hero before its consequences
+    spoken = [say('hero', text.strip('"').replace('\\"', '"'))] if voiced and text.startswith('"') else []
+    d = {'text': text, 'do': spoken + _flat(do)}
     if cond: d['if'] = cond
     if hint: d['hint'] = hint
     return d

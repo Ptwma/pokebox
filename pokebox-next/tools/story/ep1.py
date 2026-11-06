@@ -11,6 +11,8 @@ S.cast('gus', 'Old Gus', 'fisher', (.85, .7, .45))
 S.cast('omari', 'Omari', 'kid', (1, .75, .3))
 S.cast('eraser', 'The Eraser', 'eraser', (.95, .95, .95))
 S.cast('town', 'Someone', 'town', (.7, .7, .7))
+S.cast('zuri', 'Zuri', 'merchant', (.9, .55, .35))
+S.cast('sunita', 'Sunita', 'gardener', (.55, .8, .45))
 
 def rho_ends_alone():
     """Rho walks away alone: with all three pages he hunts them his own way; torn, the fog takes him"""
@@ -38,6 +40,28 @@ S.scene('s1_harbour', 'Before the Rite',
         spot('poster', 'Read the poster', '', note('THE RITE OF PAGES — TONIGHT — BRING NOTHING BUT YOURSELF.')),
         spot('dice', 'Look at the dice', '', note('Someone lost here. Badly.')),
         spot('boat', "Look at Gus's boat", 'npc:gus', note("Gus never ties a bowline that lazy. Unless he left in a hurry.")),
+        spot('zuri', 'Talk to Zuri', 'npc:zuri',
+            say('zuri', 'Rite night! Ink pens, ribbons, lucky charms. Half price for the lantern-keeper\'s kid.'),
+            say('zuri', 'The White Page never came back in thirty years, you know. My mother still sold charms against them. I sell them for the joke.'),
+            choice('', 8, [
+                opt('"I\'ll take one. For the joke."', say('zuri', 'A white ribbon. Tie it on your book. If they come, they\'ll think you\'re one of them.'), say('zuri', '...That\'s the joke.'), setf('ZURI_RIBBON'), rel(town=1)),
+                opt('"Who still believes in the White Page?"', say('zuri', 'Old Gus. And the Captain. He buys one every year and never wears it.'), setf('ZURI_HINT')),
+                opt('"Maybe later."', say('zuri', 'Later is when they sell out.')),
+            ], silent=say('zuri', 'Suit yourself.'), id='zuri')),
+        spot('sunita', 'Talk to Sunita', 'npc:sunita',
+            say('sunita', 'Careful, those are night lilies. They only open on Rite night. Old Script in their roots.'),
+            say('sunita', 'My daughter woke one page, years ago. A moth. She cried for a week. She wanted a dragon.'),
+            choice('', 8, [
+                opt('"What happened to her?"', say('sunita', 'She sails with the Pellings now. The moth sits on the mast and finds them fish.'), say('sunita', 'One page is enough, if it\'s the right one.'), rel(town=1)),
+                opt('"What if mine wakes nothing?"', say('sunita', 'Then you\'ll be the first person in this harbour I\'ve envied.'), say('sunita', 'Nothing written means nothing decided.')),
+            ], silent=say('sunita', 'Go on. The lilies are watching.'), id='sunita')),
+        spot('kelvin0', 'Talk to Kelvin', 'npc:kelvin',
+            say('kelvin', 'Don\'t look at me. I am not here. I am carrying ink to the hall and I am NOT here.'),
+            say('kelvin', 'Vale told me to fetch the Archivist\'s key from the vault and I have — absolutely — got it. Somewhere.'),
+            choice('', 8, [
+                opt('"You lost it, didn\'t you?"', say('kelvin', 'I MISPLACED it. At dice. Temporarily. It\'ll come back. Things come back.'), setf('KELVIN_DICE')),
+                opt('"Want help finding it?"', say('kelvin', 'You\'re kind. Don\'t be kind to me tonight, I\'ll cry into the ink.'), rel(kelvin=1)),
+            ], silent=say('kelvin', 'I\'m not here!'), id='kelvin0')),
         # --- 1c Rho
         spot('rho', 'Talk to Rho', 'npc:rho',
             say('rho', '"By ink and by breath, I open." Ink and breath. Who writes these? A poet with a head cold?'),
@@ -82,6 +106,14 @@ S.scene('s1_harbour', 'Before the Rite',
 # =============================================================== SCENE 2 — The Rite
 S.scene('s2_rite', 'The Rite of Pages',
     fade(0, 1.0),
+    nar('Candles. Six lecterns in a ring, a closed Codex on each. The whole harbour on the benches. Rain on the high windows.'),
+    say('rho', 'Benches are full. Dad\'s seat is empty. He said he\'d be here.'),
+    choice('', 8, [
+        opt('"He\'s on watch. He\'ll come."', say('rho', 'Yeah. Yeah, he\'ll come.'), rel(rho=1)),
+        opt('"Forget him. This is your night."', say('rho', '...Easy for you to say. Nobody\'s watching yours.'), rel(rho=-1)),
+    ], silent=say('rho', 'Say something. Anything.'), id='rite_wait'),
+    say('kelvin', 'Ink wells, ink wells, nobody touch the ink wells—'),
+    say('vale', 'Kelvin. Breathe.'),
     say('vale', 'By ink and by breath. Each of you will open your book. The Script will write what it finds in you.'),
     say('vale', 'Do not be afraid of what it writes. Be afraid of lying about it.'),
     nar('Two books open. A page each. A small Gale Spark and a Bloom Spark flicker into the air. Applause.'),
@@ -120,6 +152,8 @@ S.scene('s3_white', 'The White Page',
     nar('Kelvin is already gone.'),
     nar('An Eraser steps in front of Omari. Another grabs Rho\'s Codex and begins to pull the pages out.'),
     say('rho', 'AAAH—!'),
+    nar('Where the pages tear, the stubs bleed. Not ink. Blood, running down the spine of the book and over his fingers.'),
+    panel('Rho\'s hands on the book, red to the wrists.'),
     choice('', 5, [
         opt('Pull Omari out of the light.', nar('You tackle Omari behind a lectern. The light misses him by a hand.'),
             nar('Behind you, two pages tear.'), setf('SAVED_OMARI'), setf('rho_pages', v=1), rel(rho=-2, omari=3),
@@ -133,6 +167,7 @@ S.scene('s3_white', 'The White Page',
        id='light'),
     say('eraser', '...{hero}. There you are.'),
     nar('It reaches for your blank book — and the light slides off it, like water off oil.'),
+    nar('An Eraser\'s blade of light opens Vale\'s forearm. She doesn\'t scream. She writes faster.'),
     say('vale', 'RUN!'),
     fade(1, .5), goto('s4_spark'))
 
@@ -197,7 +232,39 @@ S.scene('s6_dawn', 'Dawn',
     nar('Rho walks in, wet, holding his Codex.'),
     say('rho', "My dad's not at the watchhouse. Not at home. Nobody's seen him since the bell."),
     say('rho', 'Help me find him. And find whoever opened that gate.'),
-    goto('s7_gate'))
+    say('vale', 'Not today. Today you sleep, both of you. The harbour will still be white tomorrow.'),
+    fade(1, .8), goto('s6b_night'))
+
+# =============================================================== SCENE 6b — The lighthouse at night (quiet scene)
+S.scene('s6b_night', 'The Lamp Room',
+    fade(0, 1.0),
+    nar('Night. The lamp room at the top of the lighthouse. The beam sweeps over a harbour full of white statues.'),
+    if_('partner==1', nar('Cindril sleeps curled in the warm brass of the lamp, smoking a little.'),
+        if_('partner==2', nar('Glublet sleeps in the bucket of rain water, blowing bubbles.'), nar('Sporrow sits on the window sill, not sleeping, watching the beam.'))),
+    nar('Footsteps on the stair. Rho, with a blanket and two cups of Gus\'s terrible tea.'),
+    say('rho', 'Couldn\'t sleep. Every time I close my eyes I see the hands on my book.'),
+    if_('rho_pages<3', [say('rho', 'It still hurts. Where the pages were. Like a tooth that\'s gone.'), nar('The stubs in his book are dark and crusted.')]),
+    choice('', 8, [
+        opt('"Show me."', nar('He opens the book. You look at what\'s left for a long time.'), say('rho', 'Don\'t make that face. I\'m not dead.'), rel(rho=1)),
+        opt('"I\'m sorry."', if_('SAVED_OMARI', say('rho', 'Are you? You\'d do it again.'), say('rho', 'Not your fault. Not all of it.'))),
+        opt('Hand him your tea too.', say('rho', 'That bad, huh. ...Thanks.'), rel(rho=1)),
+    ], silent=say('rho', 'Yeah. Me neither.'), id='night_1'),
+    say('rho', 'When I was small, Dad used to bring me up here. He said the lamp was the only thing in the harbour that never lied.'),
+    say('rho', 'He was weird last night. Before. He hugged me at breakfast. He never hugs.'),
+    choice('', 8, [
+        opt('"Maybe he knew something was coming."', say('rho', '...Don\'t.'), say('rho', 'Don\'t say it like that.'), setf('NIGHT_DOUBT')),
+        opt('"He loves you. That\'s all it was."', say('rho', 'Yeah.'), rel(rho=1)),
+        opt('"Where would he go, if he ran?"', say('rho', 'The cliffs. The old Hollowmere road. He goes there when he can\'t breathe.'), setf('KNOW_CLIFFS')),
+    ], silent=say('rho', '...'), id='night_2'),
+    say('rho', 'Can I ask you something? The Eraser. It knew your name. Why?'),
+    choice('', 8, [
+        opt('"I don\'t know. That scares me more than anything."', say('rho', 'Okay. Okay. We find out together.'), rel(rho=1), setf('TOLD_RHO_NAME')),
+        opt('"It didn\'t. You heard wrong."', say('rho', 'I heard what I heard.'), rel(rho=-1), remember('Rho')),
+    ], silent=[say('rho', 'Right. Secrets. Great.'), rel(rho=-1)], id='night_3'),
+    spark('HE IS AFRAID. SO ARE YOU. STOP PRETENDING.', 'he\'s sad. can i sit on him. i\'m going to sit on him.', 'The. Lamp. Does. Not. Lie.'),
+    nar('Rho falls asleep against the window. You watch the beam go round until it\'s grey outside.'),
+    if_('EGG_HIDDEN', [nar('In the oil cupboard, the egg ticks once. Like a clock. Like something counting.')]),
+    fade(1, 1.0), goto('s7_gate'))
 
 # =============================================================== SCENE 7 — Who opened the gate?
 def clue(flag, *lines):
@@ -227,8 +294,20 @@ S.scene('s7_gate', 'Who Opened the Gate?',
                 opt('"You\'re alive. That\'s something."', rel(kelvin=1), say('kelvin', '...Thank you.')),
                 opt('"You left them."', rel(kelvin=-1), say('kelvin', 'I know.')),
             ], silent=say('kelvin', '...'), id='kelvin')),
+        spot('gus7', 'Question Gus', 'npc:gus',
+            say('gus', 'Ask what you came to ask, {lad}. You never could hide a question.'),
+            choice('', 8, [
+                opt('"Your boat was out last night. Why?"', say('gus', 'Saw sails at sunset. White ones. I rowed out to be sure I wasn\'t mad.'), say('gus', 'I wasn\'t.'), setf('GUS_ALIBI')),
+                opt('"Who has a key to the sea gate?"', say('gus', 'The Archivist. And the Captain of the watch. Always has been, since the gate was cast.'), setf('KNOW_KEYS')),
+                opt('"Did you open it, Gus?"', say('gus', '...'), say('gus', 'Thirty years I watched for them, and you ask me that.'), rel(gus=-2), remember('Gus')),
+            ], silent=say('gus', 'Well? Ask.'), id='gus7')),
+        spot('zuri7', 'Question Zuri', 'npc:zuri',
+            say('zuri', 'Half my stock is white now. Ha. Ha.'),
+            say('zuri', 'You want to know about the Captain\'s ribbon? He bought it last week. First time in thirty years he wore one out of my shop.'),
+            clue('C6', note('Bruce bought a white ribbon last week — and wore it.')), cond='ZURI_HINT || ZURI_RIBBON'),
         spot('rho1', 'Talk to Rho', 'npc:rho',
             say('rho', "Nothing at the cliffs. Nothing at the pier. Where IS he?"),
+            if_('KNOW_CLIFFS', say('rho', 'I checked the Hollowmere road. His boot prints, going up. Coming back. Fresh.')),
             if_('C2 || C5', choice('What you found points at his father.', 8, [
                 opt('Show him.', setf('RHO_SAW_PROOF'), say('rho', '...No.'), say('rho', "That's — no. Somebody put that there.")),
                 opt('Hide it.', setf('RHO_KEPT_IN_DARK'), say('rho', 'Keep looking. Please.')),
@@ -237,10 +316,12 @@ S.scene('s7_gate', 'Who Opened the Gate?',
             say('vale', 'Someone opened the gate. Before the town does something stupid, I\'d like it to do something correct.'),
             say('vale', 'You went through the harbour. Tell us.'),
             choice('', 0, [
-                opt('Accuse Captain Bruce.', if_('CLUES>=3 && C2 || CLUES>=3 && C5', [
+                opt('Accuse Captain Bruce.', if_('CLUES>=3 && C2 || CLUES>=3 && C5 || CLUES>=3 && C6', [
                         nar('The square turns. Captain Bruce walks in from the cliffs, soaked. He does not deny it.'),
                         say('bruce', 'I was six when the words drowned Hollowmere. They promised it would never happen again.'),
                         say('bruce', 'They promised they\'d spare my boy.'),
+                        say('rho', 'Dad.'),
+                        say('bruce', 'I\'m sorry, Rho. I would do it again. That\'s the worst of it.'),
                         setf('ACCUSED_BRUCE_PROOF'), rel(town=1, vale=1),
                         if_('RHO_SAW_PROOF', rel(rho=-1), rel(rho=-3)), remember('Rho'),
                         nar('The watch locks their own Captain in the watchhouse.')],
@@ -268,6 +349,12 @@ S.scene('s8_road', 'The Road',
             if_('SAVED_PAGES', say('rho', "You saved my book. You lost Omari for it. I can't decide if I owe you or hate you."),
                 say('rho', 'You just stood there. Two pages. Two.')))),
     if_('PROMISE_ALWAYS', say('rho', '"You and me against the whole stupid world." You said that. Yesterday.')),
+    if_('TOLD_RHO_NAME', say('rho', 'You told me the truth last night. About the name. I keep thinking about that.'), None),
+    choice('', 8, [
+        opt('"I made the choices I could live with."', say('rho', 'Lucky you.'), rel(rho=-1)),
+        opt('"I would take it back if I could."', if_('rho>=1', say('rho', '...I know.'), say('rho', 'You can\'t. That\'s the point.')), rel(rho=1)),
+        opt('"Everything that happened is the White Page\'s fault. Not mine. Not yours."', say('rho', 'And my father\'s.'), say('rho', 'Say it. And my father\'s.'), cond='ACCUSED_BRUCE_PROOF || ACCUSED_BRUCE_WEAK'),
+    ], silent=say('rho', 'Nothing? Really?'), id='road_0'),
     choice('', 8, [
         opt('"Come with me. We find them together. We bring everyone back."',
             if_('rho>=2', [setf('END_TOGETHER'), say('rho', '...Together. Fine. Together.')],
