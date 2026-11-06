@@ -9,6 +9,7 @@ argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 SRC = argv[0] if argv else r"E:\GAME-APP-DEV\POKEMON\PokeboxNext_src"
 OUT = argv[1] if len(argv) > 1 else os.path.join(SRC, 'sets_render', 'pier_test.png')
 CAMNAME = argv[2] if len(argv) > 2 else 'wide'
+EXPORT = CAMNAME == 'export'   # export mode: no toon nodes, no character; writes <OUT>.fbx + <OUT>.json for Unreal (pbx_sets.py)
 KIT = os.path.join(SRC, 'environment', 'quaternius', 'Medieval Village MegaKit[Standard]', 'glTF')
 CH = os.path.join(SRC, 'characters', 'quaternius')
 R = random.Random(4)
@@ -72,7 +73,7 @@ def house(x0, floors, w=2, style='UnevenBrick', upper='Plaster', door_at=0, seed
         bpy.ops.mesh.primitive_plane_add(size=1, location=(x0 + w, 1.2, f * 3.12 + 1.6), rotation=(math.radians(90), 0, 0))
         bp = bpy.context.object; bp.scale = (w * 2 - 0.2, 3.0, 1); noink(bp)
         lit = rr.random() < 0.4
-        m = bpy.data.materials.new('Room'); m.use_nodes = True; nt = m.node_tree
+        m = bpy.data.materials.new('RoomLit' if lit else 'RoomDark'); m.use_nodes = True; nt = m.node_tree
         em = nt.nodes.new('ShaderNodeEmission'); em.inputs['Color'].default_value = (1.0, 0.62, 0.28, 1) if lit else (0.02, 0.025, 0.04, 1)
         em.inputs['Strength'].default_value = 3.0 if lit else 1.0
         nt.links.new(em.outputs[0], nt.nodes['Material Output'].inputs['Surface']); bp.data.materials.append(m); m['toon'] = 1
@@ -188,10 +189,15 @@ def character(outfit, hair, loc, yaw, body='Superhero_Male_FullBody'):
     if hd: hd.rotation_mode = 'XYZ'; hd.rotation_euler = (math.radians(6), 0, math.radians(-10))
     return arm, base + fit
 
-rho, rho_objs = character('Male_Peasant', 'Hair_Buzzed', (7.0, -8.0, 0.02), 150)
+if not EXPORT: rho, rho_objs = character('Male_Peasant', 'Hair_Buzzed', (7.0, -8.0, 0.02), 150)
 
 # ------------------------------------------------------------------ the painted-toon look
 def toonify(mat, tint=(1, 1, 1), shadow=(0.10, 0.12, 0.24)):
+    if EXPORT:   # Unreal draws the look with its own post-process; keep the kit's PBR materials (tints baked into base colour)
+        if mat and mat.get('tint') and mat.use_nodes:
+            b = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+            if b and not b.inputs['Base Color'].is_linked: b.inputs['Base Color'].default_value = tuple(c * t for c, t in zip(b.inputs['Base Color'].default_value, (*mat['tint'], 1)))
+        return
     """light → 3 hard bands (shadow tinted cold, lit tinted warm) × the kit's own colour texture = paint"""
     if not mat or not mat.use_nodes or mat.get('toon'): return
     nt = mat.node_tree; N, L = nt.nodes, nt.links
@@ -275,6 +281,19 @@ ls = sc.view_layers[0].freestyle_settings.linesets[0] if sc.view_layers[0].frees
 ls.select_by_visibility = True; ls.select_by_collection = True; ls.collection = NOINK; ls.collection_negation = 'EXCLUSIVE'; ls.select_silhouette = ls.select_border = ls.select_crease = True
 if ls.linestyle is None: ls.linestyle = bpy.data.linestyles.new('Ink')
 ls.linestyle.color = (0.03, 0.02, 0.03); ls.linestyle.thickness = 1.8
+
+if EXPORT:
+    import json
+    drop = [o for o in bpy.data.objects if o.type in ('CAMERA', 'LIGHT') or o is fog or o is beam]
+    lights = [{'pos': [round(o.location.x * 100, 1), round(-o.location.y * 100, 1), round(o.location.z * 100, 1)], 'energy': o.data.energy, 'color': list(o.data.color), 'type': o.data.type} for o in bpy.data.objects if o.type == 'LIGHT' and o.data.type == 'POINT']
+    for o in drop: bpy.data.objects.remove(o)
+    fbx = os.path.splitext(OUT)[0] + '.fbx'; os.makedirs(os.path.dirname(fbx), exist_ok=True)
+    bpy.ops.export_scene.fbx(filepath=fbx, use_selection=False, object_types={'MESH'}, apply_unit_scale=True, apply_scale_options='FBX_SCALE_UNITS',
+                             path_mode='COPY', embed_textures=True, mesh_smooth_type='FACE', use_mesh_modifiers=True, axis_forward='-Z', axis_up='Y')
+    json.dump({'lights': lights, 'marks': {'rho': [700, 800, 0], 'pier_end': [700, 1700, 0], 'quay': [0, 300, 0], 'houses': [-500, 100, 0]}},
+              open(os.path.splitext(OUT)[0] + '.json', 'w'), indent=1)
+    print('EXPORTED', fbx, len(lights), 'lights')
+    raise SystemExit(0)
 
 # camera
 cams = {'wide': ((15.5, -15.0, 2.3), (1.0, -3.0, 3.4), 27), 'rho': ((8.9, -11.2, 1.55), (6.8, -7.6, 1.45), 40), 'sea': ((5.6, -5.5, 1.7), (24.0, -70.0, 6.0), 35)}
