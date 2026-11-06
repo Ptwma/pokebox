@@ -23,6 +23,24 @@ def _emissive():
     MEL.connect_material_property(mu, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     MEL.recompile_material(m); EAL.save_asset(path); return m
 
+def _flat():
+    """M_PBX_Flat: lit, base colour + roughness parameters (the untextured set dressing: books, cloth, wax, iron...)"""
+    path = G + '/Materials/M_PBX_Flat'
+    if EAL.does_asset_exist(path): return unreal.load_asset(path)
+    m = AT.create_asset('M_PBX_Flat', G + '/Materials', unreal.Material, unreal.MaterialFactoryNew())
+    c = MEL.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -400, 0); c.set_editor_property('parameter_name', 'Color'); c.set_editor_property('default_value', unreal.LinearColor(.5, .5, .5, 1))
+    r = MEL.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -400, 200); r.set_editor_property('parameter_name', 'Roughness'); r.set_editor_property('default_value', 0.8)
+    MEL.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR); MEL.connect_material_property(r, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    MEL.recompile_material(m); EAL.save_asset(path); return m
+
+def _fmi(name, rgb, rough):
+    path = f'{G}/Sets/Flat/MI_F_{name}'
+    mi = unreal.load_asset(path) if EAL.does_asset_exist(path) else AT.create_asset(f'MI_F_{name}', G + '/Sets/Flat', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+    mi.set_editor_property('parent', _flat())
+    MEL.set_material_instance_vector_parameter_value(mi, 'Color', unreal.LinearColor(*rgb, 1))
+    MEL.set_material_instance_scalar_parameter_value(mi, 'Roughness', rough)
+    EAL.save_asset(path); return mi
+
 def _mi(name, color, strength):
     path = f'{G}/Sets/MI_{name}'
     mi = unreal.load_asset(path) if EAL.does_asset_exist(path) else AT.create_asset(f'MI_{name}', G + '/Sets', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
@@ -54,10 +72,19 @@ def import_set(name='Pier'):
     glow = {'LanternGlass': ((1.0, .45, .12), 6.0), 'RoomLit': ((1.0, .6, .28), 2.5), 'RoomDark': ((.02, .025, .04), 1.0), 'LampRoom': ((1.0, .8, .45), 8.0),
             'Candle': ((1.0, .62, .22), 10.0), 'JarGlow': ((.45, .75, 1.0), 1.5), 'LampRed': ((1.0, .12, .08), 8.0)}
     mats = sm.get_editor_property('static_materials')
+    flat = json.load(open(base + '.json')).get('mats', {})
+    import re
+    nflat = 0
     for i, sl in enumerate(mats):
         n = str(sl.get_editor_property('material_slot_name'))
+        hit = False
         for k, (c, st) in glow.items():
-            if n.startswith(k): sm.set_material(i, _mi(k, c, st))
+            if n.startswith(k): sm.set_material(i, _mi(k, c, st)); hit = True
+        if hit: continue
+        key = n if n in flat else re.sub(r'_\d+$', '', n)
+        if key in flat:
+            r, g, b, ro = flat[key]; sm.set_material(i, _fmi(key, (r, g, b), ro)); nflat += 1
+    log('flat colours', nflat, 'of', len(mats))
     EAL.save_asset(sm.get_path_name())
     # place the stage
     loc = unreal.Vector(*STAGES.get(name, (120000.0, 0, 0)))

@@ -356,6 +356,18 @@ def unclip(margin=0.03, passes=4, extra=(), ref=None):
             ox = min(a_[3], c_[3]) - max(a_[0], c_[0]); oy = min(a_[4], c_[4]) - max(a_[1], c_[1]); oz = min(a_[5], c_[5]) - max(a_[2], c_[2])
             if ox > 0.08 and oy > 0.08 and oz > 0.08: print('OVERLAP', nm(L[i]), nm(L[j]), round(ox, 2), round(oy, 2))
 
+def flat_colors():
+    """untextured materials → {name: [r, g, b, roughness]} so Unreal gets exact colours (FBX diffuse import is unreliable)"""
+    import re as _re
+    out = {}
+    for m in bpy.data.materials:
+        if not m.use_nodes: continue
+        b = next((n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if not b or b.inputs['Base Color'].is_linked: continue
+        c = b.inputs['Base Color'].default_value
+        out[_re.sub(r'\.\d+$', '', m.name)] = [round(c[0], 4), round(c[1], 4), round(c[2], 4), round(b.inputs['Roughness'].default_value, 3)]
+    return out
+
 def build_details():
     for rec in _BC: rec['build']()
     return flush_details()
@@ -375,7 +387,7 @@ def finish(cams, marks=None, world_rgb=(0.02, 0.025, 0.04), exposure=-0.4, drop=
         fbx = os.path.splitext(OUT)[0] + '.fbx'; os.makedirs(os.path.dirname(fbx), exist_ok=True)
         bpy.ops.export_scene.fbx(filepath=fbx, use_selection=False, object_types={'MESH'}, apply_unit_scale=True, apply_scale_options='FBX_SCALE_UNITS',
                                  path_mode='COPY', embed_textures=True, mesh_smooth_type='FACE', use_mesh_modifiers=True, axis_forward='-Z', axis_up='Y')
-        json.dump({'lights': lights, 'marks': marks or {}}, open(os.path.splitext(OUT)[0] + '.json', 'w'), indent=1)
+        json.dump({'lights': lights, 'marks': marks or {}, 'mats': flat_colors()}, open(os.path.splitext(OUT)[0] + '.json', 'w'), indent=1)
         print('EXPORTED', fbx, len(lights), 'lights'); raise SystemExit(0)
     w = bpy.data.worlds.new('W'); sc.world = w; w.use_nodes = True; w.node_tree.nodes['Background'].inputs['Color'].default_value = (*world_rgb, 1)
     sc.render.use_freestyle = True; sc.render.line_thickness_mode = 'ABSOLUTE'; sc.render.line_thickness = 1.6

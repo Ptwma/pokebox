@@ -321,7 +321,7 @@ if EXPORT:
     fbx = os.path.splitext(OUT)[0] + '.fbx'; os.makedirs(os.path.dirname(fbx), exist_ok=True)
     bpy.ops.export_scene.fbx(filepath=fbx, use_selection=False, object_types={'MESH'}, apply_unit_scale=True, apply_scale_options='FBX_SCALE_UNITS',
                              path_mode='COPY', embed_textures=True, mesh_smooth_type='FACE', use_mesh_modifiers=True, axis_forward='-Z', axis_up='Y')
-    json.dump({'lights': lights, 'marks': {'rho': [700, 800, 0], 'pier_end': [700, 1700, 0], 'quay': [0, 300, 0], 'houses': [-500, 100, 0]}},
+    json.dump({'mats': flat_colors(), 'lights': lights, 'marks': {'rho': [700, 800, 0], 'pier_end': [700, 1700, 0], 'quay': [0, 300, 0], 'houses': [-500, 100, 0]}},
               open(os.path.splitext(OUT)[0] + '.json', 'w'), indent=1)
     print('EXPORTED', fbx, len(lights), 'lights')
     raise SystemExit(0)
