@@ -473,15 +473,26 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		// ---------------- choice / menus (center): an ink vignette darkens the world behind the page
 		+ SOverlay::Slot()
 		[
-			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->bMenuLeft ? .35f : .7f)); }).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->bMenuLeft ? .35f : M->bStoryChoice ? .45f : .7f)); }).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::Visible : EVisibility::Collapsed; })
-			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, 0.f)); })
+			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, M->bStoryChoice ? M->ViewSize.Y * .2f : 0.f)); })
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceTitle); }).Font(PBXUI::Font(TEXT("title"), 68, 4)).ColorAndOpacity(IvoryC)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 22)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceSub); }).Font(PBXUI::Font(TEXT("italic"), 28, 2)).ColorAndOpacity(IvoryC).Justification(ETextJustify::Center)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SAssignNew(ChoiceHost, SBox)]
+			// v3: the burning fuse of a timed story choice (ink that burns down from both ends; silence is a choice too)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 14, 0, 0)
+			[
+				SNew(SBox).HeightOverride(14).WidthOverride_Lambda([this] { return FOptionalSize(600.f * FMath::Clamp(M->FuseMax > 0.f ? M->FuseT / M->FuseMax : 0.f, 0.f, 1.f)); })
+				.Visibility_Lambda([this] { return M->FuseMax > 0.f ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+				[
+					SNew(SImage).Image(StrokeBox()).ColorAndOpacity_Lambda([this] { const float k = M->FuseMax > 0.f ? M->FuseT / M->FuseMax : 0.f;
+						FLinearColor C = FLinearColor::LerpUsingHSV(FLinearColor(.85f, .12f, .08f), FLinearColor(1.f, .7f, .3f), k);
+						if (k < .3f) C *= 1.f + .5f * FMath::Abs(FMath::Sin(M->Time * 10.f)); return FSlateColor(C); })
+				]
+			]
 		]
 
 		// ---------------- big splash (chapter, captured, complete)

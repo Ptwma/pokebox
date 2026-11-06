@@ -139,7 +139,7 @@ private:
 	bool Busy() const { return Queue.Num() > 0; }
 
 	// ---- interactions
-	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train, Item, Boat, Dock };
+	enum class EKind : uint8 { None, NPC, Door, Bed, Table, Sign, Train, Item, Boat, Dock, Story };
 	// the rowboat (2026-10-23): board it at the pier, steer with the move keys, step ashore at a dock
 	struct FDock { FString Name; FVector Water = FVector::ZeroVector; FPBXSpot Land; };
 	TArray<FDock> Docks; UPROPERTY() TObjectPtr<AActor> Boat; FVector BoatStart = FVector::ZeroVector; float BoatRadius = 260000.f;
@@ -180,6 +180,35 @@ private:
 	/** r65 opening: the Rite of Pages night → the first fight → dawn (then Capture) */
 	void BeginRite(); void StartFirstFight(); void DawnAfterRite(bool bWon);
 	TArray<FPBXLine> LinesFor(FName Who) const;
+
+
+	// ---- v3 story runtime (2026-11-06, the choice-driven pivot): Content/PBX/Story/<ep>.json scene graphs (PBXStory.cpp)
+	TSharedPtr<FJsonObject> StoryData; FString StoryEp, StoryScene; bool bStoryMode = false;
+	TMap<FString, int32> SVars;
+	struct FStoryFrame { TArray<TSharedPtr<class FJsonValue>> Nodes; int32 I = 0; };
+	TArray<FStoryFrame> SStack;
+	struct FStorySpot { FString Id, Label; FVector Pos = FVector::ZeroVector; TArray<TSharedPtr<class FJsonValue>> Do; bool bOnce = true; };
+	TArray<FStorySpot> HubSpots; bool bHub = false;
+	TFunction<void()> OnFuse;
+	FString StorySpeakerName, LastLine, AutoPath; FLinearColor StorySpeakerColor = FLinearColor(1, .82f, .2f); int32 AutoChoice = 0;
+	bool HasStory(const FString& Ep) const;
+	bool LoadStory(const FString& Ep);
+	void StoryBegin(const FString& Ep, const FString& Scene, bool bFromSave);
+	void StoryGoto(const FString& Scene);
+	void StoryPump();
+	void QStoryPump();
+	void StoryPush(const TArray<TSharedPtr<class FJsonValue>>* Nodes);
+	bool StoryCond(const FString& C) const;
+	int32 SVar(const FString& K) const { const int32* V = SVars.Find(K); return V ? *V : 0; }
+	FString StoryText(const FString& T) const;
+	FString StorySpeaker(const FString& Who, FLinearColor& OutColor) const;
+	FVector StoryAt(const FString& At) const;
+	void StoryChoice(const TSharedPtr<FJsonObject>& N);
+	void StoryFuseTick(float Dt);
+	void StoryPact(const TSharedPtr<FJsonObject>& N);
+	bool StoryHub(const TSharedPtr<FJsonObject>& N);   // true = its exit condition holds (move on)
+	void StoryUseSpot(int32 i);
+	void StoryEndEpisode();
 
 	// ---- story
 	EPBXStep Step() const;

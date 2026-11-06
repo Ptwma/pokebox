@@ -563,8 +563,8 @@ void APBXDirector::QSay(const TArray<FPBXLine>& Lines)
 		{
 			if (T == 0.f || UI->Mode != EPBXUIMode::Dialogue || UI->Line != L.Text)
 			{
-				UI->Mode = EPBXUIMode::Dialogue; UI->Speaker = SpeakerName(L.Who); UI->Line = L.Text; UI->Visible = 0.f; bConfirm = false;
-				UI->SpeakerColor = L.Who == TEXT("rho") ? FLinearColor(.4f, .75f, 1.f) : FLinearColor(1, .82f, .2f);
+				UI->Mode = EPBXUIMode::Dialogue; UI->Speaker = L.Who == TEXT("__story") ? StorySpeakerName : SpeakerName(L.Who); UI->Line = L.Text; UI->Visible = 0.f; bConfirm = false;
+				UI->SpeakerColor = L.Who == TEXT("__story") ? StorySpeakerColor : L.Who == TEXT("rho") ? FLinearColor(.4f, .75f, 1.f) : FLinearColor(1, .82f, .2f);
 				PBXLOG("[PBX] say %s: %s", *UI->Speaker, *L.Text);
 			}
 			UI->Visible = FMath::Min<float>(UI->Line.Len(), UI->Visible + FApp::GetDeltaTime() * 60.f);
@@ -669,8 +669,9 @@ void APBXDirector::Tick(float Dt)
 	if (Player && Menu == EMenu::None && !Bt.bActive)
 	{
 		if (bBoating) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) UI->Mode = EPBXUIMode::Explore; TickBoat(Busy() ? 0.f : Dt); UpdatePrompt(); }
+		else if (bStoryMode) { if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); } StoryFuseTick(Dt); }
 		else if (!Busy() && UI->Mode != EPBXUIMode::Choice) { UI->Mode = EPBXUIMode::Explore; FindNearest(); UpdatePrompt(); StoryTick(Dt); UpdateWilds(Dt); CheckCutscenes(); }
-		UpdateObjective();
+		if (!bStoryMode) UpdateObjective();
 	}
 	if (Game && Game->HasPartner())
 	{
@@ -771,6 +772,7 @@ void APBXDirector::FindNearest()
 	{
 		const float D = FVector::Dist2D(P, At); if (D < R && D < Best && FMath::Abs(P.Z - At.Z) < 400.f) { Best = D; NearKind = K; NearIndex = I; NearNPC = N; }
 	};
+	if (bStoryMode) { if (bHub) for (int32 i = 0; i < HubSpots.Num(); i++) Try(HubSpots[i].Pos, 260.f, EKind::Story, i, NAME_None); return; }   // v3: only the scene's hotspots
 	for (const auto& KV : NPCs) if (KV.Value && !KV.Value->IsHidden()) Try(KV.Value->GetActorLocation(), 230.f, EKind::NPC, -1, KV.Key);
 	for (int32 i = 0; i < Doors.Num(); i++)
 	{
@@ -799,6 +801,7 @@ void APBXDirector::UpdatePrompt()
 	case EKind::Dock: T = FString::Printf(TEXT("[E]  Step ashore — %s"), *Docks[NearIndex].Name); break;
 	case EKind::Train: T = TEXT("[E]  Look at the train"); break;
 	case EKind::Item: T = TEXT("[E]  Pick up the item"); break;
+	case EKind::Story: T = TEXT("[E]  ") + HubSpots[NearIndex].Label; break;
 	default: break;
 	}
 	UI->Prompt = T;
@@ -821,6 +824,7 @@ void APBXDirector::Interact()
 	case EKind::Item: PickItem(NearIndex); break;
 	case EKind::Boat: BoardBoat(); break;
 	case EKind::Dock: LeaveBoat(NearIndex); break;
+	case EKind::Story: StoryUseSpot(NearIndex); break;
 	default: break;
 	}
 }
@@ -2603,7 +2607,8 @@ void APBXDirector::StartNewGame(bool bMale)
 	QFade(0.f, 1.f);
 	PlayIntro();
 	QFade(1.f, .4f);
-	QDo([this] { BeginRite(); });
+	if (HasStory(TEXT("ep1"))) QDo([this] { UI->Fade = 0.f; ApplyBlanked(false); StoryBegin(TEXT("ep1"), FString(), false); });   // v3: the choice-driven Episode 1
+	else QDo([this] { BeginRite(); });
 	PBXLOG("[PBX] new game (%s)", bMale ? TEXT("m") : TEXT("f"));
 }
 
@@ -2621,6 +2626,13 @@ void APBXDirector::ContinueGame()
 	CloseChoice(); Menu = EMenu::None; Queue.Reset(); QueueGen++; StepT = 0.f;
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
 	ApplyPlayerLook();
+	if (!Game->State->StoryEp.IsEmpty() && HasStory(Game->State->StoryEp))   // v3: replay the saved scene from its start
+	{
+		RefreshWorld(); UI->Fade = 0.f;
+		if (Game->State->StoryScene == TEXT("__end")) { LoadStory(Game->State->StoryEp); SVars = Game->State->StoryVars; bStoryMode = true; StoryEndEpisode(); }
+		else StoryBegin(Game->State->StoryEp, Game->State->StoryScene, true);
+		return;
+	}
 	if (Step() < EPBXStep::Capture) { Game->State->Team.Reset(); RefreshWorld(); UI->Fade = 1.f; BeginRite(); return; }   // saved before r65 in the old opening
 	FPBXSpot S = NewGameSpot; if (Game->State->bHasPos) { S.Pos = Game->State->Pos - FVector(0, 0, 95.f); S.Yaw = Game->State->Yaw; }
 	PlacePlayer(S);
@@ -2643,6 +2655,7 @@ void APBXDirector::ToTitle()
 {
 	if (!IsTown()) { CloseChoice(); Menu = EMenu::None; UI->Fade = 1.f; UGameplayStatics::OpenLevel(this, FName(TEXT("/Game/PBX/Maps/L_Town"))); return; }   // the title screen lives in Lumen Harbor
 	CloseChoice(); Queue.Reset(); QueueGen++; StepT = 0.f;
+	bStoryMode = false; bHub = false; HubSpots.Reset(); SStack.Reset(); UI->FuseMax = UI->FuseT = 0.f; UI->bStoryChoice = false; OnFuse = nullptr;
 	if (Bt.bActive) { Bt.bActive = false; }
 	ShowMenu(EMenu::Title);
 }

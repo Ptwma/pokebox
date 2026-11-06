@@ -37,6 +37,7 @@ struct FPBXUIModel
 	// choice / menus
 	FString ChoiceTitle, ChoiceSub; TArray<FPBXOption> Options; int32 Selected = 0; bool bCards = false; int32 OptionsRev = 0;
 	TFunction<void(int32)> OnPick;
+	float FuseT = 0.f, FuseMax = 0.f; bool bStoryChoice = false;   // v3: a timed story choice (the burning fuse) drawn low on the screen, the line still readable
 	// battle
 	FPBXPlate Plate[2]; FString Log, Banner; float BannerT = 0.f; bool bMoves = false; int32 MovesRev = 0;
 	TArray<FPBXOption> Moves; int32 MoveSel = 0; TFunction<void(int32)> OnMove;

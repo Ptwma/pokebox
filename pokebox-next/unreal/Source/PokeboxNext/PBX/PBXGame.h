@@ -60,6 +60,11 @@ public:
 	UPROPERTY() int32 Potions = 1;
 	UPROPERTY() TArray<FName> Beaten;        // trainers you have beaten (they don't challenge you again)
 	UPROPERTY() TArray<FName> Picked;        // items you have picked up
+	// v3 (2026-11-06): the choice-driven story — episode, the scene to replay on load, its vars as the scene began, the major choices made
+	UPROPERTY() FString StoryEp;
+	UPROPERTY() FString StoryScene;
+	UPROPERTY() TMap<FString, int32> StoryVars;
+	UPROPERTY() TArray<FString> StoryChoices;
 };
 
 UCLASS()
