@@ -478,7 +478,7 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::Visible : EVisibility::Collapsed; })
-			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, M->bStoryChoice ? M->ViewSize.Y * .2f : 0.f)); })
+			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, M->bStoryChoice ? M->ViewSize.Y * .1f : 0.f)); })
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceTitle); }).Font(PBXUI::Font(TEXT("title"), 68, 4)).ColorAndOpacity(IvoryC)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 22)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceSub); }).Font(PBXUI::Font(TEXT("italic"), 28, 2)).ColorAndOpacity(IvoryC).Justification(ETextJustify::Center)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SAssignNew(ChoiceHost, SBox)]
@@ -639,7 +639,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 {
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
 	TSharedRef<SVerticalBox> Col = SNew(SVerticalBox);
-	const bool bC = !M->bCards && M->Options.Num() > 5;   // long lists (Settings, Pause) use compact rows
+	const bool bC = !M->bCards && (M->Options.Num() > 5 || M->bStoryChoice);   // story choices: compact rows (3-4 lines must fit under the spoken line)   // long lists (Settings, Pause) use compact rows
 	for (int32 i = 0; i < M->Options.Num(); i++)
 	{
 		const FPBXOption& O = M->Options[i];
@@ -653,7 +653,7 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 			Inner->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 10)[SNew(SBox).WidthOverride(180).HeightOverride(252)[SNew(SImage).Image(O.Image.Get())]];
 		Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(M->bCards ? TEXT("title") : TEXT("bold"), M->bCards ? 32 : bC ? 25 : 31)).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : TextC); })];
 		if (!O.Sub.IsEmpty())
-			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 21)).ColorAndOpacity(FLinearColor::LerpUsingHSV(O.Color, SepiaC, .55f)).WrapTextAt(M->bCards ? 230.f : 500.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
+			Inner->AddSlot().AutoHeight().HAlign(M->bCards ? HAlign_Center : HAlign_Left)[SNew(STextBlock).Text(FText::FromString(O.Sub)).Font(PBXUI::Font(TEXT("italic"), 21)).ColorAndOpacity(O.Color.Equals(FLinearColor::White) ? FLinearColor(TextC * .72f) : FLinearColor::LerpUsingHSV(O.Color, SepiaC, .55f))   // r67: white = no tint → dark sepia ink (the light wash was unreadable on parchment).WrapTextAt(M->bCards ? 230.f : 500.f)];   // fixed width: auto-wrap needs a second layout pass and showed stacked lines on first open
 		TSharedRef<SWidget> Btn = SNew(SBorder).BorderImage_Lambda(Brush).BorderBackgroundColor_Lambda(Tint).Padding(M->bCards ? FMargin(30, 30) : bC ? FMargin(34, 13) : FMargin(36, 24)).OnMouseButtonDown_Lambda(OnDown)
 			.RenderTransform_Lambda([this, i] { return FSlateRenderTransform(M->Selected == i ? 1.03f : 1.f); }).RenderTransformPivot(FVector2D(.5f, .5f))[Inner];
 		if (M->bCards) Row->AddSlot().AutoWidth().Padding(14, 0)[SNew(SBox).WidthOverride(260).HeightOverride(390)[Btn]];

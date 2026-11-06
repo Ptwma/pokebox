@@ -2604,9 +2604,7 @@ void APBXDirector::StartNewGame(bool bMale)
 	PlacePlayer(NewGameSpot);
 	RefreshWorld();
 	// Sigil & Spark: the legend film ("Tonight, a Codex opens") → straight into the Rite of Pages (r65: no wake-up at home)
-	QFade(0.f, 1.f);
-	PlayIntro();
-	QFade(1.f, .4f);
+	if (!(bAuto && FParse::Param(FCommandLine::Get(), TEXT("pbxnointro")))) { QFade(0.f, 1.f); PlayIntro(); QFade(1.f, .4f); }   // -pbxnointro: story autotests skip the film
 	if (HasStory(TEXT("ep1"))) QDo([this] { UI->Fade = 0.f; ApplyBlanked(false); StoryBegin(TEXT("ep1"), FString(), false); });   // v3: the choice-driven Episode 1
 	else QDo([this] { BeginRite(); });
 	PBXLOG("[PBX] new game (%s)", bMale ? TEXT("m") : TEXT("f"));
@@ -2817,6 +2815,13 @@ void APBXDirector::AutoTick(float Dt)
 	// shot (teleports, doors, dialogues) do not end up in the picture (council 2026-10-16: shots were one step late)
 	if (ShotWait > 0) { if (--ShotWait == 0) ShotDoneName = ShotPendingName; return; }
 	AutoT += Dt; AutoStepT += Dt;
+	if (bStoryMode)   // v3: the story plays itself (path digits pick the options); only watch for a stall
+	{
+		static float Stall = 0.f; AutoStepT = 0.f;   // the old step timeouts don't run while the story plays
+		Stall = (!Busy() && UI->Mode != EPBXUIMode::Choice && !bHub) ? Stall + Dt : 0.f;
+		if (Stall > 15.f) { PBXLOG("[PBXAUTO] FAIL story stalled in %s", *StoryScene); bAutoFail = true; Stall = 0.f; FPlatformMisc::RequestExit(false); }
+		return;
+	}
 	auto Fail = [this](const TCHAR* Why) { PBXLOG("[PBXAUTO] FAIL step %d: %s", AutoStep, Why); bAutoFail = true; AutoNext(); };
 	auto Idle = [this] { return !Busy() && Menu == EMenu::None && !Bt.bActive && UI->Mode == EPBXUIMode::Explore; };
 	auto DoorById = [this](const TCHAR* Id) -> const FPBXDoor* { for (const FPBXDoor& D : Doors) if (D.Id == Id) return &D; return nullptr; };

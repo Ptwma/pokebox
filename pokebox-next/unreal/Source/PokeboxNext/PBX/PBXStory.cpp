@@ -345,15 +345,18 @@ void APBXDirector::StoryEndEpisode()
 	if (StoryData->TryGetArrayField(TEXT("codex"), Codex))
 		for (const TSharedPtr<FJsonValue>& V : *Codex)
 		{
-			const TSharedPtr<FJsonObject> P = V->AsObject(); FPBXOption X; X.Title = P->GetStringField(TEXT("title")); X.Sub = TEXT("— unwritten —");
+			const TSharedPtr<FJsonObject> P = V->AsObject(); FPBXOption X; X.Title = P->GetStringField(TEXT("title")); X.Sub = TEXT("unwritten");
 			for (const TSharedPtr<FJsonValue>& W : P->GetArrayField(TEXT("pages")))
 			{
 				const TArray<TSharedPtr<FJsonValue>>& Pr = W->AsArray();
 				if (Pr.Num() >= 2 && StoryCond(Pr[0]->AsString())) { X.Sub = Pr[1]->AsString(); break; }
 			}
-			Lines.Add(X.Title + TEXT(": ") + X.Sub); Pages.Add(X);
+			Lines.Add(X.Title + TEXT(": ") + X.Sub);
+			X.Title = X.Title + TEXT("  —  ") + X.Sub; X.Sub.Empty();   // one line per page: nine pages must fit on one screen
+			Pages.Add(X);
 		}
 	for (const FString& L : Lines) SLOG("[PBXSTORY] codex %s", *L);
+	UI->BigT = 0.f;
 	FPBXOption Back; Back.Title = TEXT("Close the book"); Pages.Add(Back);
 	if (Game && Game->State) { Game->State->StoryScene = TEXT("__end"); Game->State->StoryVars = SVars; if (!bAuto) SaveNow(false); }
 	if (bAuto) { Shot(TEXT("st_your_codex")); QWait(1.5f); QDo([this] { bStoryMode = false; FPlatformMisc::RequestExit(false); }); }

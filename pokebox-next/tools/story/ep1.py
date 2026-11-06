@@ -271,7 +271,8 @@ def clue(flag, *lines):
     return [setf(flag), add('CLUES'), lines, toast('A clue is written in your Codex.')]
 
 S.scene('s7_gate', 'Who Opened the Gate?',
-    setf('CLUES', v=0),
+    setf('CLUES', v=0), fade(0, 1.0),
+    nar('Morning. The harbour in daylight, silent. White figures everywhere, frozen mid-step.'),
     hub(objective='Find out who opened the sea gate', exit='seen.square', spots=[
         spot('c1', 'Climb to the green lamp', 'npc:bruce', clue('C1', note('The wick is burnt. Someone lit the all-clear at nine. Only the watch can.'))),
         spot('c2', 'Look in the watchhouse stove', 'npc:bruce',

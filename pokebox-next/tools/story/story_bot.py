@@ -65,7 +65,7 @@ class Bot:
 
     def run(self):
         import random
-        self.keep = {r for r in self.reads if not r.startswith('seen.')} | {k for k in self.sets if k.startswith('END_')}
+        self.keep = {r for r in self.reads if not r.startswith('seen.')} | {k for k in self.sets if k.startswith('END_')} | {'__dark'}
         self.pending = collections.defaultdict(set); rnd = random.Random(7)
         self.pending[self.d['start']].add(())
         order = list(self.d['scenes'])
@@ -98,12 +98,14 @@ class Bot:
             elif 'if' in n:
                 br = n['then'] if cond(n['if'], V) else n.get('else', [])
                 if br: stack.append([br, 0])
+            elif 'fade' in n: V['__dark'] = 1 if n['fade'] >= .5 else 0
             elif 'goto' in n:
-                scene = n['goto']; V = {k: v for k, v in V.items() if not k.startswith('seen.') and k != '__plan'}   # hotspots belong to one scene
+                scene = n['goto']; V = {k: v for k, v in V.items() if not k.startswith('seen.') and k != '__plan' or k == '__dark'}   # hotspots belong to one scene
                 V = {k: v for k, v in V.items() if k in self.keep}                 # only what something still reads
                 self.pending[scene].add(tuple(sorted(V.items()))); self.paths += 1   # explored later, scene by scene
                 return
             elif 'choice' in n:
+                if V.get('__dark'): self.issues[f'choice {n.get("id")} in {scene} while the screen is faded to black'] += 1
                 opts = [o for o in n['opts'] if cond(o.get('if'), V)]
                 if not opts: self.issues[f'choice {n.get("id")} in {scene}: no eligible option'] += 1; return
                 alts = [o['do'] for o in opts]
@@ -117,6 +119,7 @@ class Bot:
                 # hubs: not every visiting order (that explodes) but every "how much did you explore" plan — visit the first k
                 # optional spots in order (k = 0..all), then the spots the exit needs; choices inside spots still branch fully
                 h = n['hub']
+                if V.get('__dark'): self.issues[f'hub in {scene} while the screen is faded to black'] += 1
                 if h['exit'] and cond(h['exit'], V): V.pop('__plan', None); continue
                 elig = [s for s in h['spots'] if not (s.get('once', True) and V.get('seen.' + s['id'])) and cond(s.get('if'), V)]
                 if not elig: self.issues[f'hub stuck in {scene} (exit "{h["exit"]}")'] += 1; return
