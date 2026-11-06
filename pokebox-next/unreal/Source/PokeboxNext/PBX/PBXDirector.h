@@ -194,6 +194,7 @@ private:
 	UPROPERTY() TObjectPtr<UAudioComponent> StoryMusic;
 	UPROPERTY() TObjectPtr<UAudioComponent> StoryAmb;
 	FString StoryMusicName, StoryAmbName;
+	TMap<TWeakObjectPtr<AActor>, FTransform> NpcHome;   // where the story found each cast member it moved onto a stage
 	void StoryLoop(TObjectPtr<UAudioComponent>& Comp, FString& Cur, const TCHAR* Kind, const FString& Name, float Vol, float Fade);
 	void StoryAudioStop();
 	float StoryVoicePlay(const FString& Id);

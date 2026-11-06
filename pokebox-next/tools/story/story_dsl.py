@@ -41,6 +41,11 @@ def panel(desc): return {'panel': desc}
 def objective(t): return {'objective': t}
 def blanked(b): return {'blanked': b}
 def place(at): return {'place': at}
+def npc(who, at, yaw=0): return {'npc': who, 'at': at, 'yaw': yaw}
+def sun(pitch, yaw, k=1.0, color=None):
+    d = {'sun': {'pitch': pitch, 'yaw': yaw, 'k': k}}
+    if color: d['sun']['color'] = list(color)
+    return d
 def log(t): return {'log': t}
 def end(): return {'end': True}
 
@@ -69,13 +74,14 @@ def pact(prompt, win, lose, steps=3, window=1.8):
 
 class Story:
     def __init__(self, ep, start, title):
-        self.d = {'ep': ep, 'start': start, 'title': title, 'cast': {}, 'scenes': {}, 'codex': [], 'prologue': []}
+        self.d = {'ep': ep, 'start': start, 'title': title, 'cast': {}, 'scenes': {}, 'codex': [], 'prologue': [], 'stages': {}}
     def cast(self, id, name, npc=None, color=(1, .82, .2)):
         self.d['cast'][id] = {'name': name, 'npc': npc or id, 'color': list(color)}
     def scene(self, id, title, *nodes):
         self.d['scenes'][id] = {'title': title, 'nodes': _flat(nodes)}
     def codex(self, title, *pages):   # pages: (cond, label) — the first that holds is inked
         self.d['codex'].append({'title': title, 'pages': [list(p) for p in pages]})
+    def stage(self, name, origin): self.d['stages'][name] = list(origin)
     def prologue(self, text, sub=''):   # plain-words cards before the film (what kind of game this is)
         self.d['prologue'].append({'text': text, 'sub': sub})
     def json(self): return json.dumps(self.d, indent=1, ensure_ascii=False)

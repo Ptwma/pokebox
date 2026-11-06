@@ -9,6 +9,10 @@
 #include "PBX/PBXDirector.h"
 #include "PBX/PBXActors.h"
 #include "PBX/PBXAudio.h"
+#include "EngineUtils.h"
+#include "Engine/DirectionalLight.h"
+#include "Components/LightComponent.h"
+#include "PBX/PBXCore.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "Dom/JsonObject.h"
@@ -114,6 +118,16 @@ FVector APBXDirector::StoryAt(const FString& At) const
 	// "npc:rho" (where that person stands) · "spot:<id>" (a map spot) · "x,y,z"
 	if (At.StartsWith(TEXT("npc:"))) { FString Id = At.Mid(4); if (const TSharedPtr<FJsonObject>* Cast_; StoryData.IsValid() && StoryData->TryGetObjectField(TEXT("cast"), Cast_)) { const TSharedPtr<FJsonObject>* C; if ((*Cast_)->TryGetObjectField(Id, C)) (*C)->TryGetStringField(TEXT("npc"), Id); } if (const TObjectPtr<APBXNPC>* N = NPCs.Find(FName(*Id))) return (*N)->GetActorLocation(); return FVector::ZeroVector; }
 	if (At.StartsWith(TEXT("spot:"))) { if (const FPBXSpot* S = Spots.Find(At.Mid(5))) return S->Pos; return FVector::ZeroVector; }
+	if (At.StartsWith(TEXT("stage:")))   // "stage:<Name>:x,y,z" — a point on a v4 set (origin from the episode's "stages")
+	{
+		TArray<FString> Parts; At.ParseIntoArray(Parts, TEXT(":"));
+		FVector O = FVector::ZeroVector; const TSharedPtr<FJsonObject>* St; const TArray<TSharedPtr<FJsonValue>>* A;
+		if (Parts.Num() >= 2 && StoryData.IsValid() && StoryData->TryGetObjectField(TEXT("stages"), St) && (*St)->TryGetArrayField(Parts[1], A) && A->Num() >= 3)
+			O = FVector((*A)[0]->AsNumber(), (*A)[1]->AsNumber(), (*A)[2]->AsNumber());
+		FVector L = FVector::ZeroVector;
+		if (Parts.Num() >= 3) { TArray<FString> P; Parts[2].ParseIntoArray(P, TEXT(",")); if (P.Num() >= 3) L = FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])); }
+		return O + L + FVector(0, 0, .01f);
+	}
 	TArray<FString> P; At.ParseIntoArray(P, TEXT(","));
 	return P.Num() >= 3 ? FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])) : FVector::ZeroVector;
 }
@@ -184,6 +198,36 @@ void APBXDirector::StoryPump()
 		}
 		if (N->TryGetStringField(TEXT("amb"), S)) { StoryLoop(StoryAmb, StoryAmbName, TEXT("amb"), S, .55f * VolSfx, 2.0f); continue; }
 		bool bB; if (N->TryGetBoolField(TEXT("blanked"), bB)) { ApplyBlanked(bB); continue; }
+		if (N->TryGetStringField(TEXT("npc"), S))   // put a cast member somewhere: {"npc": "rho", "at": "stage:Pier:700,800,0", "yaw": 200}
+		{
+			if (APBXNPC* A = Cast<APBXNPC>(StoryActor(S)))
+			{
+				FString At; N->TryGetStringField(TEXT("at"), At); double Yaw = 0; N->TryGetNumberField(TEXT("yaw"), Yaw);
+				const FVector L = StoryAt(At);
+				if (!NpcHome.Contains(A)) NpcHome.Add(A, A->GetActorTransform());
+				if (!L.IsZero()) { const float Z = PBXWorld::GroundZ(GetWorld(), L, 200.f, 1200.f, L.Z); A->SetActorLocationAndRotation(FVector(L.X, L.Y, Z + 92.f), FRotator(0, Yaw, 0), false, nullptr, ETeleportType::TeleportPhysics); }
+			}
+			else SLOG("[PBXSTORY] npc: no actor for %s", *S);
+			continue;
+		}
+		bool bHome; if (N->TryGetBoolField(TEXT("npc_home"), bHome))   // everyone the story moved goes back to where the town keeps them
+		{
+			for (auto& KV : NpcHome) if (KV.Key.IsValid()) KV.Key->SetActorTransform(KV.Value, false, nullptr, ETeleportType::TeleportPhysics);
+			NpcHome.Reset(); continue;
+		}
+		const TSharedPtr<FJsonObject>* SunO;
+		if (N->TryGetObjectField(TEXT("sun"), SunO))   // time of day per scene: {"sun": {"pitch": -8, "yaw": 250, "k": .7, "color": [1,.55,.35]}}
+		{
+			double Pitch = -35, Yaw = 35, K = 1; (*SunO)->TryGetNumberField(TEXT("pitch"), Pitch); (*SunO)->TryGetNumberField(TEXT("yaw"), Yaw); (*SunO)->TryGetNumberField(TEXT("k"), K);
+			for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
+			{
+				It->SetActorRotation(FRotator(Pitch, Yaw, 0));
+				if (MoodBack.bSun) LC->SetIntensity(MoodBack.SunI * K);
+				const TArray<TSharedPtr<FJsonValue>>* Col; if ((*SunO)->TryGetArrayField(TEXT("color"), Col) && Col->Num() >= 3) LC->SetLightColor(FLinearColor((*Col)[0]->AsNumber(), (*Col)[1]->AsNumber(), (*Col)[2]->AsNumber()));
+				break;
+			}
+			continue;
+		}
 		if (N->TryGetStringField(TEXT("place"), S))   // where the scene is staged: "door:<id>:in|out", "spot:<id>", "npc:<id>"
 		{
 			FPBXSpot P; bool bOk = false;
@@ -193,6 +237,7 @@ void APBXDirector::StoryPump()
 				for (const FPBXDoor& Dr : Doors) if (Parts.Num() >= 2 && Dr.Id == Parts[1]) { P = (Parts.Num() > 2 && Parts[2] == TEXT("in")) ? Dr.Inside : Dr.Outside; bOk = true; }
 			}
 			else if (S.StartsWith(TEXT("spot:"))) { if (const FPBXSpot* Sp = Spots.Find(S.Mid(5))) { P = *Sp; bOk = true; } }
+			else if (S.StartsWith(TEXT("stage:"))) { TArray<FString> Parts; S.ParseIntoArray(Parts, TEXT(":")); P.Pos = StoryAt(S) + FVector(0, 0, 60); P.Yaw = Parts.Num() >= 4 ? FCString::Atof(*Parts[3]) : 0.f; bOk = true; }
 			else { const FVector At = StoryAt(S); if (!At.IsZero()) { P.Pos = At + FVector(180, 0, 0); P.Yaw = 180.f; bOk = true; } }
 			if (bOk) PlacePlayer(P); else SLOG("[PBXSTORY] place: unknown %s", *S);
 			continue;

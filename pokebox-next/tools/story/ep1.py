@@ -3,6 +3,8 @@
 from story_dsl import *
 
 S = Story('ep1', start='s1_harbour', title='Episode 1 · The Unwritten')
+S.stage('Pier', (120000, 0, 0))   # v4 set #1: the pier at dusk (tools/sets/set_pier.py → pbx_sets.import_set)
+def P(x, y, z=0): return f'stage:Pier:{x},{y},{z}'
 S.cast('rho', 'Rho', 'rho', (.4, .75, 1))
 S.cast('bruce', 'Captain Bruce', 'guard', (.75, .7, .6))
 S.cast('vale', 'Archivist Vale', 'vale', (.8, .8, .85))
@@ -32,7 +34,9 @@ S.prologue('Your book is blank.', 'What you write in it is up to you.')
 # =============================================================== SCENE 1 — Before the Rite
 S.scene('s1_harbour', 'Before the Rite',
     setf('rho', v=2), setf('gus', v=3), setf('omari', v=2), setf('rho_pages', v=0),
-    blanked(False), place('spot:rho_greet'), music('harbour'), {'amb': 'harbour'},
+    blanked(False), place(P(-420, 340) + ':15'), sun(-7, 250, 0.75, (1.0, .58, .36)), music('harbour'), {'amb': 'harbour'},
+    npc('gus', P(-250, 430), 200), npc('rho', P(760, 930), 160), npc('omari', P(-450, 330), 30), npc('bruce', P(480, 150), 250),
+    npc('zuri', P(-900, 220), 10), npc('sunita', P(-330, 140), 0), npc('kelvin', P(300, 430), 300),
     title('EPISODE ONE', 'The Unwritten'),
     nar('Tonight every sixteen-year-old in Lumen Harbor opens a Codex for the first time.'),
     nar('Tonight the Script decides who you are.'),
@@ -44,11 +48,11 @@ S.scene('s1_harbour', 'Before the Rite',
             say('gus', "Ask me tomorrow and I'll tell you about the third one."), rel(gus=1), setf('GUS_THIRD_PAGE')),
     ], silent=say('gus', "Go on. They won't start without the lantern-keeper's kid."), id='1a'),
     hub(objective='Find Rho before the bell', exit='seen.rho && seen.omari && seen.bruce', spots=[
-        spot('lamp', 'Look at the green lamp', 'npc:bruce', note('The all-clear lamp. Only the watch may light it.')),
-        spot('gate', 'Look at the sea gate', 'spot:rho_gate', note('Iron, older than the town. Opens only from inside, with the Archivist\'s key... or the watch\'s.')),
-        spot('poster', 'Read the poster', '', note('THE RITE OF PAGES — TONIGHT — BRING NOTHING BUT YOURSELF.')),
-        spot('dice', 'Look at the dice', '', note('Someone lost here. Badly.')),
-        spot('boat', "Look at Gus's boat", 'npc:gus', note("Gus never ties a bowline that lazy. Unless he left in a hurry.")),
+        spot('lamp', 'Look at the green lamp', P(560, 60), note('The all-clear lamp. Only the watch may light it.')),
+        spot('gate', 'Look at the sea gate', P(-1150, 120), note('Iron, older than the town. Opens only from inside, with the Archivist\'s key... or the watch\'s.')),
+        spot('poster', 'Read the poster', P(-120, 40), note('THE RITE OF PAGES — TONIGHT — BRING NOTHING BUT YOURSELF.')),
+        spot('dice', 'Look at the dice', P(300, 140), note('Someone lost here. Badly.')),
+        spot('boat', "Look at Gus's boat", P(820, 1250), note("Gus never ties a bowline that lazy. Unless he left in a hurry.")),
         spot('zuri', 'Talk to Zuri', 'npc:zuri',
             say('zuri', 'Rite night! Ink pens, ribbons, lucky charms. Half price for the lantern-keeper\'s kid.'),
             say('zuri', 'The White Page never came back in thirty years, you know. My mother still sold charms against them. I sell them for the joke.'),
@@ -114,7 +118,7 @@ S.scene('s1_harbour', 'Before the Rite',
 
 # =============================================================== SCENE 2 — The Rite
 S.scene('s2_rite', 'The Rite of Pages',
-    place('door:lab:in'), {'amb': 'hall'}, music('calm'), fade(0, 1.0),
+    {'npc_home': True}, sun(-35, 35, 1.0, (.86, .88, .95)), place('door:lab:in'), {'amb': 'hall'}, music('calm'), fade(0, 1.0),
     nar('Candles. Six lecterns in a ring, a closed Codex on each. The whole harbour on the benches. Rain on the high windows.'),
     say('rho', 'Benches are full. Dad\'s seat is empty. He said he\'d be here.'),
     choice('', 8, [
