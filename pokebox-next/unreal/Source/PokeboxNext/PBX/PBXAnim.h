@@ -23,6 +23,7 @@ struct FPBXStyle
 {
 	float Head = 1.f, Hand = 1.f, Foot = 1.f;   // uniform
 	float Limb = 1.f, Leg = 1.f, Chest = 1.f, Neck = 1.f;   // thickness across the bone
+	bool bRelaxHands = false;   // MetaHuman bodies: the retargeted UAL finger tracks twist the fingers -> relaxed procedural hands
 };
 
 struct FPBXAnimLayer
@@ -44,6 +45,7 @@ struct FPBXAnimProxy : public FAnimInstanceProxy
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate(FPoseContext& Output) override;
 	void Stylize(FPoseContext& Output) const;
+	void RelaxHands(FPoseContext& Output) const;
 };
 
 UCLASS(Transient, NotBlueprintable)

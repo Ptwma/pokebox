@@ -10,6 +10,10 @@
 #include "PBX/PBXActors.h"
 #include "PBX/PBXAudio.h"
 #include "EngineUtils.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Components/SkyLightComponent.h"
+#include "Engine/SkyLight.h"
 #include "Engine/DirectionalLight.h"
 #include "Components/LightComponent.h"
 #include "PBX/PBXCore.h"
@@ -219,6 +223,14 @@ void APBXDirector::StoryPump()
 		if (N->TryGetObjectField(TEXT("sun"), SunO))   // time of day per scene: {"sun": {"pitch": -8, "yaw": 250, "k": .7, "color": [1,.55,.35]}}
 		{
 			double Pitch = -35, Yaw = 35, K = 1; (*SunO)->TryGetNumberField(TEXT("pitch"), Pitch); (*SunO)->TryGetNumberField(TEXT("yaw"), Yaw); (*SunO)->TryGetNumberField(TEXT("k"), K);
+			// night (k <= .15): the sun goes under the horizon so the sky atmosphere and the clouds go dark (a lamp room at
+			// night showed a daytime sky), the sky light drops and the fog turns night blue; any other sun restores them
+			const bool bNight = K <= .15;
+			for (TActorIterator<ASkyLight> It(GetWorld()); It; ++It) if (USkyLightComponent* SC = It->GetLightComponent())
+			{ if (MoodBack.bSky) SC->SetIntensity(MoodBack.SkyI * (bNight ? .35f : 1.f)); break; }
+			for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It) if (UExponentialHeightFogComponent* FC = It->GetComponent())
+			{ FC->SetFogInscatteringColor(bNight ? FLinearColor(.05f, .06f, .10f) : FLinearColor(.40f, .42f, .47f)); break; }
+			if (bNight) Pitch = 12.0;
 			for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
 			{
 				It->SetActorRotation(FRotator(Pitch, Yaw, 0));
@@ -514,17 +526,30 @@ void APBXDirector::StoryShot(const FString& Who)
 	// the two face each other (people turn to whoever speaks)
 	if (APBXNPC* N = Cast<APBXNPC>(Spk == Player ? Lis : Spk)) N->SetActorRotation(FRotator(0, (-Dir * (Spk == Player ? -1.f : 1.f)).Rotation().Yaw, 0));
 	Player->SetActorRotation(FRotator(0, ((Spk == Player ? Lis : Spk)->GetActorLocation() - Player->GetActorLocation()).GetSafeNormal2D().Rotation().Yaw, 0));
-	const int32 K = ShotN++ % 4;
-	FVector Eye, Look = Hs; float Fov = 40.f;
-	if (K == 0 || K == 2)   // over the listener's shoulder
-	{ Eye = Hl - Dir * 150.f + Right * (K == 0 ? 62.f : -62.f) + FVector(0, 0, 10); Fov = 36.f; }
-	else if (K == 1)        // close-up, a little off-axis
-	{ Eye = Hs - Dir * 150.f + Right * 38.f - FVector(0, 0, 4); Fov = 30.f; }
-	else                    // two-shot from the side
-	{ const FVector Mid = (Hs + Hl) * .5f; Eye = Mid + Right * 330.f + FVector(0, 0, -8); Look = Mid; Fov = 42.f; }
-	// keep the lens out of walls: pull it in front of anything between the face and the camera
+	const int32 K0 = ShotN++ % 4;
+	auto Make = [&](int32 K, float Side, FVector& Eye, FVector& Look, float& Fov)
+	{
+		Look = Hs; Fov = 40.f;
+		if (K == 0 || K == 2) { Eye = Hl - Dir * 150.f + Right * (K == 0 ? 62.f : -62.f) * Side + FVector(0, 0, 10); Fov = 36.f; }   // over the listener's shoulder
+		else if (K == 1) { Eye = Hs - Dir * 150.f + Right * 38.f * Side - FVector(0, 0, 4); Fov = 30.f; }                            // close-up, a little off-axis
+		else { const FVector Mid = (Hs + Hl) * .5f; Eye = Mid + Right * 330.f * Side + FVector(0, 0, -8); Look = Mid; Fov = 42.f; }   // two-shot from the side
+	};
+	// the lens must see the faces: try this line's shot, then its mirror, then the other shot types, and take the first
+	// whose view is clear (a candelabra or a stall awning between lens and face used to fill the frame); if none is
+	// clear, the clearest one, pulled in front of whatever blocks it
 	FHitResult Hit; FCollisionQueryParams Q(SCENE_QUERY_STAT(StoryCam), false); Q.AddIgnoredActor(Spk); Q.AddIgnoredActor(Lis); Q.AddIgnoredActor(Player);
-	if (GetWorld()->LineTraceSingleByChannel(Hit, Look, Eye, ECC_Camera, Q)) Eye = Hit.Location + (Look - Eye).GetSafeNormal() * 25.f;
+	FVector Eye, Look = Hs; float Fov = 40.f; float Best = -1.f;
+	for (int32 c = 0; c < 8 && Best < .999f; c++)
+	{
+		const int32 K = (K0 + c / 2) % 4; const float Side = (c % 2) ? -1.f : 1.f;
+		FVector E, L; float F; Make(K, Side, E, L, F);
+		float Clear = 1.f;
+		const FCollisionShape Ball = FCollisionShape::MakeSphere(12.f);   // a fat ray: thin candles and poles count too
+		if (GetWorld()->SweepSingleByChannel(Hit, L, E, FQuat::Identity, ECC_Camera, Ball, Q)) Clear = Hit.Time;
+		if (GetWorld()->SweepSingleByChannel(Hit, E, (K == 3 ? Hl : Hs), FQuat::Identity, ECC_Camera, Ball, Q)) Clear = FMath::Min(Clear, .9f * Hit.Time);
+		if (Clear > Best + .02f) { Best = Clear; Eye = E; Look = L; Fov = F; }
+	}
+	if (Best < .999f && GetWorld()->LineTraceSingleByChannel(Hit, Look, Eye, ECC_Camera, Q)) Eye = Hit.Location + (Look - Eye).GetSafeNormal() * 25.f;
 	ShotA = Eye; ShotB = Eye + (Look - Eye).GetSafeNormal() * 22.f; ShotLook = Look; ShotFov = Fov; ShotT = 0.f;
 	if (!bStoryCam) { bStoryCam = true; if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Cam); }
 	StoryCamTick(0.f);

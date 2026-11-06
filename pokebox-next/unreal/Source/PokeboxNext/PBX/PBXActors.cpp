@@ -139,7 +139,7 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 	bKidMH = bKid; MHHeight = (float)Hgt;
 	if (UPBXAnimInstance* A = Anim())
 	{
-		A->SetSuffix(TEXT("_MH")); A->Style = FPBXStyle();
+		A->SetSuffix(TEXT("_MH")); A->Style = FPBXStyle(); A->Style.bRelaxHands = true;
 		if (bKid) { A->Style.Head = 1.09f; A->Style.Hand = .96f; }
 		A->StrideScale = (float)Hgt / 172.f;
 	}

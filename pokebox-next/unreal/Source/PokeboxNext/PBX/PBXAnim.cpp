@@ -178,8 +178,67 @@ bool FPBXAnimProxy::Evaluate(FPoseContext& Output)
 		}
 	}
 	if (!bAny) Output.ResetToRefPose();
+	if (Style.bRelaxHands) RelaxHands(Output);
 	Stylize(Output);
 	return true;
+}
+
+// Owner 2026-11-06: "the hands are not right". The UAL finger tracks retargeted onto the MetaHuman body twist the fingers
+// (claws, fingers bent sideways). Replace every finger with a relaxed hand built from the MetaHuman REF pose: each finger
+// joint curls about the knuckle line (index→pinky), toward the palm side (where the thumb tip is), more for the outer
+// fingers. Axes are derived from the ref pose at runtime, so left and right hands need no hand-tuned signs.
+void FPBXAnimProxy::RelaxHands(FPoseContext& Output) const
+{
+	const FBoneContainer& BC = Output.Pose.GetBoneContainer();
+	auto Cmp = [&](const FString& N) -> int32
+	{
+		const int32 Mesh = BC.GetPoseBoneIndexForBoneName(FName(*N)); if (Mesh == INDEX_NONE) return INDEX_NONE;
+		return BC.MakeCompactPoseIndex(FMeshPoseBoneIndex(Mesh)).GetInt();
+	};
+	auto RefComp = [&](int32 I) -> FTransform     // component-space ref transform (walk up the parents)
+	{
+		FTransform T = FTransform::Identity;
+		while (I >= 0) { T = T * BC.GetRefPoseTransform(FCompactPoseBoneIndex(I)); I = BC.GetParentBoneIndex(FCompactPoseBoneIndex(I)).GetInt(); }
+		return T;
+	};
+	static const TCHAR* Fingers[4] = { TEXT("index"), TEXT("middle"), TEXT("ring"), TEXT("pinky") };
+	static const float Curl[4][3] = { { 14, 22, 14 }, { 18, 28, 16 }, { 22, 32, 18 }, { 26, 36, 20 } };
+	for (const TCHAR* Side : { TEXT("l"), TEXT("r") })
+	{
+		const int32 I1 = Cmp(FString::Printf(TEXT("index_01_%s"), Side)), P1 = Cmp(FString::Printf(TEXT("pinky_01_%s"), Side)), T3 = Cmp(FString::Printf(TEXT("thumb_03_%s"), Side));
+		if (I1 == INDEX_NONE || P1 == INDEX_NONE) continue;
+		const FVector KnIdx = RefComp(I1).GetLocation(), KnPky = RefComp(P1).GetLocation();
+		const FVector Knuckles = (KnPky - KnIdx).GetSafeNormal();
+		const FVector Thumb = T3 != INDEX_NONE ? RefComp(T3).GetLocation() - KnIdx : FVector::ZeroVector;
+		for (int32 f = 0; f < 4; f++)
+			for (int32 k = 1; k <= 3; k++)
+			{
+				const int32 B = Cmp(FString::Printf(TEXT("%s_%02d_%s"), Fingers[f], k, Side)); if (B == INDEX_NONE) continue;
+				const FCompactPoseBoneIndex BI(B);
+				const int32 C = Cmp(FString::Printf(TEXT("%s_%02d_%s"), Fingers[f], k + 1, Side));
+				const FTransform CB = RefComp(B);
+				FVector Dir = C != INDEX_NONE ? (RefComp(C).GetLocation() - CB.GetLocation()) : CB.GetRotation().GetAxisX() * (Side[0] == 'r' ? -1.f : 1.f);
+				Dir = Dir.GetSafeNormal();
+				FVector Axis = (Knuckles - Dir * FVector::DotProduct(Knuckles, Dir)).GetSafeNormal();
+				if (Axis.IsNearlyZero()) { Output.Pose[BI].SetRotation(BC.GetRefPoseTransform(BI).GetRotation()); continue; }
+				FVector Palm = Thumb - Dir * FVector::DotProduct(Thumb, Dir) - Axis * FVector::DotProduct(Thumb, Axis);
+				if (FVector::DotProduct(FVector::CrossProduct(Axis, Dir), Palm) < 0.f) Axis = -Axis;   // curl toward the palm
+				const int32 Par = BC.GetParentBoneIndex(BI).GetInt();
+				const FQuat ParRot = Par >= 0 ? RefComp(Par).GetRotation() : FQuat::Identity;
+				const FVector LocalAxis = ParRot.Inverse().RotateVector(Axis);
+				Output.Pose[BI].SetRotation(FQuat(LocalAxis, FMath::DegreesToRadians(Curl[f][k - 1])) * BC.GetRefPoseTransform(BI).GetRotation());
+			}
+		for (int32 k = 1; k <= 3; k++)   // thumb and metacarpals: the ref pose (relaxed, not twisted)
+		{
+			const int32 B = Cmp(FString::Printf(TEXT("thumb_%02d_%s"), k, Side));
+			if (B != INDEX_NONE) Output.Pose[FCompactPoseBoneIndex(B)].SetRotation(BC.GetRefPoseTransform(FCompactPoseBoneIndex(B)).GetRotation());
+		}
+		for (int32 f = 0; f < 4; f++)
+		{
+			const int32 B = Cmp(FString::Printf(TEXT("%s_metacarpal_%s"), Fingers[f], Side));
+			if (B != INDEX_NONE) Output.Pose[FCompactPoseBoneIndex(B)].SetRotation(BC.GetRefPoseTransform(FCompactPoseBoneIndex(B)).GetRotation());
+		}
+	}
 }
 
 // Cartoon proportions on the Quaternius "superhero" bodies without touching the meshes or the animations:
