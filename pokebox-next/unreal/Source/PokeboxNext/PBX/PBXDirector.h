@@ -202,6 +202,9 @@ private:
 	// two-shot — with a slow push-in; released when the player walks again
 	TWeakObjectPtr<AActor> ShotOther; bool bStoryCam = false; FVector ShotA = FVector::ZeroVector, ShotB = FVector::ZeroVector, ShotLook = FVector::ZeroVector; float ShotT = 0.f, ShotFov = 40.f; int32 ShotN = 0;
 	void StoryShot(const FString& Who); void StoryCamRelease(); void StoryCamTick(float Dt); void StoryMarksTick();
+	/** acting: the speaker gestures for the length of the line, the listener reacts; heads turn to whoever speaks */
+	void StoryAct(const FString& Who, const FString& Line, float Secs); void StoryActTick();
+	TWeakObjectPtr<APBXCharacterBase> ActSpk; double ActEnd = 0.0; int32 ActN = 0;
 	AActor* StoryActor(const FString& Who) const; FVector HeadOf(AActor* A) const;
 	void QCard(const FString& Text, const FString& Sub, const FString& Vo);
 	FString StorySpeakerName, LastLine, AutoPath; FLinearColor StorySpeakerColor = FLinearColor(1, .82f, .2f); int32 AutoChoice = 0;

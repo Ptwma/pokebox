@@ -117,6 +117,9 @@ void UPBXAnimInstance::NativeUpdateAnimation(float Dt)
 	if (AW <= 0.f && ActionTarget <= 0.f) Action = nullptr;
 	ActionTime += Dt;
 
+	// look-at: ease the weight and glide the target (a head snapping to a new speaker reads robotic)
+	LookW = FMath::FInterpTo(LookW, LookWant, Dt, 4.f);
+	LookCur = LookCur.IsZero() ? LookTarget : FMath::VInterpTo(LookCur, LookTarget, Dt, 5.f);
 	UAnimSequence* Seqs[5] = { Idle, Walk, Jog, Sprint, Fall };
 	for (int32 i = 0; i < 4; i++)
 	{
@@ -149,6 +152,8 @@ void FPBXAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
 	{
 		for (int32 i = 0; i < NumLayers; i++) L[i] = I->State[i];
 		Style = I->Style;
+		LookAt = I->LookCur; LookW = I->LookW;
+		if (const USkeletalMeshComponent* C = I->GetSkelMeshComponent()) { CompXf = C->GetComponentTransform(); if (const AActor* A = C->GetOwner()) OwnerFwd = A->GetActorForwardVector(); }
 	}
 }
 
@@ -179,8 +184,51 @@ bool FPBXAnimProxy::Evaluate(FPoseContext& Output)
 	}
 	if (!bAny) Output.ResetToRefPose();
 	if (Style.bRelaxHands) RelaxHands(Output);
+	if (LookW > .01f) LookAtTarget(Output);
 	Stylize(Output);
 	return true;
+}
+
+// Story conversations: people look at whoever speaks. The neck takes 40 % and the head 60 % of a clamped yaw/pitch toward
+// the target, computed in component space from the actor's facing, so no bone-axis conventions are assumed.
+void FPBXAnimProxy::LookAtTarget(FPoseContext& Output) const
+{
+	const FBoneContainer& BC = Output.Pose.GetBoneContainer();
+	auto Cmp = [&](const TCHAR* N) -> int32
+	{
+		const int32 Mesh = BC.GetPoseBoneIndexForBoneName(FName(N)); if (Mesh == INDEX_NONE) return INDEX_NONE;
+		return BC.MakeCompactPoseIndex(FMeshPoseBoneIndex(Mesh)).GetInt();
+	};
+	auto CompOf = [&](int32 I) -> FTransform
+	{
+		FTransform T = FTransform::Identity;
+		while (I >= 0) { T = T * Output.Pose[FCompactPoseBoneIndex(I)]; I = BC.GetParentBoneIndex(FCompactPoseBoneIndex(I)).GetInt(); }
+		return T;
+	};
+	int32 Head = Cmp(TEXT("head")); if (Head == INDEX_NONE) Head = Cmp(TEXT("Head"));
+	const int32 Neck = Cmp(TEXT("neck_01"));
+	if (Head == INDEX_NONE) return;
+	const FVector Tc = CompXf.InverseTransformPosition(LookAt);
+	const FVector Hp = CompOf(Head).GetLocation();
+	const FVector Dir = (Tc - Hp).GetSafeNormal();
+	FVector Fwd = CompXf.InverseTransformVectorNoScale(OwnerFwd); Fwd.Z = 0.f; Fwd = Fwd.GetSafeNormal();
+	FVector DirH(Dir.X, Dir.Y, 0.f); DirH = DirH.GetSafeNormal();
+	if (Dir.IsNearlyZero() || Fwd.IsNearlyZero() || DirH.IsNearlyZero()) return;
+	const float Yaw = FMath::Clamp(FMath::Atan2(FVector::CrossProduct(Fwd, DirH).Z, FVector::DotProduct(Fwd, DirH)), -1.13f, 1.13f) * LookW;   // ±65°
+	const float Pitch = FMath::Clamp(FMath::Asin(FMath::Clamp(Dir.Z, -1.f, 1.f)), -.45f, .45f) * LookW;                                         // ±26°
+	const FQuat Qy(FVector::UpVector, Yaw);
+	const FVector Fy = Qy.RotateVector(Fwd);
+	const FQuat Q = FQuat(FVector::CrossProduct(Fy, FVector::UpVector).GetSafeNormal(), Pitch) * Qy;
+	auto Turn = [&](int32 B, float Frac)
+	{
+		if (B == INDEX_NONE) return;
+		const FCompactPoseBoneIndex BI(B); const int32 P = BC.GetParentBoneIndex(BI).GetInt();
+		const FQuat PR = P >= 0 ? CompOf(P).GetRotation() : FQuat::Identity;
+		const FQuat Part = FQuat::Slerp(FQuat::Identity, Q, Frac);
+		Output.Pose[BI].SetRotation(PR.Inverse() * Part * PR * Output.Pose[BI].GetRotation());
+		Output.Pose[BI].NormalizeRotation();
+	};
+	if (Neck != INDEX_NONE) { Turn(Neck, .4f); Turn(Head, .6f); } else Turn(Head, 1.f);
 }
 
 // Owner 2026-11-06: "the hands are not right". The UAL finger tracks retargeted onto the MetaHuman body twist the fingers

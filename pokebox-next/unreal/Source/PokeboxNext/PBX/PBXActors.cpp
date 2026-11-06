@@ -220,6 +220,8 @@ void APBXCharacterBase::PlayAction(const FString& Short, bool bLoop, float Blend
 void APBXCharacterBase::StopAction(float Blend) { if (UPBXAnimInstance* A = Anim()) A->StopAction(Blend); }
 void APBXCharacterBase::SetIdleAnim(const FString& Short) { if (UPBXAnimInstance* A = Anim()) A->SetIdle(A->Clip(Short)); }
 
+void APBXCharacterBase::SetLookAt(const FVector& P, bool bOn) { if (UPBXAnimInstance* A = Anim()) { if (bOn) A->LookTarget = P; A->LookWant = bOn ? 1.f : 0.f; } }
+
 void APBXCharacterBase::FaceTowards(const FVector& P, bool bInstant)
 {
 	const FVector D = P - GetActorLocation(); if (D.Size2D() < 1.f) return;

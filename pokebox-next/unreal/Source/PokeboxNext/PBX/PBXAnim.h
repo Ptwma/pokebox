@@ -42,6 +42,8 @@ struct FPBXAnimProxy : public FAnimInstanceProxy
 	static const int32 NumLayers = 6; // idle, walk, jog, sprint, fall, action
 	FPBXAnimLayer L[NumLayers];
 	FPBXStyle Style;
+	FVector LookAt = FVector::ZeroVector, OwnerFwd = FVector(1, 0, 0); float LookW = 0.f; FTransform CompXf;
+	void LookAtTarget(FPoseContext& Output) const;
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate(FPoseContext& Output) override;
 	void Stylize(FPoseContext& Output) const;
@@ -72,6 +74,8 @@ public:
 
 	// game-thread state, copied to the proxy every frame
 	FPBXAnimLayer State[FPBXAnimProxy::NumLayers];
+	/** head/neck look-at (story conversations): world target, weight eased on the game thread */
+	FVector LookTarget = FVector::ZeroVector, LookCur = FVector::ZeroVector; float LookWant = 0.f, LookW = 0.f;
 	/** body proportions (set by APBXCharacterBase::ApplyLook) */
 	FPBXStyle Style;
 	/** body height / the height the clips were authored for: a 1.4 m kid takes shorter steps, so the same ground speed

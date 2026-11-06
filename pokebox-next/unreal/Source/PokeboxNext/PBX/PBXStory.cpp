@@ -154,6 +154,7 @@ void APBXDirector::StoryGoto(const FString& Scene)
 	const TSharedPtr<FJsonObject>* Scenes; const TSharedPtr<FJsonObject>* S;
 	if (!StoryData->TryGetObjectField(TEXT("scenes"), Scenes) || !(*Scenes)->TryGetObjectField(Scene, S)) { SLOG("[PBXSTORY] ERROR no scene %s", *Scene); Toast(TEXT("Missing scene: ") + Scene); return; }
 	StoryScene = Scene; SStack.Reset(); HubSpots.Reset(); bHub = false; StoryCamRelease(); ShotOther = nullptr;
+	UI->PageInk = 1.f; UI->PageSeed = GetTypeHash(Scene);   // a new page: the ink blots back over the next 1.4 s
 	FStoryFrame F; F.Nodes = (*S)->GetArrayField(TEXT("nodes")); SStack.Add(F);
 	UI->Chapter = (*S)->GetStringField(TEXT("title"));
 	// autosave at the start of every scene: the vars as they were when the scene began (a reload replays the scene)
@@ -274,9 +275,8 @@ void APBXDirector::StoryPump()
 				bool bG = false, bS = false; N->TryGetBoolField(TEXT("vg"), bG); N->TryGetBoolField(TEXT("vs"), bS);
 				if (bG) Vo += (!Game || !Game->State || Game->State->bMale) ? TEXT("_m") : TEXT("_f");
 				if (bS) Vo += FString::Printf(TEXT("_p%d"), FMath::Clamp(SVar(TEXT("partner")), 1, 3));
-				QDo([this, Vo] { StoryVoicePlay(Vo); });
 			}
-			QDo([this, S] { StoryShot(S); });
+			QDo([this, S, Vo, Line] { const float Secs = Vo.IsEmpty() ? 0.f : StoryVoicePlay(Vo); StoryShot(S); StoryAct(S, Line, Secs > 0.f ? Secs : 1.2f + Line.Len() * .055f); });
 			// QSay shows SpeakerName(Who): pass the resolved name through the "story" speaker slot
 			StorySpeakerName = Name; StorySpeakerColor = C;
 			QSay({ { FName(TEXT("__story")), Line } });
@@ -526,6 +526,10 @@ void APBXDirector::StoryShot(const FString& Who)
 	// the two face each other (people turn to whoever speaks)
 	if (APBXNPC* N = Cast<APBXNPC>(Spk == Player ? Lis : Spk)) N->SetActorRotation(FRotator(0, (-Dir * (Spk == Player ? -1.f : 1.f)).Rotation().Yaw, 0));
 	Player->SetActorRotation(FRotator(0, ((Spk == Player ? Lis : Spk)->GetActorLocation() - Player->GetActorLocation()).GetSafeNormal2D().Rotation().Yaw, 0));
+	if (APBXCharacterBase* C = Cast<APBXCharacterBase>(Spk)) C->SetLookAt(Hl);
+	if (APBXCharacterBase* C = Cast<APBXCharacterBase>(Lis)) C->SetLookAt(Hs);
+	for (TActorIterator<APBXNPC> It(GetWorld()); It; ++It)   // bystanders within earshot glance at the speaker
+		if (*It != Spk && *It != Lis && FVector::Dist(It->GetActorLocation(), Spk->GetActorLocation()) < 900.f) It->SetLookAt(Hs);
 	const int32 K0 = ShotN++ % 4;
 	auto Make = [&](int32 K, float Side, FVector& Eye, FVector& Look, float& Fov)
 	{
@@ -555,8 +559,41 @@ void APBXDirector::StoryShot(const FString& Who)
 	StoryCamTick(0.f);
 }
 
+// ---------------------------------------------------------------- acting (owner 2026-11-06: "every scene a real animation, like Telltale")
+// Each line: the speaker plays a gesture chosen from what the line says, for as long as the voice lasts, then eases back
+// to the idle; the listener sometimes nods or folds the arms. Library = UAL clips retargeted to the MetaHuman body.
+void APBXDirector::StoryAct(const FString& Who, const FString& Line, float Secs)
+{
+	if (Who == TEXT("narrator") || Who == TEXT("codex") || Who == TEXT("spark")) return;
+	APBXCharacterBase* Spk = Cast<APBXCharacterBase>(StoryActor(Who)); if (!Spk) return;
+	if (APBXCharacterBase* Prev = ActSpk.Get()) if (Prev != Spk) Prev->StopAction(.35f);
+	const FString L = Line.TrimStartAndEnd().Replace(TEXT("\""), TEXT(""));
+	auto Starts = [&](std::initializer_list<const TCHAR*> W) { for (const TCHAR* w : W) if (L.StartsWith(w, ESearchCase::IgnoreCase)) return true; return false; };
+	auto Has = [&](std::initializer_list<const TCHAR*> W) { for (const TCHAR* w : W) if (L.Contains(w, ESearchCase::IgnoreCase)) return true; return false; };
+	const TCHAR* Clip = TEXT("Idle_Talking_Loop"); bool bLoop = true;
+	const int32 Roll = (ActN++ * 7 + L.Len()) % 10;
+	if (Starts({ TEXT("No"), TEXT("Don't"), TEXT("Never"), TEXT("Stop"), TEXT("Not ") }) || Has({ TEXT(" not with you"), TEXT("I wasn't") })) Clip = TEXT("Idle_No_Loop");
+	else if (Starts({ TEXT("Yes"), TEXT("Yeah"), TEXT("Fine"), TEXT("Okay"), TEXT("Good"), TEXT("Right") })) { Clip = TEXT("Yes"); bLoop = false; }
+	else if (Starts({ TEXT("..."), TEXT("Hm"), TEXT("Well") }) || Roll == 0) Clip = TEXT("Idle_FoldArms_Loop");
+	Spk->PlayAction(Clip, bLoop, .25f);
+	ActSpk = Spk; ActEnd = GetWorld()->GetTimeSeconds() + FMath::Clamp(Secs, 1.f, 12.f);
+	// the listener reacts now and then
+	if (APBXCharacterBase* Lis = Cast<APBXCharacterBase>(Spk == Player ? ShotOther.Get() : (AActor*)Player))
+	{
+		if (L.EndsWith(TEXT("?")) && Roll < 4) Lis->PlayAction(TEXT("Yes"), false, .3f);
+		else if (Roll == 7) Lis->PlayAction(TEXT("Idle_FoldArms_Loop"), true, .4f);
+		else if (Lis != Spk) Lis->StopAction(.4f);
+	}
+}
+
+void APBXDirector::StoryActTick()
+{
+	if (APBXCharacterBase* A = ActSpk.Get()) if (GetWorld()->GetTimeSeconds() >= ActEnd) { A->StopAction(.45f); ActSpk = nullptr; }
+}
+
 void APBXDirector::StoryCamTick(float Dt)
 {
+	StoryActTick();
 	if (!bStoryCam || !Cam) { if (UI->Letterbox > 0.f && !Busy()) UI->Letterbox = FMath::Max(0.f, UI->Letterbox - Dt * 3.f); return; }
 	ShotT += Dt; const float a = FMath::Clamp(ShotT / 6.f, 0.f, 1.f);
 	const FVector E = FMath::Lerp(ShotA, ShotB, a * a * (3.f - 2.f * a));   // a slow push-in over each line
@@ -566,6 +603,8 @@ void APBXDirector::StoryCamTick(float Dt)
 
 void APBXDirector::StoryCamRelease()
 {
+	for (TActorIterator<APBXCharacterBase> It(GetWorld()); It; ++It) It->SetLookAt(FVector::ZeroVector, false);
+	if (APBXCharacterBase* A = ActSpk.Get()) A->StopAction(.4f); ActSpk = nullptr;
 	if (!bStoryCam) return;
 	bStoryCam = false;
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) if (Player) { PC->SetViewTarget(Player); Player->SnapCamera(); }

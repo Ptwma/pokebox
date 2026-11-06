@@ -43,6 +43,8 @@ public:
 	void SetIdleAnim(const FString& Short);
 	/** turn (smoothly) to look at a point */
 	void FaceTowards(const FVector& P, bool bInstant = false);
+	/** head/neck look-at (bOn=false eases back) */
+	void SetLookAt(const FVector& P, bool bOn = true);
 	virtual void Tick(float Dt) override;
 	bool bMaleLook = true;
 	void StopTurning() { bTurning = false; }

@@ -266,6 +266,46 @@ private:
 	TSharedPtr<FPBXUIModel> M; TSharedPtr<FSlateBrush> Dot;
 };
 
+// Scene changes (owner: "drawn pages, effects and light"): the screen is covered in ink that blots back from the edges
+// and leaves the new page — irregular blobs, each shrinking at its own pace, a few drips; no texture needed.
+class SPBXPageInk : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SPBXPageInk) {}
+	SLATE_END_ARGS()
+	void Construct(const FArguments&, TSharedPtr<FPBXUIModel> InM) { M = InM; Dot = MakeShared<FSlateRoundedBoxBrush>(FLinearColor::White, 256.f); }
+	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(8, 8); }
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+	{
+		if (!M.IsValid() || M->PageInk <= .001f) return Layer;
+		const FVector2f Sz = FVector2f(G.GetLocalSize()); const float T = FMath::Clamp(M->PageInk, 0.f, 1.f);
+		FRandomStream R(M->PageSeed);
+		const FLinearColor Ink(.035f, .025f, .03f, 1.f);
+		const int32 N = 46;
+		for (int32 i = 0; i < N; i++)
+		{
+			// blobs sit on a jittered grid and toward the edges; inner ones dry first
+			const FVector2f C(R.FRandRange(-.05f, 1.05f) * Sz.X, R.FRandRange(-.05f, 1.05f) * Sz.Y);
+			const float Edge = FMath::Min(FMath::Min(C.X, Sz.X - C.X) / Sz.X, FMath::Min(C.Y, Sz.Y - C.Y) / Sz.Y);   // 0 at the border
+			const float Prog = 1.f - T;                                                        // 0 → 1 over the reveal
+			const float Start = FMath::Clamp((.5f - Edge) * .9f, 0.f, .45f) * 0.f + FMath::Clamp(Edge, 0.f, .5f) * .9f + R.FRandRange(0.f, .12f);   // centre dries first, edges last
+			const float K = 1.f - FMath::Clamp((Prog - Start) / FMath::Max(.15f, .95f - Start), 0.f, 1.f);
+			const float Rad = Sz.GetMax() * R.FRandRange(.16f, .3f) * FMath::Pow(K, .7f);
+			if (Rad < 2.f) continue;
+			const FVector2f Ext(Rad * R.FRandRange(1.f, 1.5f), Rad * R.FRandRange(.8f, 1.2f));
+			FSlateDrawElement::MakeBox(Out, Layer, G.ToPaintGeometry(Ext * 2.f, FSlateLayoutTransform(C - Ext)), Dot.Get(), ESlateDrawEffect::None, Ink);
+			if (i % 5 == 0)   // a drip running down from the blob
+			{
+				const FVector2f DExt(Rad * .08f, Rad * R.FRandRange(.6f, 1.2f));
+				FSlateDrawElement::MakeBox(Out, Layer, G.ToPaintGeometry(DExt * 2.f, FSlateLayoutTransform(C + FVector2f(R.FRandRange(-.4f, .4f) * Rad, 0.f) - FVector2f(DExt.X, 0.f))), Dot.Get(), ESlateDrawEffect::None, Ink);
+			}
+		}
+		return Layer + 1;
+	}
+private:
+	TSharedPtr<FPBXUIModel> M; TSharedPtr<FSlateBrush> Dot;
+};
+
 class SPBXMarks : public SLeafWidget
 {
 public:
@@ -590,6 +630,11 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		[
 			SNew(SImage).Image(White()).Visibility(EVisibility::HitTestInvisible).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(0, 0, 0, M->Fade)); })
 		]
+		// ---------------- scene change: ink blots drawing back to reveal the page
+		+ SOverlay::Slot()
+		[
+			SNew(SPBXPageInk, M).Visibility(EVisibility::HitTestInvisible)
+		]
 		// ---------------- prologue cards (over the fade: white words on black)
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
@@ -743,7 +788,7 @@ TSharedRef<SWidget> SPBXHud::MakeMoves()
 void SPBXHud::Tick(const FGeometry& G, const double Time, const float Dt)
 {
 	SCompoundWidget::Tick(G, Time, Dt);
-	M->ViewSize = FVector2D(G.GetLocalSize()); M->Time += Dt;
+	M->ViewSize = FVector2D(G.GetLocalSize()); M->Time += Dt; M->PageInk = FMath::Max(0.f, M->PageInk - Dt / 1.4f);
 	PBXUI::TickSparks(*M, Dt);
 	M->MovesIn = M->bMoves ? FMath::Min(1.f, M->MovesIn + Dt * 4.f) : 0.f;
 	// a list built in the same frame its panel turns visible can lay out stacked (no geometry yet): rebuild it once more a few frames later

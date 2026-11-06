@@ -52,6 +52,7 @@ struct FPBXUIModel
 	FLinearColor BannerColor = FLinearColor(.08f, .07f, .1f, .9f); float BannerMax = 1.f;   // BannerMax = BannerT when it was set (pop-in timing)
 	float MovesIn = 0.f;                                                                     // 0..1 slide-in of the move panel
 	float FlashT = 0.f; FLinearColor FlashColor = FLinearColor::White;     // full-screen flash on big hits
+	float PageInk = 0.f; int32 PageSeed = 0;   // scene change: ink blots that draw back and reveal the new page (1 → 0)
 	float IntroT = 0.f; FString IntroA, IntroB; FLinearColor IntroColA = FLinearColor(.9f, .3f, .2f), IntroColB = FLinearColor(.2f, .45f, .9f);
 	float Letterbox = 0.f; FString Caption, CaptionSub; float CaptionA = 0.f;   // cutscenes (phase 6)
 	// Sigil & Spark intro (2026-10-31): the "ink myth" overlay (glyphs drawing themselves) and timed subtitles
