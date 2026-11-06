@@ -93,3 +93,37 @@ private:
 	float FallW = 0.f;
 	void LoadLocomotion();
 };
+
+
+// ------------------------------------------------------------------ faces (owner 2026-11-07: "exactly like Telltale")
+// The MetaHuman face mesh: its joints copy the body (head, neck, jaw follow every gesture), and on top the control curves
+// of the line being spoken (MetaHuman Animator audio-driven export, FA_<vo id>) feed the face's RigLogic post-process.
+// Between lines the face blinks on its own.
+USTRUCT()
+struct FPBXFaceProxy : public FAnimInstanceProxy
+{
+	GENERATED_BODY()
+	FPBXFaceProxy() {}
+	FPBXFaceProxy(UAnimInstance* In) : FAnimInstanceProxy(In) {}
+	TArray<FTransform> BodyCS; TMap<FName, int32> BodyIdx;
+	UAnimSequence* Seq = nullptr; float Time = 0.f, W = 0.f, Blink = 0.f;
+	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
+	virtual bool Evaluate(FPoseContext& Output) override;
+};
+
+UCLASS(Transient, NotBlueprintable)
+class UPBXFaceAnim : public UAnimInstance
+{
+	GENERATED_BODY()
+public:
+	TWeakObjectPtr<USkeletalMeshComponent> Body;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> Seq;
+	float Time = 0.f, W = 0.f, WantW = 0.f, BlinkT = 2.f, Blink = 0.f;
+	/** speak a line: the face curves of FA_<id> (if exported); false = no face animation for that line */
+	bool Speak(const FString& Id);
+	void Silence() { WantW = 0.f; }
+protected:
+	virtual void NativeUpdateAnimation(float Dt) override;
+	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FPBXFaceProxy(this); }
+	virtual void DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy) override { delete InProxy; }
+};

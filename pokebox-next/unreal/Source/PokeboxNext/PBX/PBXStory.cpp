@@ -10,6 +10,7 @@
 #include "PBX/PBXActors.h"
 #include "PBX/PBXAudio.h"
 #include "EngineUtils.h"
+#include "Components/CapsuleComponent.h"
 #include "MediaPlayer.h"
 #include "MediaTexture.h"
 #include "FileMediaSource.h"
@@ -139,6 +140,31 @@ FVector APBXDirector::StoryAt(const FString& At) const
 	return P.Num() >= 3 ? FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])) : FVector::ZeroVector;
 }
 
+// Staging on the v4 sets: the authored stage points are rough; a ground trace from above lands people on stall roofs and
+// crates (the hero stood 3.3 m up on the pier and every shot framed the sky or a wall). Ring search outward for floor
+// within 45 cm of the stage point's height where a standing capsule is free.
+FVector APBXDirector::StoryFloor(const FVector& Want, const AActor* Ignore) const
+{
+	UWorld* W = GetWorld(); if (!W) return Want;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(StoryFloor), false);
+	for (TActorIterator<ACharacter> It(W); It; ++It) Q.AddIgnoredActor(*It);   // people don't block (they get placed too)
+	for (int32 r = 0; r <= 14; r++)
+		for (int32 k = 0; k < (r == 0 ? 1 : 16); k++)
+		{
+			const float A = k * 2.f * PI / 16.f; const FVector P = Want + FVector(FMath::Cos(A), FMath::Sin(A), 0.f) * (r * 45.f);
+			FHitResult H;
+			if (!W->LineTraceSingleByChannel(H, P + FVector(0, 0, 60.f), P - FVector(0, 0, 160.f), ECC_Visibility, Q)) continue;   // start BELOW roofs
+			if (FMath::Abs(H.Location.Z - Want.Z) > 45.f) continue;
+			const FVector C = H.Location + FVector(0, 0, 98.f);
+			if (W->OverlapAnyTestByChannel(C, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(36.f, 88.f), Q)) continue;
+			// a clear head: nothing between the floor and 2.1 m (awnings, beams)
+			if (W->LineTraceTestByChannel(H.Location + FVector(0, 0, 20.f), H.Location + FVector(0, 0, 210.f), ECC_Visibility, Q)) continue;
+			return H.Location;
+		}
+	SLOG("[PBXSTORY] no floor near %s", *Want.ToCompactString());
+	return Want;
+}
+
 // ---------------------------------------------------------------- flow
 void APBXDirector::StoryBegin(const FString& Ep, const FString& Scene, bool bFromSave)
 {
@@ -213,7 +239,13 @@ void APBXDirector::StoryPump()
 				FString At; N->TryGetStringField(TEXT("at"), At); double Yaw = 0; N->TryGetNumberField(TEXT("yaw"), Yaw);
 				const FVector L = StoryAt(At);
 				if (!NpcHome.Contains(A)) NpcHome.Add(A, A->GetActorTransform());
-				if (!L.IsZero()) { const float Z = PBXWorld::GroundZ(GetWorld(), L, 200.f, 1200.f, L.Z); A->SetActorLocationAndRotation(FVector(L.X, L.Y, Z + 92.f), FRotator(0, Yaw, 0), false, nullptr, ETeleportType::TeleportPhysics); }
+				if (!L.IsZero())
+				{
+					FVector F;
+					if (At.StartsWith(TEXT("stage:"))) F = StoryFloor(L, A);
+					else F = FVector(L.X, L.Y, PBXWorld::GroundZ(GetWorld(), L, 200.f, 1200.f, L.Z));
+					A->SetActorLocationAndRotation(F + FVector(0, 0, 92.f), FRotator(0, Yaw, 0), false, nullptr, ETeleportType::TeleportPhysics);
+				}
 			}
 			else SLOG("[PBXSTORY] npc: no actor for %s", *S);
 			continue;
@@ -246,16 +278,17 @@ void APBXDirector::StoryPump()
 		}
 		if (N->TryGetStringField(TEXT("place"), S))   // where the scene is staged: "door:<id>:in|out", "spot:<id>", "npc:<id>"
 		{
-			FPBXSpot P; bool bOk = false;
+			FPBXSpot P; bool bOk = false; bool bFloorPlace = false;
 			if (S.StartsWith(TEXT("door:")))
 			{
 				TArray<FString> Parts; S.ParseIntoArray(Parts, TEXT(":"));
 				for (const FPBXDoor& Dr : Doors) if (Parts.Num() >= 2 && Dr.Id == Parts[1]) { P = (Parts.Num() > 2 && Parts[2] == TEXT("in")) ? Dr.Inside : Dr.Outside; bOk = true; }
 			}
 			else if (S.StartsWith(TEXT("spot:"))) { if (const FPBXSpot* Sp = Spots.Find(S.Mid(5))) { P = *Sp; bOk = true; } }
-			else if (S.StartsWith(TEXT("stage:"))) { TArray<FString> Parts; S.ParseIntoArray(Parts, TEXT(":")); P.Pos = StoryAt(S) + FVector(0, 0, 60); P.Yaw = Parts.Num() >= 4 ? FCString::Atof(*Parts[3]) : 0.f; bOk = true; }
+			else if (S.StartsWith(TEXT("stage:"))) { TArray<FString> Parts; S.ParseIntoArray(Parts, TEXT(":")); P.Pos = StoryFloor(StoryAt(S), Player) + FVector(0, 0, 5); P.Yaw = Parts.Num() >= 4 ? FCString::Atof(*Parts[3]) : 0.f; bOk = true; bFloorPlace = true; }
 			else { const FVector At = StoryAt(S); if (!At.IsZero()) { P.Pos = At + FVector(180, 0, 0); P.Yaw = 180.f; bOk = true; } }
 			if (bOk) PlacePlayer(P); else SLOG("[PBXSTORY] place: unknown %s", *S);
+			if (bOk && bFloorPlace && Player) Player->SetActorLocation(P.Pos + FVector(0, 0, 90.f), false, nullptr, ETeleportType::TeleportPhysics);   // PlacePlayer's ground trace from above would pick a roof
 			continue;
 		}
 		if (N->TryGetStringField(TEXT("log"), S)) { SLOG("[PBXSTORY] %s", *S); continue; }
@@ -281,7 +314,8 @@ void APBXDirector::StoryPump()
 			}
 			FString ClipId; N->TryGetStringField(TEXT("vo"), ClipId);
 			QDo([this, S, Vo, Line, ClipId] { const float Secs = Vo.IsEmpty() ? 0.f : StoryVoicePlay(Vo);
-				if (!StoryFilm(ClipId)) { StoryShot(S); StoryAct(S, Line, Secs > 0.f ? Secs : 1.2f + Line.Len() * .055f); } });
+				if (!StoryFilm(ClipId)) { StoryShot(S); StoryAct(S, Line, Secs > 0.f ? Secs : 1.2f + Line.Len() * .055f); }
+				if (APBXCharacterBase* C = Cast<APBXCharacterBase>(StoryActor(S))) C->Speak(Vo); });
 			// QSay shows SpeakerName(Who): pass the resolved name through the "story" speaker slot
 			StorySpeakerName = Name; StorySpeakerColor = C;
 			QSay({ { FName(TEXT("__story")), Line } });
@@ -513,6 +547,13 @@ AActor* APBXDirector::StoryActor(const FString& Who) const
 
 FVector APBXDirector::HeadOf(AActor* A) const
 {
+	// MetaHumans: from the floor and the character's height (the head socket can be stale right after a teleport, before
+	// the pose ticks — Gus's close-ups framed his chest)
+	if (const APBXCharacterBase* P = Cast<APBXCharacterBase>(A)) if (P->bMetaHuman && P->GetCapsuleComponent())
+	{
+		const float Floor = P->GetActorLocation().Z - P->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		return FVector(P->GetActorLocation().X, P->GetActorLocation().Y, Floor + P->MHHeight * .925f);
+	}
 	if (ACharacter* C = Cast<ACharacter>(A)) if (C->GetMesh() && C->GetMesh()->DoesSocketExist(TEXT("head"))) return C->GetMesh()->GetSocketLocation(TEXT("head")) + FVector(0, 0, 4);
 	return A ? A->GetActorLocation() + FVector(0, 0, 70) : FVector::ZeroVector;
 }
@@ -559,6 +600,7 @@ void APBXDirector::StoryShot(const FString& Who)
 		if (Clear > Best + .02f) { Best = Clear; Eye = E; Look = L; Fov = F; }
 	}
 	if (Best < .999f && GetWorld()->LineTraceSingleByChannel(Hit, Look, Eye, ECC_Camera, Q)) Eye = Hit.Location + (Look - Eye).GetSafeNormal() * 25.f;
+	SLOG("[PBXSTORY] shot %s K0 %d clear %.2f eye %s look %s Hs %s Hl %s", *Who, K0, Best, *Eye.ToCompactString(), *Look.ToCompactString(), *Hs.ToCompactString(), *Hl.ToCompactString());
 	ShotA = Eye; ShotB = Eye + (Look - Eye).GetSafeNormal() * 22.f; ShotLook = Look; ShotFov = Fov; ShotT = 0.f;
 	if (!bStoryCam) { bStoryCam = true; if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Cam); }
 	StoryCamTick(0.f);
@@ -582,6 +624,8 @@ void APBXDirector::StoryAct(const FString& Who, const FString& Line, float Secs)
 	else if (Starts({ TEXT("..."), TEXT("Hm"), TEXT("Well") }) || Roll == 0) Clip = TEXT("Idle_FoldArms_Loop");
 	Spk->PlayAction(Clip, bLoop, .25f);
 	ActSpk = Spk; ActEnd = GetWorld()->GetTimeSeconds() + FMath::Clamp(Secs, 1.f, 12.f);
+	static const bool bFaceShots = FParse::Param(FCommandLine::Get(), TEXT("pbxfaceshots"));
+	if (bFaceShots && FaceShots < 8) { FaceShotAt = GetWorld()->GetTimeSeconds() + FMath::Min(1.3, Secs * .4); FaceShotName = FString::Printf(TEXT("face_%02d_%s"), FaceShots++, *Who); }
 	// the listener reacts now and then
 	if (APBXCharacterBase* Lis = Cast<APBXCharacterBase>(Spk == Player ? ShotOther.Get() : (AActor*)Player))
 	{
@@ -593,6 +637,7 @@ void APBXDirector::StoryAct(const FString& Who, const FString& Line, float Secs)
 
 void APBXDirector::StoryActTick()
 {
+	if (FaceShotAt > 0.0 && GetWorld()->GetTimeSeconds() >= FaceShotAt) { FaceShotAt = 0.0; Shot(FaceShotName); }
 	if (APBXCharacterBase* A = ActSpk.Get()) if (GetWorld()->GetTimeSeconds() >= ActEnd) { A->StopAction(.45f); ActSpk = nullptr; }
 }
 

@@ -342,3 +342,76 @@ void FPBXAnimProxy::Stylize(FPoseContext& Output) const
 		Acc[i] = Parent * T.GetScale3D();
 	}
 }
+
+
+// ------------------------------------------------------------------ faces
+bool UPBXFaceAnim::Speak(const FString& Id)
+{
+	const FString Path = FString::Printf(TEXT("/Game/PBX/Story/FaceAnim/FA_%s.FA_%s"), *Id, *Id);
+	UAnimSequence* S = LoadObject<UAnimSequence>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!S) { WantW = 0.f; return false; }
+	Seq = S; Time = 0.f; WantW = 1.f; return true;
+}
+
+void UPBXFaceAnim::NativeUpdateAnimation(float Dt)
+{
+	Super::NativeUpdateAnimation(Dt);
+	if (Seq) { Time += Dt; if (Time >= Seq->GetPlayLength()) WantW = 0.f; }
+	W = FMath::FInterpConstantTo(W, WantW, Dt, 6.f);
+	if (W <= 0.f && WantW <= 0.f) Seq = nullptr;
+	// idle blinks (the solved lines blink by themselves)
+	BlinkT -= Dt;
+	if (BlinkT <= 0.f) { Blink = 1.f; BlinkT = FMath::FRandRange(2.2f, 5.5f); }
+	Blink = FMath::Max(0.f, Blink - Dt * 7.f);
+}
+
+void FPBXFaceProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
+{
+	FAnimInstanceProxy::PreUpdate(InAnimInstance, DeltaSeconds);
+	const UPBXFaceAnim* I = Cast<UPBXFaceAnim>(InAnimInstance); if (!I) return;
+	Seq = I->Seq; Time = I->Time; W = I->W; Blink = I->Blink;
+	BodyCS.Reset();
+	if (const USkeletalMeshComponent* B = I->Body.Get())
+	{
+		BodyCS = B->GetComponentSpaceTransforms();
+		if (BodyIdx.Num() == 0 && B->GetSkeletalMeshAsset())
+		{
+			const FReferenceSkeleton& R = B->GetSkeletalMeshAsset()->GetRefSkeleton();
+			for (int32 i = 0; i < R.GetNum(); i++) BodyIdx.Add(R.GetBoneName(i), i);
+		}
+	}
+}
+
+bool FPBXFaceProxy::Evaluate(FPoseContext& Output)
+{
+	Output.ResetToRefPose();
+	const FBoneContainer& BC = Output.Pose.GetBoneContainer();
+	const int32 N = Output.Pose.GetNumBones();
+	// joints: the body's component-space pose for every bone both skeletons share, the face's own ref pose under it
+	if (BodyCS.Num())
+	{
+		TArray<FTransform> CS; CS.SetNum(N);
+		for (int32 i = 0; i < N; i++)
+		{
+			const FCompactPoseBoneIndex I(i); const int32 P = BC.GetParentBoneIndex(I).GetInt();
+			const FName Name = BC.GetReferenceSkeleton().GetBoneName(BC.MakeMeshPoseIndex(I).GetInt());
+			const int32* Bi = BodyIdx.Find(Name);
+			CS[i] = (Bi && BodyCS.IsValidIndex(*Bi)) ? BodyCS[*Bi] : (Output.Pose[I] * (P >= 0 ? CS[P] : FTransform::Identity));
+			Output.Pose[I] = P >= 0 ? CS[i].GetRelativeTransform(CS[P]) : CS[i];
+		}
+	}
+	// curves: the spoken line (eased in/out), else a blink
+	if (Seq && W > .001f)
+	{
+		FPoseContext Tmp(Output); FAnimationPoseData PD(Tmp);
+		Seq->GetAnimationPose(PD, FAnimExtractContext((double)Time, false));
+		if (W > .5f) Output.Curve = Tmp.Curve;
+	}
+	if (Blink > .01f)
+	{
+		static const FName L(TEXT("CTRL_expressions_eyeBlinkL")), R(TEXT("CTRL_expressions_eyeBlinkR"));
+		const float B = FMath::Sin(Blink * PI);
+		Output.Curve.Set(L, FMath::Max(Output.Curve.Get(L), B)); Output.Curve.Set(R, FMath::Max(Output.Curve.Get(R), B));
+	}
+	return true;
+}

@@ -204,12 +204,14 @@ private:
 	void StoryShot(const FString& Who); void StoryCamRelease(); void StoryCamTick(float Dt); void StoryMarksTick();
 	/** acting: the speaker gestures for the length of the line, the listener reacts; heads turn to whoever speaks */
 	void StoryAct(const FString& Who, const FString& Line, float Secs); void StoryActTick();
-	TWeakObjectPtr<APBXCharacterBase> ActSpk; double ActEnd = 0.0; int32 ActN = 0;
+	TWeakObjectPtr<APBXCharacterBase> ActSpk; double ActEnd = 0.0; int32 ActN = 0; double FaceShotAt = 0.0; FString FaceShotName; int32 FaceShots = 0;
 	/** film mode (owner 2026-11-06 22:58): a pre-rendered clip per beat, Content/Movies/<ep>/<vo id>.mp4, played under the UI;
 	    no clip = live staging. -pbxnofilm forces the live staging. */
 	UPROPERTY() TObjectPtr<class UMediaPlayer> FilmPlayer;
 	UPROPERTY() TObjectPtr<class UMediaTexture> FilmTex;
 	UPROPERTY() TObjectPtr<class UFileMediaSource> FilmSrc;
+	/** nearest spot to a stage point where a person fits ON THE FLOOR (not on a stall roof or a crate) */
+	FVector StoryFloor(const FVector& Want, const AActor* Ignore = nullptr) const;
 	bool StoryFilm(const FString& Id); void StoryFilmStop(); bool bFilmOn = false; int32 FilmPlayed = 0, FilmMissed = 0;
 	AActor* StoryActor(const FString& Who) const; FVector HeadOf(AActor* A) const;
 	void QCard(const FString& Text, const FString& Sub, const FString& Vo);

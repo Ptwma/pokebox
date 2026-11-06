@@ -45,6 +45,9 @@ public:
 	void FaceTowards(const FVector& P, bool bInstant = false);
 	/** head/neck look-at (bOn=false eases back) */
 	void SetLookAt(const FVector& P, bool bOn = true);
+	/** MetaHuman face: play the line's audio-driven face animation (FA_<vo id>) */
+	bool Speak(const FString& Id);
+	TWeakObjectPtr<USkeletalMeshComponent> FaceComp;
 	virtual void Tick(float Dt) override;
 	bool bMaleLook = true;
 	void StopTurning() { bTurning = false; }

@@ -100,9 +100,14 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 		USkeletalMesh* M = Cast<USkeletalMesh>(LoadPath(O->GetStringField(TEXT("mesh")))); if (!M) continue;
 		USkeletalMeshComponent* C = NewObject<USkeletalMeshComponent>(this, FName(*(TEXT("MH_") + O->GetStringField(TEXT("name")))));
 		C->SetupAttachment(GetMesh()); C->RegisterComponent(); C->SetSkeletalMesh(M); C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		C->SetLeaderPoseComponent(GetMesh());          // follows the body (the face keeps its neutral expression: JOINTS_ONLY rig, no face anim)
 		MHParts.Add(C);
-		if (O->GetBoolField(TEXT("face"))) Face = C;
+		if (O->GetBoolField(TEXT("face")))
+		{	// the face runs its own anim instance: joints copied from the body + the spoken line's curves → RigLogic
+			Face = C; C->SetAnimationMode(EAnimationMode::AnimationBlueprint); C->SetAnimInstanceClass(UPBXFaceAnim::StaticClass());
+			if (UPBXFaceAnim* FA = Cast<UPBXFaceAnim>(C->GetAnimInstance())) FA->Body = GetMesh();
+			C->AddTickPrerequisiteComponent(GetMesh()); FaceComp = C;
+		}
+		else C->SetLeaderPoseComponent(GetMesh());          // body parts follow the body
 	}
 	for (const TSharedPtr<FJsonValue>& V : (*E)->GetArrayField(TEXT("grooms")))
 	{
@@ -219,6 +224,12 @@ void APBXCharacterBase::ApplyLook(const FString& BodyKind, const FString& HairNa
 void APBXCharacterBase::PlayAction(const FString& Short, bool bLoop, float Blend) { if (UPBXAnimInstance* A = Anim()) A->PlayAction(A->Clip(Short), bLoop, Blend); }
 void APBXCharacterBase::StopAction(float Blend) { if (UPBXAnimInstance* A = Anim()) A->StopAction(Blend); }
 void APBXCharacterBase::SetIdleAnim(const FString& Short) { if (UPBXAnimInstance* A = Anim()) A->SetIdle(A->Clip(Short)); }
+
+bool APBXCharacterBase::Speak(const FString& Id)
+{
+	if (USkeletalMeshComponent* F = FaceComp.Get()) if (UPBXFaceAnim* A = Cast<UPBXFaceAnim>(F->GetAnimInstance())) return A->Speak(Id);
+	return false;
+}
 
 void APBXCharacterBase::SetLookAt(const FVector& P, bool bOn) { if (UPBXAnimInstance* A = Anim()) { if (bOn) A->LookTarget = P; A->LookWant = bOn ? 1.f : 0.f; } }
 
