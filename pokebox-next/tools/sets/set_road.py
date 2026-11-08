@@ -90,7 +90,7 @@ for k in range(4): candle((DR.uniform(-.25, .25), DR.uniform(-.12, .1), 1.35), D
 point((12.5, 3.2, 1.6), 60, (1.0, 0.6, 0.28), 0.1)
 
 # ------------------------------------------------------------------ nature and leftovers (CC0 kits)
-prop('k_town/cart', (17.5, -3.4, 0), 200, height=1.4, tilt=(0, 9))                # a cart with a broken wheel in the ditch
+prop('k_town/cart', (17.8, -4.4, 0), 200, height=1.4, tilt=(0, 9))   # QA: was straddling the dry-stone wall                # a cart with a broken wheel in the ditch
 prop('k_survival/signpost', (9.6, 2.9, 0), 60, height=2.2)
 for (x, y, n, h) in [(-6.0, 6.5, 'q_nature/DeadTree_2', 5.0), (14.0, 5.6, 'q_nature/DeadTree_4', 4.4), (24.0, 4.8, 'q_nature/DeadTree_1', 5.5),
                      (2.0, -5.6, 'q_nature/DeadTree_3', 3.2), (20.0, -5.4, 'q_nature/DeadTree_5', 3.0)]:

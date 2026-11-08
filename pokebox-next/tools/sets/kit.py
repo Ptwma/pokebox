@@ -16,7 +16,7 @@ SETNAME = os.path.splitext(os.path.basename(OUT))[0]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
-_cache = {}
+_cache = {}; _placed = {}
 NOINK = bpy.data.collections.new('NoInk'); sc.collection.children.link(NOINK)
 def noink(o):
     for c in list(o.users_collection): c.objects.unlink(o)
@@ -24,6 +24,17 @@ def noink(o):
 
 def piece(name, loc, rot=0.0, scale=1.0):
     """place a kit piece (linked duplicate of a cached import); rot in degrees about Z"""
+    key = ('Wall' if name.startswith('Wall_') else name, round(loc[0], 3), round(loc[1], 3), round(loc[2], 3), round(rot) % (180 if name.startswith(('Wall', 'Floor')) else 360), round(scale, 3))
+    if key in _placed: return _placed[key]   # QA: the same piece twice in one place (shared house walls) z-fights in the engine
+    o = _piece(name, loc, rot, scale); _placed[key] = o
+    if name.startswith('Wall_'):   # QA: neighbouring kit walls overlap a little at their ends, coplanar → z-fighting; every other one 3 mm proud
+        a = math.radians(rot); along = loc[0] * math.cos(a) + loc[1] * math.sin(a)
+        if round(along / 2) % 2: o.location = (loc[0] - 0.003 * math.sin(a), loc[1] + 0.003 * math.cos(a), loc[2])
+    if name.startswith('Roof_'):
+        _placed['_roofs'] = _placed.get('_roofs', 0) + 1; o.location = (loc[0], loc[1], loc[2] + 0.02 * (_placed['_roofs'] % 3))
+    return o
+
+def _piece(name, loc, rot, scale):
     if name not in _cache:
         before = set(bpy.data.objects)
         bpy.ops.import_scene.gltf(filepath=os.path.join(KIT, name + '.gltf'))

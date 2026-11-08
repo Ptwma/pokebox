@@ -79,6 +79,7 @@ def set_qa(cams):
     meshes = [o for o in bpy.data.objects if o.type == 'MESH' and o.visible_get()]
     walls = [o for o in meshes if o.name.startswith(('Wall', 'Sill')) and 'Arch' not in o.name]
     roots = [o for o in bpy.data.objects if o.name.startswith('P_') and o.parent is None]
+    kitprops = [o for o in meshes if o.name.startswith('Prop_') and not o.name.startswith('Prop_Vine')]
     rep['props'] = len(roots); rep['where'] = {}
     for r in roots:
         b = _bbox([o for o in r.children_recursive if o.type == 'MESH'])
@@ -87,6 +88,14 @@ def set_qa(cams):
     for w in walls:
         t, bm = _bvh([w]); bb = _bbox([w])
         if t: wtrees.append((w.name, t, bb)); bm.free()
+    for kp in kitprops:   # kit props (Prop_Wagon, Prop_Crate...) against the walls too
+        bb = _bbox([kp]); t, bm = _bvh([kp])
+        if not t: continue
+        hits = [(wn, len(t.overlap(wt))) for wn, wt, wbb in wtrees if _ov(bb, wbb)]
+        hits = [h for h in hits if h[1]]
+        if hits: rep['in_wall'].append({'prop': kp.name, 'at': [round(v, 2) for v in kp.location], 'walls': sorted(hits, key=lambda h: -h[1])[:3]})
+        bm.free()
+    print('QA step props', flush=True)
     # --- props: walls, support
     for r in roots:
         kids = [o for o in r.children_recursive if o.type == 'MESH']
@@ -118,6 +127,7 @@ def set_qa(cams):
         if gap > 0.04: rep['floating'].append({'prop': r.name, 'at': [round(v, 2) for v in r.location], 'gap': round(gap, 3), 'over': top[1]})
         elif not veg and gap < -0.05 and top[0] < bb[1].z - 0.02:
             rep['sunk'].append({'prop': r.name, 'at': [round(v, 2) for v in r.location], 'depth': round(-gap, 3), 'into': top[1]})
+    print('QA step zfight', flush=True)
     # --- z-fighting between different objects (bbox-overlapping pairs only)
     info = []
     for o in meshes:
@@ -128,7 +138,7 @@ def set_qa(cams):
         if o.name not in trees:
             bm = _world_bm([o]); bm.faces.ensure_lookup_table(); trees[o.name] = (BVHTree.FromBMesh(bm), bm)
         return trees[o.name]
-    zf = {}
+    zf = {}; zfw = {}
     for i in range(len(info)):
         for j in range(i + 1, len(info)):
             (a, ba), (b, bbb) = info[i], info[j]
@@ -136,7 +146,7 @@ def set_qa(cams):
             if a.data == b.data and (a.matrix_world.translation - b.matrix_world.translation).length < 1e-4: zf[(a.name, b.name)] = 'DUPLICATE'; continue
             small, big = (a, b) if len(a.data.polygons) <= len(b.data.polygons) else (b, a)
             ts, bms = tree(small); tb, bmb = tree(big)
-            n = 0; step = max(1, len(bms.faces) // 1500)
+            n = 0; step = max(1, len(bms.faces) // 1500); where = None
             for fc in list(bms.faces)[::step]:
                 if fc.calc_area() < 1e-4: continue
                 c = fc.calc_center_median()
@@ -147,10 +157,11 @@ def set_qa(cams):
                 if abs((c - g.verts[0].co).dot(g.normal)) > 0.002: continue
                 inside = all(((g.verts[(k + 1) % len(g.verts)].co - g.verts[k].co).cross(c - g.verts[k].co)).dot(g.normal) > 0.003 * (g.verts[(k + 1) % len(g.verts)].co - g.verts[k].co).length
                              for k in range(len(g.verts)))   # the face centre must lie INSIDE the other face (3 mm in), not on a shared seam
-                if inside: n += 1
-            if n >= 2: zf[(a.name, b.name)] = n * step
-    rep['zfight'] = [{'a': k[0], 'b': k[1], 'faces': v} for k, v in sorted(zf.items(), key=lambda kv: -(kv[1] if isinstance(kv[1], int) else 1e9))][:60]
+                if inside: n += 1; where = [round(v, 3) for v in c]
+            if n >= 2: zf[(a.name, b.name)] = n * step; zfw[(a.name, b.name)] = (where, [round(v, 3) for v in a.location], round(math.degrees(a.rotation_euler.z)), [round(v, 3) for v in b.location], round(math.degrees(b.rotation_euler.z)))
+    rep['zfight'] = [{'a': k[0], 'b': k[1], 'faces': v, 'detail': zfw.get(k)} for k, v in sorted(zf.items(), key=lambda kv: -(kv[1] if isinstance(kv[1], int) else 1e9))][:60]
     for t, bm in trees.values(): bm.free()
+    print('QA step normals', flush=True)
     # --- normals of generated geometry (Details, boxes, cylinders: everything that is not an imported kit piece)
     for o in meshes:
         if o.name.startswith(('Wall', 'Floor', 'Roof')) or (o.parent and o.parent.name.startswith('P_')): continue
@@ -158,7 +169,8 @@ def set_qa(cams):
         inv, inc = _normals(o)
         if inv or inc: rep['inside_out'].append({'obj': o.name, 'inside_out_parts': inv, 'bad_winding_edges': inc})
     json.dump(rep, open(os.path.join(outdir, name + '_qa.json'), 'w'), indent=1)
-    print('QA', name, {k: (len(v) if isinstance(v, list) else v) for k, v in rep.items()})
+    print('QA', name, {k: (len(v) if isinstance(v, list) else v) for k, v in rep.items() if k != 'where'})
+    print('QA step images', flush=True)
     # --- review images (Workbench)
     for o in [o for o in bpy.data.objects if o.type == 'CAMERA']: bpy.data.objects.remove(o)
     s = bpy.context.scene; s.render.engine = 'BLENDER_WORKBENCH'; sh = s.display.shading

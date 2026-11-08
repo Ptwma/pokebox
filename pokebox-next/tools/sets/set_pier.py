@@ -16,7 +16,7 @@ R = random.Random(4)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
-_cache = {}
+_cache = {}; _placed = {}
 NOINK = bpy.data.collections.new('NoInk'); sc.collection.children.link(NOINK)
 def noink(o):
     for c in list(o.users_collection): c.objects.unlink(o)
@@ -24,6 +24,17 @@ def noink(o):
 
 def piece(name, loc, rot=0.0, scale=1.0):
     """place a kit piece (linked duplicate of a cached import); rot in degrees about Z"""
+    key = ('Wall' if name.startswith('Wall_') else name, round(loc[0], 3), round(loc[1], 3), round(loc[2], 3), round(rot) % (180 if name.startswith(('Wall', 'Floor')) else 360), round(scale, 3))
+    if key in _placed: return _placed[key]   # QA: the same piece twice in one place (shared house walls) z-fights in the engine
+    o = _piece(name, loc, rot, scale); _placed[key] = o
+    if name.startswith('Wall_'):   # QA: neighbouring kit walls overlap a little at their ends, coplanar → z-fighting; every other one 3 mm proud
+        a = math.radians(rot); along = loc[0] * math.cos(a) + loc[1] * math.sin(a)
+        if round(along / 2) % 2: o.location = (loc[0] - 0.003 * math.sin(a), loc[1] + 0.003 * math.cos(a), loc[2])
+    if name.startswith('Roof_'):
+        _placed['_roofs'] = _placed.get('_roofs', 0) + 1; o.location = (loc[0], loc[1], loc[2] + 0.02 * (_placed['_roofs'] % 3))
+    return o
+
+def _piece(name, loc, rot, scale):
     if name not in _cache:
         before = set(bpy.data.objects)
         bpy.ops.import_scene.gltf(filepath=os.path.join(KIT, name + '.gltf'))
@@ -290,16 +301,19 @@ D = random.Random(21)
 # the market on the quay: two stalls with fish and crates, barrels, buckets, nets, rope
 prop('k_town/stall-red', (-7.6, -3.2, 0), 180, height=2.4); prop('k_town/stall-green', (-3.4, -3.6, 0), 170, height=2.4)
 for (x, y) in [(-8.2, -3.0), (-7.0, -3.1), (-3.0, -3.4)]: prop('k_survival/fish', (x, y, 0.95), D.uniform(0, 360), height=0.12)
-for (x, y, r) in [(-10.6, -1.5, 0), (-10.0, -1.2, 30), (1.8, -1.3, 0), (2.5, -1.6, 15), (6.3, -5.4, 0)]: prop('k_pirate/barrel', (x, y, 0), r, height=0.95)
+for (x, y, r) in [(-10.75, -1.5, 0), (-9.55, -1.25, 30), (1.4, -1.35, 0), (2.75, -1.8, 15), (6.3, -5.4, 0)]: prop('k_pirate/barrel', (x, y, 0), r, height=0.95)
 for (x, y) in [(-2.2, -1.2), (6.0, -9.6)]: prop('k_pirate/crate-bottles', (x, y, 0), D.uniform(0, 90), height=0.7)
-for (x, y) in [(-4.4, -1.0), (2.9, -1.1), (7.6, -13.0)]: prop('Bucket_Wooden_1', (x, y, 0), D.uniform(0, 360), height=0.4)
+for (x, y) in [(-4.4, -1.0), (0.2, -1.95), (7.6, -13.0)]: prop('Bucket_Wooden_1', (x, y, 0), D.uniform(0, 360), height=0.4)
 for (x, y) in [(6.2, -7.2), (7.8, -10.2), (-0.8, -5.4)]: prop('Rope_1', (x, y, 0.01), D.uniform(0, 360), height=0.18)
+for _o in bpy.data.objects:   # QA: kit corners/roofs overlap coplanar → engine z-fighting; nudge them a few mm apart
+    if _o.name.startswith('Wall_') and abs(abs(math.degrees(_o.rotation_euler.z)) - 90) < 1: _o.scale.y = 1.06
 _vx = [o.location.x for o in bpy.data.objects if o.name.startswith('Prop_Vine')] + [o.location.x for o in bpy.data.objects if o.name.startswith('Wall_') and 'Door' in o.name and abs(o.location.y) < 0.5 and o.location.z < 1]   # vines and doors
 def _free_x(x, half=0.9):   # QA: a bench never stands in a vine hanging down the house front
     for dx in (0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8):
         if all(abs(x + dx - v) > half for v in _vx): return x + dx
     return x
-prop('Bench', (_free_x(-1.2), -0.7, 0), 0, height=0.85); prop('Bench', (_free_x(4.2), -0.7, 0), 0, height=0.85)
+_vx += [-8.0, -4.0, 4.0, 1.4, 2.75]   # planter boxes and the barrels by the doors
+prop('Bench', (_free_x(-1.2, 1.55), -0.7, 0), 0, height=0.5); prop('Bench', (_free_x(5.6, 1.55), -0.7, 0), 0, height=0.5)   # QA: was 4.4 m long (height 0.85 scaled it x1.6)
 prop('k_survival/signpost', (-11.2, -4.6, 0), 30, height=2.0)
 prop('lifebuoy', (7.95, -6.3, 0.35), 90, height=0.75, tilt=(90, 0))
 prop('k_town/cart', (-12.2, -2.6, 0), 80, height=1.5)

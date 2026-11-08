@@ -44,14 +44,14 @@ for x in (-8, -3.5, 2.5, 7):
 
 # the market leftovers: crates, fish barrels, a cart, puddles
 _cr = {}
-for (x, y, r) in [(-9.75, 1.3, 10), (-8.55, 1.38, 4), (-2.6, -1.3, 20), (5.35, 1.3, 5), (6.6, 1.32, -3)]:   # QA: no two crates in each other
+for (x, y, r) in [(-9.75, 1.05, 10), (-8.55, 1.1, 4), (-2.6, -1.1, 20), (5.35, 1.05, 5), (6.6, 1.08, -3)]:   # QA: no two crates in each other, y kept off the walls (the kit crate is ~1 m deep)
     _cr[(x, y)] = piece('Prop_Crate', (x, y, 0.0), r)
-bpy.context.view_layer.update(); _ch = _cr[(-9.75, 1.3)].dimensions.z
-piece('Prop_Crate', (-9.15, 1.33, _ch + 0.002), 28)   # the third crate stacked on the first two
+bpy.context.view_layer.update(); _ch = _cr[(-9.75, 1.05)].dimensions.z
+piece('Prop_Crate', (-9.15, 1.0, _ch + 0.002), 28)   # the third crate stacked on the first two
 for (x, y) in [(-6.8, -1.4), (-6.2, -1.5), (3.2, 1.4), (8.4, -1.4)]:
     cyl('Barrel', 0.32, 0.85, (x, y, 0.43), wood, 14)
     cyl('BarrelBand', 0.335, 0.06, (x, y, 0.2), iron, 14); cyl('BarrelBand', 0.335, 0.06, (x, y, 0.68), iron, 14)
-piece('Prop_Wagon', (-4.2, 0.9, 0), 10)
+piece('Prop_Wagon', (-4.2, 0.75, 0), 97)   # QA: along the lane (at 10 deg its shafts went through the house)
 for (x, y, s) in [(-1.0, 0.2, 1.2), (1.8, -0.5, 0.9), (4.6, 0.4, 1.4), (-7.4, -0.2, 0.8)]:
     d = cyl('Puddle', s, 0.006, (x, y, 0.012), puddle, 24); d.scale.y = s * 0.6
 
@@ -126,11 +126,12 @@ for k in range(2): dbox(I, (0.06, 0.12, 2.6), (8.9 + k * 0.25, HW - 0.5, 1.25), 
 # ------------------------------------------------------------------ dressing (owner: "a little full, not empty")
 D = random.Random(9)
 _north = [d[0] for d in DOORS if d[1] > 0]; _cx = next((c for c in (8.6, 7.6, -5.0, 1.5) if all(abs(c - dx) > 1.9 for dx in _north)), 8.6)
-prop('Stall_Cart_Empty', (_cx, 0.75, 0), 97, height=1.8)   # QA: long axis along the lane (at 170 it stuck through the house)   # QA: a spot with no door step under it; prop('FarmCrate_Apple', (-1.8, 1.45, 0), 10, height=0.5); prop('FarmCrate_Empty', (-1.2, 1.5, 0), 40, height=0.5)
+prop('Stall_Cart_Empty', (_cx, 0.85, 0), 172, height=1.8)   # QA: a spot with no door step under it
+prop('FarmCrate_Apple', (-2.0, 1.1, 0), 4, height=0.5)   # QA: the kit farm crate is 1.6 m wide — one fits the lane, two sat on each other
 prop('Barrel_Apples', (9.6, -1.35, 0), 0, height=0.95); prop('Barrel_Holder', (-10.4, -1.2, 0), 90, height=1.0)
 for (x, y) in [(-7.8, 1.5), (2.2, -1.5), (5.0, -1.55)]: prop('k_pirate/crate-bottles', (x, y, 0), D.uniform(0, 90), height=0.6)
-for (x, y) in [(-5.0, -1.55), (0.4, 1.55), (6.8, -1.5)]: prop('Bucket_Metal', (x, y, 0), D.uniform(0, 360), height=0.38)
-for (x, y, z) in [(-2.6, -1.3, 1.0), (3.2, 1.4, 0.9)]: prop('k_survival/fish', (x, y, z), D.uniform(0, 360), height=0.12)   # on the crate / barrel top (settle drops them)
+for (x, y) in [(-4.95, -0.95), (0.4, 1.55), (6.8, -1.5)]: prop('Bucket_Metal', (x, y, 0), D.uniform(0, 360), height=0.38)
+for (x, y, z) in [(-2.6, -1.1, 1.2), (3.2, 1.4, 0.9)]: prop('k_survival/fish', (x, y, z), D.uniform(0, 360), height=0.12)   # on the crate / barrel top (settle drops them)
 for (x, y) in [(-8.6, -1.6), (4.4, 1.6)]: prop('Rope_2', (x, y, 0.01), D.uniform(0, 360), height=0.2)
 for x in (-2.9, 3.0, 8.0): prop('Lantern_Wall', (x, 1.7, 2.5), 180, height=0.5)   # QA: the -6 one hung inside the fishing net
 prop('k_survival/barrel-open', (-0.6, -1.5, 0), 0, height=0.9); prop('k_town/stall-stool', (-0.2, -0.9, 0), 0, height=0.5)

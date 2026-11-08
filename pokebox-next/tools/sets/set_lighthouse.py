@@ -50,7 +50,7 @@ DL = random.Random(8); I = Matrix()
 planks = [mat('Plank1', (0.32, 0.21, 0.12)), mat('Plank2', (0.27, 0.17, 0.10)), mat('Plank3', (0.36, 0.25, 0.15))]
 x = -RAD + 0.1
 while x < RAD - 0.1:   # floor boards, each row broken into staggered lengths (ink lines on every seam)
-    half = math.sqrt(max(0.0, (RAD - 0.3) ** 2 - x ** 2)); y = -half + DL.uniform(0, 0.6)
+    half = math.sqrt(max(0.0, (RAD - 0.25) ** 2 - x ** 2)); y = -half; DL.uniform(0, 0.6)   # QA: rows start at the wall (a random start left bare floor at the south)
     while y < half - 0.1:
         ln = min(DL.uniform(0.7, 1.6), half - y); dbox(I, (0.17, ln - 0.01, 0.012), (x, y + ln / 2, 0.006), DL.choice(planks)); y += ln
     x += 0.18
@@ -90,7 +90,7 @@ for k, a in enumerate((200, 215, 232, 300, 318, 335, 20, 40, 120, 140)):
 # ------------------------------------------------------------------ dressing (owner: "a little full, not empty")
 D = random.Random(3)
 prop('Mug', (1.75, -1.3, 0.78), 0, height=0.1); prop('Bottle_1', (2.2, -1.25, 0.78), 0, height=0.28); prop('CandleStick', (1.55, -1.6, 0.78), 0, height=0.25)
-prop('Chest_Wood', (-2.3, -0.95, 0), 60, height=0.6)   # QA: was through the sill/skirting
+prop('Chest_Wood', (-2.3, -0.95, 0), 292, height=0.6)   # QA: lid hasp toward the room (the kit chest's front is +Y)   # QA: was through the sill/skirting
 prop('Bucket_Wooden_1', (-1.45, -2.45, 0), 0, height=0.4); prop('CandleStick_Stand', (-0.9, 2.6, 0), 0, height=1.3)
 prop('Stool', (-1.3, 0.2, 0), 0, height=0.45); book_stack((-1.3, 0.2, 0.45), 4, 20, rng=D)
 open_book((1.95, -1.55, 0.78), 200, w=0.3, d=0.22)          # the keeper's log, open
