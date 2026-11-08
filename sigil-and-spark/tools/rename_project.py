@@ -55,6 +55,11 @@ for f in os.listdir(cfg):
     t = t.replace("/Script/PokeboxNext", "/Script/SigilAndSpark")
     if f == "DefaultEngine.ini" and "/Script/PokeboxNext\",NewName" not in t:
         t += '\n[CoreRedirects]\n+PackageRedirects=(OldName="/Script/PokeboxNext",NewName="/Script/SigilAndSpark")\n'
+        # the template classes (PokeboxNextCharacter/GameMode/PlayerController) got renamed with their files: redirect them too
+        for c in ("PlayerController", "GameMode", "Character"):
+            t = t.replace('NewClassName="PokeboxNext%s"' % c, 'NewClassName="SigilAndSpark%s"' % c)
+            for pk in ("SigilAndSpark", "PokeboxNext"):
+                t += '+ClassRedirects=(OldName="/Script/%s.PokeboxNext%s",NewName="/Script/SigilAndSpark.SigilAndSpark%s")\n' % (pk, c, c)
     if f == "DefaultGame.ini":
         t = re.sub(r"(?m)^ProjectName=.*$", "ProjectName=Sigil & Spark", t)
         if "ProjectDisplayedTitle" not in t:

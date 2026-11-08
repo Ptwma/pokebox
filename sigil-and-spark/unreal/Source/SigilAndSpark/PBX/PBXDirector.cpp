@@ -37,6 +37,7 @@
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/Material.h"
 #include "Misc/FileHelper.h"
 #include "Misc/App.h"
 #include "GameFramework/GameUserSettings.h"
@@ -2198,6 +2199,7 @@ void APBXDirector::LoadSettings()
 	GConfig->GetBool(PBXSet, TEXT("InkStyle"), bInkStyle, GGameUserSettingsIni);
 	GConfig->GetInt(PBXSet, TEXT("InkPreset"), InkPreset, GGameUserSettingsIni); GConfig->GetBool(PBXSet, TEXT("Mood"), bMood, GGameUserSettingsIni);
 	InkPreset = FMath::Clamp(InkPreset, 1, 4);
+	bInkStyle = false; bMood = false;   // owner 2026-11-08: realistic look now — the ink/toon post-process and the dark mood stay off
 	VolMaster = FMath::Clamp(VolMaster, 0.f, 1.f); VolMusic = FMath::Clamp(VolMusic, 0.f, 1.f); VolSfx = FMath::Clamp(VolSfx, 0.f, 1.f); LookSens = FMath::Clamp(LookSens, .2f, 3.f);
 	ApplyAudioSettings();
 }
@@ -2285,8 +2287,13 @@ void APBXDirector::ApplyInkStyle()
 	APostProcessVolume* V = nullptr;
 	for (TActorIterator<APostProcessVolume> It(GetWorld()); It; ++It) if (It->bUnbound) { V = *It; break; }
 	if (!V) { V = GetWorld()->SpawnActor<APostProcessVolume>(); if (!V) return; V->bUnbound = true; V->Priority = 50.f; }
-	V->Settings.WeightedBlendables.Array.RemoveAll([this](const FWeightedBlendable& B) { return B.Object == InkMID; });
-	V->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(bInkStyle ? 1.f : 0.f, InkMID));
+	// remove EVERY copy of the ink material from every volume (a level could carry one from an older build), then add ours if on
+	auto IsInk = [this](const FWeightedBlendable& B) {
+		if (B.Object == InkMID) return true;
+		const UMaterialInterface* M = Cast<UMaterialInterface>(B.Object);
+		return M && M->GetMaterial() && M->GetMaterial()->GetName().Contains(TEXT("AnimePP")); };
+	for (TActorIterator<APostProcessVolume> It(GetWorld()); It; ++It) It->Settings.WeightedBlendables.Array.RemoveAll(IsInk);
+	if (bInkStyle) V->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, InkMID));
 }
 
 void APBXDirector::ApplyMood()

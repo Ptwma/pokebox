@@ -116,8 +116,11 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 		// r60: strand grooms never drew in -game (bound to the face OR rigid on the head) → the build's hair CARDS meshes,
 		// rigid on the body's head bone. The cards are authored in character space around this character's head, so they
 		// are offset by the inverse of the head bone's reference pose; they turn with the head (and grow with a kid's head).
+		// owner 2026-11-08 "hair is not on the character, it moves on its own": the visible head is the FACE mesh (its own anim
+		// instance adds the spoken line's head motion), so the cards ride the face's head bone, not the body's.
+		USkeletalMeshComponent* HeadComp = (Face && Face->GetSkeletalMeshAsset() && Face->DoesSocketExist(TEXT("head"))) ? Face : GetMesh();
 		FTransform HeadRef = FTransform::Identity;
-		const FReferenceSkeleton& RS = Body->GetRefSkeleton();
+		const FReferenceSkeleton& RS = HeadComp->GetSkeletalMeshAsset() ? HeadComp->GetSkeletalMeshAsset()->GetRefSkeleton() : Body->GetRefSkeleton();
 		for (int32 Bi = RS.FindBoneIndex(TEXT("head")); Bi != INDEX_NONE; Bi = RS.GetParentIndex(Bi)) HeadRef = HeadRef * RS.GetRefBonePose()[Bi];
 		const TArray<TSharedPtr<FJsonValue>>* Cards = nullptr; int32 NC = 0;
 		if (O->TryGetArrayField(TEXT("cards"), Cards))
@@ -129,10 +132,10 @@ bool APBXCharacterBase::ApplyMetaHuman(const FString& Id)
 				SC->SetStaticMesh(CM); SC->SetCollisionEnabled(ECollisionEnabled::NoCollision); SC->SetMobility(EComponentMobility::Movable);
 				if (UMaterialInterface* MI = Cast<UMaterialInterface>(LoadPath(CO->GetStringField(TEXT("material"))))) for (int32 k = 0; k < SC->GetNumMaterials(); k++) SC->SetMaterial(k, MI);
 				SC->RegisterComponent();
-				SC->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("head"));   // attach AFTER registering (r60: hair never showed)
+				SC->AttachToComponent(HeadComp, FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("head"));   // attach AFTER registering (r60: hair never showed)
 				SC->SetRelativeTransform(HeadRef.Inverse()); MHParts.Add(SC); NC++;
 				UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s hair at %s, head %s, socket %d, mat %s"), *Id, *SC->Bounds.Origin.ToCompactString(),
-					*GetMesh()->GetSocketLocation(TEXT("head")).ToCompactString(), GetMesh()->DoesSocketExist(TEXT("head")) ? 1 : 0, SC->GetMaterial(0) ? *SC->GetMaterial(0)->GetName() : TEXT("none"));
+					*HeadComp->GetSocketLocation(TEXT("head")).ToCompactString(), HeadComp == Face ? 2 : 1, SC->GetMaterial(0) ? *SC->GetMaterial(0)->GetName() : TEXT("none"));
 			}
 		UE_LOG(LogTemp, Display, TEXT("[PBX] MH %s %s: %d hair cards meshes"), *Id, *G->GetName(), NC);
 	}
