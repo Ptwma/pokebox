@@ -280,6 +280,11 @@ void APBXDirector::StoryPump()
 		if (N->TryGetStringField(TEXT("place"), S))   // where the scene is staged: "door:<id>:in|out", "spot:<id>", "npc:<id>"
 		{
 			FPBXSpot P; bool bOk = false; bool bFloorPlace = false;
+			{	// video sets (owner 2026-11-08): on a stage the old town's mountain ring and foliage would float in the sky
+				// around the set → everything tagged PBX_Town (pbx_harbour.tag_town) hides while the scene is on a stage
+				const bool bStage = S.StartsWith(TEXT("stage:"));
+				for (TActorIterator<AActor> It(GetWorld()); It; ++It) if (It->ActorHasTag(TEXT("PBX_Town"))) It->SetActorHiddenInGame(bStage);
+			}
 			if (S.StartsWith(TEXT("door:")))
 			{
 				TArray<FString> Parts; S.ParseIntoArray(Parts, TEXT(":"));

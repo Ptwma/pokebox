@@ -13,6 +13,16 @@ def log(*a): print('[setreal]', *a)
 
 # slot-name keyword (lower case, first match wins) -> (Poly Haven texture, tile size m, tint, roughness multiplier)
 SURF = [
+    ('vine',        None),                       # the kit's ivy keeps its own material
+    ('roundtiles',  ('roof_slates_02', 1.6, (.78, .74, .72), 1.0)),
+    ('rocktrim',    ('seaworn_sandstone_brick', 1.6, (.85, .84, .82), 1.0)),
+    ('woodtrimwear',('weathered_peeling_timber', 1.4, (.62, .55, .48), 1.0)),
+    ('woodtrim',    ('weathered_peeling_timber', 1.4, (.55, .47, .40), 1.0)),
+    ('trimfurniture',('worn_planks', 1.2, (.62, .52, .42), 1.0)),
+    ('trimmetal',   'IRON'),
+    ('lifebuoy',    'BUOY'),
+    ('colormap',    ('weathered_planks', 1.2, (.70, .62, .52), 1.0)),
+    ('planterbox',  ('weathered_plank_siding', 1.2, (.66, .58, .50), 1.0)),
     ('roof',        ('roof_slates_02', 2.0, (.80, .82, .86), 1.0)),
     ('tile',        ('red_slate_roof_tiles_01', 2.0, (.85, .78, .74), 1.0)),
     ('plaster',     ('white_plaster_rough_02', 2.5, (.93, .90, .84), 1.0)),
@@ -106,8 +116,14 @@ def master():
     MEL.recompile_material(m); EAL.save_asset(path); log('master', MEL.get_statistics(m).num_pixel_shader_instructions, 'instr')
     return m
 
-def inst(tex, size, tint, rough):
-    name = f'MI_TP_{tex}'; path = f'{MI}/{name}'
+PLASTER_TINTS = [(.95, .93, .88), (.80, .84, .92), (.95, .82, .74), (.80, .86, .76), (.86, .80, .82)]   # houses painted differently
+
+def flat(name, rgb, rough):
+    import pbx_sets
+    return pbx_sets._fmi(name, rgb, rough)
+
+def inst(tex, size, tint, rough, tag=''):
+    name = f'MI_TP_{tex}{tag}'; path = f'{MI}/{name}'
     mi = unreal.load_asset(path) if EAL.does_asset_exist(path) else AT.create_asset(name, MI, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     mi.set_editor_property('parent', master())
     for k, suf in (('BaseTex', '_diff'), ('ArmTex', '_arm'), ('NorTex', '_nor')):
@@ -138,8 +154,15 @@ def apply(name='Pier', extra=None):
         n = str(sl.get_editor_property('material_slot_name')); cur = sl.get_editor_property('material_interface')
         if cur and (cur.get_name().startswith(('MI_Lantern', 'MI_Room', 'MI_Lamp', 'MI_Candle', 'MI_Jar'))): continue   # emissive
         key = n.lower().replace('_', '')
-        hit = next((v for k, v in rules if k in key), None)
-        if not hit: skip.append(n); continue
+        found = [v for k, v in rules if k in key]
+        if not found: skip.append(n); continue
+        hit = found[0]
+        if hit is None: continue
+        if hit == 'IRON': sm.set_material(i, flat('RealIron', (.045, .043, .045), .42)); done += 1; continue
+        if hit == 'BUOY': sm.set_material(i, flat('RealBuoy', (.75, .12, .06), .55)); done += 1; continue
+        if 'plaster' in key:   # one tint per house (the kit names carry the house tag: _h1, _h20 ...)
+            hs = re.findall(r'h(\d+)', n.lower()); k = (int(hs[0]) if hs else 0) % len(PLASTER_TINTS)
+            sm.set_material(i, inst(hit[0], hit[1], PLASTER_TINTS[k], hit[3], f'_{k}')); done += 1; continue
         sm.set_material(i, inst(*hit)); done += 1
     EAL.save_asset(sm.get_path_name())
     log('set', name, 'real surfaces', done, 'unmatched', skip)
