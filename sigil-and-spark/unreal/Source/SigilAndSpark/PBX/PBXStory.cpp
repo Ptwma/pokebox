@@ -220,7 +220,7 @@ void APBXDirector::StoryPump()
 		if (N->TryGetStringField(TEXT("objective"), S)) { UI->Objective = StoryText(S); continue; }
 		if (N->TryGetStringField(TEXT("sfx"), S))
 		{
-			if (PBXAudio::Exists(TEXT("sfx"), S)) { if (USoundWaveProcedural* W = PBXAudio::Load(this, TEXT("sfx"), S, false)) UGameplayStatics::SpawnSound2D(this, W, .8f * VolSfx); }
+			if (PBXAudio::Exists(TEXT("sfx"), S)) { if (USoundWaveProcedural* W = PBXAudio::Load(this, TEXT("sfx"), S, false)) { UGameplayStatics::SpawnSound2D(this, W, .8f * VolSfx); FilmCue(TEXT("sfx"), S, .8f); } }
 			else Sfx(*S);
 			continue;
 		}
@@ -381,11 +381,13 @@ void APBXDirector::StoryChoice(const TSharedPtr<FJsonObject>& N)
 		else N->TryGetArrayField(TEXT("silent"), Do);
 		if (!Id.IsEmpty() && Game && Game->State) Game->State->StoryChoices.Add(Id + TEXT("=") + (Opts->IsValidIndex(i) ? FString::FromInt(i) : TEXT("s")));
 		SLOG("[PBXSTORY] choice %s:%s -> %d %s", *Scene, *Id, i, *Text);
+		FilmCue(TEXT("pick"), Id, 1.f, FString::Printf(TEXT("\"i\":%d"), i));
 		StoryPush(Do); QStoryPump();
 	};
 	if (UIOpts.Num() == 0) { SLOG("[PBXSTORY] ERROR choice %s with no eligible option", *Id); Pick(-1); return; }
 	OpenChoice(TEXT(""), Prompt.IsEmpty() ? LastLine : Prompt, UIOpts, false, Pick);
 	UI->bStoryChoice = true;
+	{ FString Os; for (const FPBXOption& O : UIOpts) Os += (Os.IsEmpty() ? TEXT("\"") : TEXT(",\"")) + O.Title.Replace(TEXT("\""), TEXT("'")) + TEXT("\""); FilmCue(TEXT("choice"), Id, 1.f, TEXT("\"opts\":[") + Os + TEXT("]")); }
 	if (T > 0) { UI->FuseMax = UI->FuseT = T; OnFuse = [Pick] { Pick(-1); }; }
 	if (bAuto)   // the path digit for this choice (9 = let the fuse burn out)
 	{
@@ -509,21 +511,23 @@ float APBXDirector::StoryVoicePlay(const FString& Id)
 {
 	if (StoryVoice) { StoryVoice->Stop(); StoryVoice = nullptr; }
 	float Secs = 0.f;
-	if (USoundWaveProcedural* W = PBXAudio::Load(this, TEXT("vo"), Id, false, &Secs)) StoryVoice = UGameplayStatics::SpawnSound2D(this, W, 1.0f, 1.f, 0.f, nullptr, false, false);
+	if (USoundWaveProcedural* W = PBXAudio::Load(this, TEXT("vo"), Id, false, &Secs)) { StoryVoice = UGameplayStatics::SpawnSound2D(this, W, 1.0f, 1.f, 0.f, nullptr, false, false); FilmCue(TEXT("vo"), Id, 1.f); }
 	else SLOG("[PBXSTORY] voice missing %s", *Id);
+	StoryLineSecs = Secs;
 	return Secs;
 }
 
 void APBXDirector::StoryLoop(TObjectPtr<UAudioComponent>& Comp, FString& Cur, const TCHAR* Kind, const FString& Name, float Vol, float Fade)
 {
 	if (Cur == Name && Comp) return;
-	if (Comp) { Comp->FadeOut(Fade, 0.f); Comp = nullptr; }
+	if (Comp) { Comp->FadeOut(Fade, 0.f); Comp = nullptr; FilmCue(FString(Kind) + TEXT("_out"), Cur, 0.f, FString::Printf(TEXT("\"fade\":%.2f"), Fade)); }
 	Cur = Name;
 	if (Name.IsEmpty()) return;
 	if (USoundWaveProcedural* W = PBXAudio::Load(this, Kind, Name, true))
 	{
 		Comp = UGameplayStatics::SpawnSound2D(this, W, Vol, 1.f, 0.f, nullptr, false, false);
 		if (Comp) Comp->FadeIn(Fade, Vol);
+		FilmCue(Kind, Name, Vol, FString::Printf(TEXT("\"fade\":%.2f"), Fade));
 	}
 	else SLOG("[PBXSTORY] %s missing %s", Kind, *Name);
 }

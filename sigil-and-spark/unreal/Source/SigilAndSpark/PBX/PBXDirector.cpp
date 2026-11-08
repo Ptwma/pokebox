@@ -26,6 +26,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HighResScreenshot.h"
 #include "HAL/FileManager.h"
+#include "Async/Async.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundBase.h"
 #include "Engine/OverlapResult.h"
@@ -181,6 +182,27 @@ void APBXDirector::BeginPlay()
 	Super::BeginPlay();
 	bAuto = FParse::Param(FCommandLine::Get(), TEXT("pbxauto"));
 	bStyle = FParse::Param(FCommandLine::Get(), TEXT("pbxstyle")); if (bStyle) bAuto = true;   // r66: the ink/mood comparison sheet
+	{	FString FilmName;
+		if (FParse::Value(FCommandLine::Get(), TEXT("pbxfilm="), FilmName) || FParse::Param(FCommandLine::Get(), TEXT("pbxfilm")))
+		{
+			bFilmCap = bAuto = true; if (FilmName.IsEmpty()) FilmName = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M"));
+			FilmDir = FPaths::ProjectSavedDir() / TEXT("film") / FilmName; IFileManager::Get().MakeDirectory(*FilmDir, true);
+			FFileHelper::SaveStringToFile(FString(), *(FilmDir / TEXT("cues.jsonl")));
+			// offline quality: the frame may take seconds, the game clock does not care (-benchmark -fps=30 fixes the step)
+			// the laptop's RTX 2060 has 6 GB: cinematic Lumen at 200 % filled it and stalled (2026-11-08). Defaults = epic at 100 %
+			// (TSR still accumulates detail over the fixed-step frames); -pbxfilmsg=4 -pbxfilmsp=150 to push when VRAM allows.
+			int32 Sg = 3, Sp = 100; FParse::Value(FCommandLine::Get(), TEXT("pbxfilmsg="), Sg); FParse::Value(FCommandLine::Get(), TEXT("pbxfilmsp="), Sp);
+			GEngine->Exec(GetWorld(), *FString::Printf(TEXT("scalability %d"), FMath::Clamp(Sg, 0, 4)));
+			GEngine->Exec(GetWorld(), *FString::Printf(TEXT("r.ScreenPercentage %d"), FMath::Clamp(Sp, 50, 200)));
+			for (const TCHAR* Cmd : { TEXT("r.MotionBlurQuality 4"), TEXT("r.MotionBlur.Amount 0.35"), TEXT("r.DepthOfFieldQuality 3"),
+				TEXT("r.Streaming.FullyLoadUsedTextures 1"), TEXT("r.ForceLOD 0"), TEXT("t.MaxFPS 0"), TEXT("r.VSync 0") })
+				GEngine->Exec(GetWorld(), Cmd);
+			// frames are compressed on the thread pool (the game thread only copies pixels): PNG on one core was the bottleneck
+			FilmPending = MakeShared<std::atomic<int32>>(0);
+			if (GEngine->GameViewport) GEngine->GameViewport->OnScreenshotCaptured().AddUObject(this, &APBXDirector::OnFilmShot);
+			PBXLOG("[PBXFILM] capture to %s", *FilmDir);
+		}
+	}
 	if (GEngine) { GEngine->bEnableOnScreenDebugMessages = false; GEngine->Exec(GetWorld(), TEXT("DisableAllScreenMessages")); }
 	Game = GetGameInstance()->GetSubsystem<UPBXGameSubsystem>();
 	UI = MakeShared<FPBXUIModel>();
@@ -567,13 +589,22 @@ void APBXDirector::QSay(const TArray<FPBXLine>& Lines)
 				UI->Mode = EPBXUIMode::Dialogue; UI->Speaker = L.Who == TEXT("__story") ? StorySpeakerName : SpeakerName(L.Who); UI->Line = L.Text; UI->Visible = 0.f; bConfirm = false;
 				UI->SpeakerColor = L.Who == TEXT("__story") ? StorySpeakerColor : L.Who == TEXT("rho") ? FLinearColor(.4f, .75f, 1.f) : FLinearColor(1, .82f, .2f);
 				PBXLOG("[PBX] say %s: %s", *UI->Speaker, *L.Text);
+				FilmCue(TEXT("line"), UI->Speaker, 1.f, FString::Printf(TEXT("\"text\":\"%s\""), *UI->Line.Replace(TEXT("\\"), TEXT("\\\\")).Replace(TEXT("\""), TEXT("\\\""))));
 			}
 			UI->Visible = FMath::Min<float>(UI->Line.Len(), UI->Visible + FApp::GetDeltaTime() * 60.f);
-			if (bAuto && UI->Visible >= UI->Line.Len() && T > .25f + UI->Line.Len() / 60.f) bConfirm = true;
+			// story lines run by themselves like Telltale (owner 2026-11-08): the line holds for its voice + a breath, then moves on;
+			// a click still skips. Film capture uses exactly this rhythm.
+			if (L.Who == TEXT("__story"))
+			{
+				const float Hold = (StoryLineSecs > 0.f ? StoryLineSecs : 1.1f + UI->Line.Len() * .055f) + (StorySpeakerName.IsEmpty() ? .55f : .4f);
+				if (T >= Hold && UI->Visible >= UI->Line.Len()) bConfirm = true;
+			}
+			else if (bAuto && UI->Visible >= UI->Line.Len() && T > .25f + UI->Line.Len() / 60.f) bConfirm = true;
 			if (bConfirm)
 			{
 				bConfirm = false;
 				if (UI->Visible < UI->Line.Len()) { UI->Visible = UI->Line.Len(); return false; }
+				FilmCue(TEXT("lineend"), UI->Speaker); if (L.Who == TEXT("__story")) StoryLineSecs = 0.f;
 				UI->Mode = EPBXUIMode::Explore; return true;
 			}
 			return false;
@@ -586,6 +617,7 @@ void APBXDirector::Tick(float Dt)
 {
 	Super::Tick(Dt);
 	if (!UI.IsValid()) return;
+	FilmCaptureTick();
 	TickTrain(Dt);
 	TickLife(Dt);
 	if (bAuto)   // frame-time log every 8 s: average fps, worst frame, where (the laptop's RTX 2060 is the target)
@@ -1497,6 +1529,7 @@ USoundBase* APBXDirector::Snd(const TCHAR* Name)
 void APBXDirector::Sfx(const TCHAR* Name, float Vol)
 {
 	if (USoundBase* S = Snd(Name)) UGameplayStatics::PlaySound2D(this, S, .55f * Vol * VolSfx);
+	FilmCue(TEXT("sfxasset"), Name, .55f * Vol);
 }
 
 const TCHAR* APBXDirector::MapMusic() const
@@ -2626,6 +2659,7 @@ void APBXDirector::PlayIntro()
 void APBXDirector::StartNewGame(bool bMale)
 {
 	StopTitleLoop();
+	if (bFilmCap && !bFilmRec) { bFilmRec = true; FilmFrame = 0; FilmCue(TEXT("start"), TEXT("ep1")); }
 	CloseChoice(); Menu = EMenu::None;
 	Game->NewGame(bMale); Game->State->Look = PendingLook; UI->bMenuLeft = false;
 	if (Partner) { Partner->Destroy(); Partner = nullptr; }
@@ -2837,8 +2871,38 @@ bool APBXDirector::ShotFirst(const TCHAR* N)
 	return true;
 }
 
+void APBXDirector::FilmCue(const FString& Kind, const FString& Id, float Vol, const FString& Extra)
+{
+	if (!bFilmCap || !bFilmRec) return;
+	auto Esc = [](FString S) { return S.Replace(TEXT("\\"), TEXT("\\\\")).Replace(TEXT("\""), TEXT("\\\"")); };
+	const FString L = FString::Printf(TEXT("{\"f\":%d,\"k\":\"%s\",\"id\":\"%s\",\"v\":%.3f%s%s}\n"), FilmFrame, *Kind, *Esc(Id), Vol, Extra.IsEmpty() ? TEXT("") : TEXT(","), *Extra);
+	FFileHelper::SaveStringToFile(L, *(FilmDir / TEXT("cues.jsonl")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
+}
+
+void APBXDirector::FilmCaptureTick()
+{
+	if (!bFilmCap || !bFilmRec) return;
+	while (FilmPending.IsValid() && FilmPending->load() > 24) FPlatformProcess::Sleep(.004f);   // bounded memory: wait for the encoders
+	FScreenshotRequest::RequestScreenshot(FilmDir / FString::Printf(TEXT("f_%06d.png"), FilmFrame), false, false);
+	FilmFrame++;
+}
+
+void APBXDirector::OnFilmShot(int32 W, int32 Hh, const TArray<FColor>& Px)
+{
+	if (!bFilmCap) return;
+	const FString Path = FilmDir / FString::Printf(TEXT("f_%06d.png"), FilmShotN++);
+	TArray64<FColor> Copy; Copy.SetNumUninitialized(Px.Num()); for (int64 i = 0; i < Px.Num(); i++) { Copy[i] = Px[i]; Copy[i].A = 255; }
+	TSharedPtr<std::atomic<int32>> Pend = FilmPending; Pend->fetch_add(1);
+	Async(EAsyncExecution::ThreadPool, [Path, W, Hh, Copy = MoveTemp(Copy), Pend]()
+	{
+		TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(W, Hh, TArrayView64<const FColor>(Copy.GetData(), Copy.Num()), Png);
+		FFileHelper::SaveArrayToFile(Png, *Path); Pend->fetch_sub(1);
+	});
+}
+
 void APBXDirector::Shot(const FString& N)
 {
+	if (bFilmCap) return;   // film capture: the frames are the shots
 	const FString Path = FPaths::ProjectSavedDir() / TEXT("pbx_auto") / (N + TEXT(".png"));
 	FScreenshotRequest::RequestScreenshot(Path, true, false);
 	AutoShots++; PBXLOG("[PBXAUTO] shot %s", *N);

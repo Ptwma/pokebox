@@ -2,6 +2,7 @@
 // Map data (spots, doors, NPCs, grass...) comes from Content/PBX/Data/<Map>.json, written by tools/blender_town.py.
 // Start the game with -pbxauto to have it play itself through the whole chapter and take screenshots (test mode).
 #pragma once
+#include <atomic>
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameModeBase.h"
@@ -214,6 +215,13 @@ private:
 	/** nearest spot to a stage point where a person fits ON THE FLOOR (not on a stall roof or a crate) */
 	FVector StoryFloor(const FVector& Want, const AActor* Ignore = nullptr) const;
 	bool StoryFilm(const FString& Id); void StoryFilmStop(); bool bFilmOn = false; int32 FilmPlayed = 0, FilmMissed = 0;
+	/** film CAPTURE (owner 2026-11-08 22:11, "everything smooth, right rhythm, detail everywhere"): -pbxfilm[=name] plays the
+	    story on the -pbxpath choices at a FIXED 30 fps game clock (run with -benchmark -fps=30), cinematic quality, and writes
+	    every frame (no UI) to Saved/film/<name>/f_000000.png + cues.jsonl (voices, music, ambience, sfx, lines, choices with
+	    their frame numbers) → tools/film/film_mux.py makes the mp4 with the sound. */
+	bool bFilmCap = false, bFilmRec = false; int32 FilmFrame = 0; FString FilmDir; float StoryLineSecs = 0.f;
+	void FilmCue(const FString& Kind, const FString& Id, float Vol = 1.f, const FString& Extra = FString()); void FilmCaptureTick();
+	void OnFilmShot(int32 W, int32 Hh, const TArray<FColor>& Px); int32 FilmShotN = 0; TSharedPtr<std::atomic<int32>> FilmPending;
 	AActor* StoryActor(const FString& Who) const; FVector HeadOf(AActor* A) const;
 	void QCard(const FString& Text, const FString& Sub, const FString& Vo);
 	FString StorySpeakerName, LastLine, AutoPath; FLinearColor StorySpeakerColor = FLinearColor(1, .82f, .2f); int32 AutoChoice = 0;
