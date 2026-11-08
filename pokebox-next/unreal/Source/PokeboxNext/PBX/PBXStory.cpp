@@ -20,6 +20,7 @@
 #include "Engine/SkyLight.h"
 #include "Engine/DirectionalLight.h"
 #include "Components/LightComponent.h"
+#include "Components/PointLightComponent.h"
 #include "PBX/PBXCore.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -568,7 +569,6 @@ void APBXDirector::StoryShot(const FString& Who)
 	if (!Spk || !Lis || FVector::Dist(Spk->GetActorLocation(), Lis->GetActorLocation()) > 2200.f) return;   // nobody to frame: keep the shot
 	const FVector Hs = HeadOf(Spk), Hl = HeadOf(Lis);
 	FVector Dir = (Hs - Hl).GetSafeNormal2D(); if (Dir.IsNearlyZero()) Dir = FVector(1, 0, 0);
-	const FVector Right = FVector::CrossProduct(FVector::UpVector, Dir);
 	// the two face each other (people turn to whoever speaks)
 	if (APBXNPC* N = Cast<APBXNPC>(Spk == Player ? Lis : Spk)) N->SetActorRotation(FRotator(0, (-Dir * (Spk == Player ? -1.f : 1.f)).Rotation().Yaw, 0));
 	Player->SetActorRotation(FRotator(0, ((Spk == Player ? Lis : Spk)->GetActorLocation() - Player->GetActorLocation()).GetSafeNormal2D().Rotation().Yaw, 0));
@@ -577,30 +577,54 @@ void APBXDirector::StoryShot(const FString& Who)
 	for (TActorIterator<APBXNPC> It(GetWorld()); It; ++It)   // bystanders within earshot glance at the speaker
 		if (*It != Spk && *It != Lis && FVector::Dist(It->GetActorLocation(), Spk->GetActorLocation()) < 900.f) It->SetLookAt(Hs);
 	const int32 K0 = ShotN++ % 4;
-	auto Make = [&](int32 K, float Side, FVector& Eye, FVector& Look, float& Fov)
-	{
-		Look = Hs; Fov = 40.f;
-		if (K == 0 || K == 2) { Eye = Hl - Dir * 150.f + Right * (K == 0 ? 62.f : -62.f) * Side + FVector(0, 0, 10); Fov = 36.f; }   // over the listener's shoulder
-		else if (K == 1) { Eye = Hs - Dir * 150.f + Right * 38.f * Side - FVector(0, 0, 4); Fov = 30.f; }                            // close-up, a little off-axis
-		else { const FVector Mid = (Hs + Hl) * .5f; Eye = Mid + Right * 330.f * Side + FVector(0, 0, -8); Look = Mid; Fov = 42.f; }   // two-shot from the side
-	};
-	// the lens must see the faces: try this line's shot, then its mirror, then the other shot types, and take the first
-	// whose view is clear (a candelabra or a stall awning between lens and face used to fill the frame); if none is
-	// clear, the clearest one, pulled in front of whatever blocks it
+	// Telltale-style coverage chosen by SEARCH, not from 8 fixed spots (owner 2026-11-08: "everything placed right, looking
+	// right"; in the s1 market every fixed spot was inside a stall). Around the speaker's face: 7 azimuths in front of the
+	// face × 4 distances × 2 heights. A spot counts only if the lens is not inside anything and fat rays to the eyes, the
+	// chin and both cheeks are free; then shot grammar scores it: the line's shot type (OTS / CU / two-shot), ~20-40 deg off
+	// the eyeline, the 180-degree rule (same side of the line as the last shot of this pair), the listener's shoulder in
+	// frame for OTS, not too close.
+	if (ShotPairA.Get() != Spk && ShotPairA.Get() != Lis) { ShotSide = 0.f; }
+	ShotPairA = Spk; ShotPairB = Lis;
+	const FVector Mid = (Hs + Hl) * .5f;
 	FHitResult Hit; FCollisionQueryParams Q(SCENE_QUERY_STAT(StoryCam), false); Q.AddIgnoredActor(Spk); Q.AddIgnoredActor(Lis); Q.AddIgnoredActor(Player);
-	FVector Eye, Look = Hs; float Fov = 40.f; float Best = -1.f;
-	for (int32 c = 0; c < 8 && Best < .999f; c++)
+	const FCollisionShape Ball = FCollisionShape::MakeSphere(12.f), Body = FCollisionShape::MakeSphere(22.f);
+	auto Free = [&](const FVector& A, const FVector& B) { return !GetWorld()->SweepSingleByChannel(Hit, A, B, FQuat::Identity, ECC_Camera, Ball, Q); };
+	auto Inside = [&](const FVector& P) { return GetWorld()->OverlapAnyTestByChannel(P, FQuat::Identity, ECC_Camera, Body, Q); };
+	const FVector FaceDir = -Dir;   // the speaker faces the listener: -Dir points from the speaker toward the listener
+	const FVector FaceRight = FVector::CrossProduct(FVector::UpVector, FaceDir);
+	FVector Eye = Hl - Dir * 150.f, Look = Hs; float Fov = 36.f; float Best = -1e9f; int32 Tried = 0, Ok = 0;
+	static const float Az[] = { 0.f, 22.f, -22.f, 38.f, -38.f, 58.f, -58.f };
+	static const float Dist[] = { 130.f, 165.f, 210.f, 280.f };
+	static const float Up[] = { 2.f, 14.f };
+	const bool bWantOTS = (K0 == 0 || K0 == 2), bWantTwo = (K0 == 3);
+	for (float az : Az) for (float d : Dist) for (float up : Up)
 	{
-		const int32 K = (K0 + c / 2) % 4; const float Side = (c % 2) ? -1.f : 1.f;
-		FVector E, L; float F; Make(K, Side, E, L, F);
-		float Clear = 1.f;
-		const FCollisionShape Ball = FCollisionShape::MakeSphere(12.f);   // a fat ray: thin candles and poles count too
-		if (GetWorld()->SweepSingleByChannel(Hit, L, E, FQuat::Identity, ECC_Camera, Ball, Q)) Clear = Hit.Time;
-		if (GetWorld()->SweepSingleByChannel(Hit, E, (K == 3 ? Hl : Hs), FQuat::Identity, ECC_Camera, Ball, Q)) Clear = FMath::Min(Clear, .9f * Hit.Time);
-		if (Clear > Best + .02f) { Best = Clear; Eye = E; Look = L; Fov = F; }
+		Tried++;
+		const FVector V = FaceDir.RotateAngleAxis(az, FVector::UpVector);
+		const FVector E = Hs + V * d + FVector(0, 0, up);
+		if (Inside(E)) continue;
+		const FVector Cheek = FaceRight * 9.f;
+		if (!Free(E, Hs) || !Free(E, Hs + Cheek) || !Free(E, Hs - Cheek) || !Free(E, Hs - FVector(0, 0, 14))) continue;
+		Ok++;
+		float Score = 0.f;
+		const float Off = FMath::Abs(az);
+		Score -= FMath::Abs(Off - 28.f) * .04f;                                       // a little off the eyeline reads best
+		const float Side = FMath::Sign(FVector::DotProduct(E - Mid, FaceRight * (Spk == Player ? 1.f : -1.f)));
+		if (ShotSide != 0.f && Side != ShotSide) Score -= 3.f;                        // 180-degree rule
+		if (bWantOTS) { Score -= FMath::Abs(d - 210.f) * .01f; if (FVector::Dist2D(E, Hl) < 140.f && Free(E, Hl - FVector(0, 0, 20))) Score += 1.5f; }   // the listener's shoulder in frame
+		else if (bWantTwo) { Score -= FMath::Abs(d - 280.f) * .01f; if (Free(E, Hl)) Score += 1.f; }
+		else Score -= FMath::Abs(d - 140.f) * .012f;                                  // close-up
+		if (d < 140.f && Off > 45.f) Score -= 1.f;                                     // no profile close-ups jammed against a wall
+		if (Score > Best) { Best = Score; Eye = E; Look = bWantTwo ? FMath::Lerp(Hs, Mid, .45f) : Hs; Fov = bWantTwo ? 42.f : (d < 150.f ? 30.f : 36.f); }
 	}
-	if (Best < .999f && GetWorld()->LineTraceSingleByChannel(Hit, Look, Eye, ECC_Camera, Q)) Eye = Hit.Location + (Look - Eye).GetSafeNormal() * 25.f;
-	SLOG("[PBXSTORY] shot %s K0 %d clear %.2f eye %s look %s Hs %s Hl %s", *Who, K0, Best, *Eye.ToCompactString(), *Look.ToCompactString(), *Hs.ToCompactString(), *Hl.ToCompactString());
+	if (Best > -1e8f) ShotSide = FMath::Sign(FVector::DotProduct(Eye - Mid, FaceRight * (Spk == Player ? 1.f : -1.f)));
+	else
+	{   // nothing clear at all: straight in front of the face, as close as the room allows
+		Look = Hs; Fov = 30.f; Eye = Hs + FaceDir * 120.f;
+		if (GetWorld()->SweepSingleByChannel(Hit, Hs, Eye, FQuat::Identity, ECC_Camera, Ball, Q)) Eye = Hs + FaceDir * FMath::Max(45.f, Hit.Distance - 15.f);
+	}
+	const float Clear = Tried ? float(Ok) / Tried : 0.f;
+	SLOG("[PBXSTORY] shot %s K0 %d clear %.2f eye %s look %s Hs %s Hl %s", *Who, K0, Clear, *Eye.ToCompactString(), *Look.ToCompactString(), *Hs.ToCompactString(), *Hl.ToCompactString());
 	ShotA = Eye; ShotB = Eye + (Look - Eye).GetSafeNormal() * 22.f; ShotLook = Look; ShotFov = Fov; ShotT = 0.f;
 	if (!bStoryCam) { bStoryCam = true; if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) PC->SetViewTarget(Cam); }
 	StoryCamTick(0.f);
@@ -641,10 +665,20 @@ void APBXDirector::StoryActTick()
 	if (APBXCharacterBase* A = ActSpk.Get()) if (GetWorld()->GetTimeSeconds() >= ActEnd) { A->StopAction(.45f); ActSpk = nullptr; }
 }
 
+static TWeakObjectPtr<UPointLightComponent> GFaceFill;
 void APBXDirector::StoryCamTick(float Dt)
 {
 	StoryActTick();
-	if (!bStoryCam || !Cam) { if (UI->Letterbox > 0.f && !Busy()) UI->Letterbox = FMath::Max(0.f, UI->Letterbox - Dt * 3.f); return; }
+	if (!bStoryCam || !Cam) { if (GFaceFill.IsValid()) GFaceFill->SetVisibility(false); if (UI->Letterbox > 0.f && !Busy()) UI->Letterbox = FMath::Max(0.f, UI->Letterbox - Dt * 3.f); return; }
+	if (!GFaceFill.IsValid())
+	{   // a soft fill riding with the lens, like a Telltale face light: faces never go black against a bright sky or a dark room
+		UPointLightComponent* L = NewObject<UPointLightComponent>(Cam, TEXT("PBXFaceFill"));
+		L->SetupAttachment(Cam->GetRootComponent()); L->RegisterComponent();
+		L->SetIntensityUnits(ELightUnits::Candelas); L->SetIntensity(9.f); L->SetAttenuationRadius(420.f); L->SetSourceRadius(45.f);
+		L->SetCastShadows(false); L->SetSpecularScale(.25f); L->SetLightColor(FLinearColor(1.f, .92f, .82f));
+		L->SetRelativeLocation(FVector(-15.f, 60.f, 28.f)); GFaceFill = L;
+	}
+	GFaceFill->SetVisibility(true);
 	ShotT += Dt; const float a = FMath::Clamp(ShotT / 6.f, 0.f, 1.f);
 	const FVector E = FMath::Lerp(ShotA, ShotB, a * a * (3.f - 2.f * a));   // a slow push-in over each line
 	Cam->SetActorLocationAndRotation(E, (ShotLook - E).Rotation()); Cam->GetCameraComponent()->SetFieldOfView(ShotFov);
