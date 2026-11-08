@@ -129,10 +129,10 @@ for side in (-1, 1):   # the hall is a library: full bookcases behind the benche
     for y in (-7.0, -5.0, -3.0, -1.0, 1.0, 3.0, 5.0, 7.0):
         bookcase((side * 5.6, y, 0), 90 if side < 0 else -90, w=1.9, h=2.7, d=0.42, levels=5, rng=D)
     for y in (-6.0, 0.0, 6.0): prop('Banner_1', (side * 5.7, y, 3.6), 90 if side < 0 else -90, height=2.2)
-for (x, y) in [(-0.8, 7.85), (0.75, 7.75)]: prop('CandleStick_Triple', (x, y, 0.96), 0, height=0.45)
+for (x, y) in [(-0.45, L - 1.9), (0.5, L - 1.85)]: prop('CandleStick_Triple', (x, y, 0.96), 0, height=0.45)   # QA: was standing inside the book stacks
 prop('BookStand', (-2.2, 7.6, 0), 0, height=1.3); prop('Chest_Wood', (2.6, 8.6, 0), 180, height=0.7); prop('Chest_Wood', (-3.4, 8.8, 0), 160, height=0.7)
 open_book((-2.2, 7.6, 1.32), 180, tilt=-15)
-for (x, y) in [(-5.2, 8.6), (5.2, 8.6), (-5.2, -8.6), (5.2, -8.6)]: prop('Vase_4', (x, y, 0), D.uniform(0, 360), height=0.8)
+for (x, y) in [(-4.95, 9.25), (4.95, 9.25), (-4.95, -9.25), (4.95, -9.25)]: prop('Vase_4', (x, y, 0), D.uniform(0, 360), height=0.8)   # QA: were through the bench ends
 for (x, y) in [(-4.3, -4.0), (4.3, 4.0), (-4.3, 5.9), (4.3, -6.1)]: book_stack((x, y, 0.5), rng=D)   # left on the benches
 for (x, y, n) in [(-5.0, 8.2, 5), (5.0, 8.1, 3), (-5.0, -8.2, 4), (5.0, -8.2, 6)]:                    # floor candle clusters
     for k in range(n): candle((x + D.uniform(-0.25, 0.25), y + D.uniform(-0.25, 0.25), 0), D.uniform(0.08, 0.32), D.uniform(0.025, 0.04))

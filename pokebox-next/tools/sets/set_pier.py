@@ -105,8 +105,9 @@ for k in range(0, 6):
 for x in (5, 9):
     piece('Floor_WoodDark', (x, -17, 0.0))
 # props: crates, the wagon, fences, vines
-for (x, y, r) in [(-6.2, -1.6, 10), (-5.3, -1.2, 40), (-5.8, -2.0, 0), (5.7, -8.4, 15), (8.3, -15.9, 30)]:
-    piece('Prop_Crate', (x, y, 0.0), r)
+for (x, y, r) in [(-6.45, -1.6, 10), (-5.25, -1.45, 4), (5.7, -8.4, 15), (8.3, -15.9, 30)]:   # QA: crates side by side, not inside each other
+    _c = piece('Prop_Crate', (x, y, 0.0), r)
+bpy.context.view_layer.update(); piece('Prop_Crate', (-5.85, -1.5, _c.dimensions.z + 0.002), 25)   # one stacked on the pair
 piece('Prop_Wagon', (0.5, -2.6, 0), 80)
 piece('Prop_Vine2', (-4.95, -0.25, 0.2), 180)
 
@@ -291,9 +292,14 @@ prop('k_town/stall-red', (-7.6, -3.2, 0), 180, height=2.4); prop('k_town/stall-g
 for (x, y) in [(-8.2, -3.0), (-7.0, -3.1), (-3.0, -3.4)]: prop('k_survival/fish', (x, y, 0.95), D.uniform(0, 360), height=0.12)
 for (x, y, r) in [(-10.6, -1.5, 0), (-10.0, -1.2, 30), (1.8, -1.3, 0), (2.5, -1.6, 15), (6.3, -5.4, 0)]: prop('k_pirate/barrel', (x, y, 0), r, height=0.95)
 for (x, y) in [(-2.2, -1.2), (6.0, -9.6)]: prop('k_pirate/crate-bottles', (x, y, 0), D.uniform(0, 90), height=0.7)
-for (x, y) in [(-5.6, -1.0), (2.9, -1.1), (7.6, -13.0)]: prop('Bucket_Wooden_1', (x, y, 0), D.uniform(0, 360), height=0.4)
+for (x, y) in [(-4.4, -1.0), (2.9, -1.1), (7.6, -13.0)]: prop('Bucket_Wooden_1', (x, y, 0), D.uniform(0, 360), height=0.4)
 for (x, y) in [(6.2, -7.2), (7.8, -10.2), (-0.8, -5.4)]: prop('Rope_1', (x, y, 0.01), D.uniform(0, 360), height=0.18)
-prop('Bench', (-1.2, -0.7, 0), 0, height=0.85); prop('Bench', (4.2, -0.7, 0), 0, height=0.85)
+_vx = [o.location.x for o in bpy.data.objects if o.name.startswith('Prop_Vine')] + [o.location.x for o in bpy.data.objects if o.name.startswith('Wall_') and 'Door' in o.name and abs(o.location.y) < 0.5 and o.location.z < 1]   # vines and doors
+def _free_x(x, half=0.9):   # QA: a bench never stands in a vine hanging down the house front
+    for dx in (0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8):
+        if all(abs(x + dx - v) > half for v in _vx): return x + dx
+    return x
+prop('Bench', (_free_x(-1.2), -0.7, 0), 0, height=0.85); prop('Bench', (_free_x(4.2), -0.7, 0), 0, height=0.85)
 prop('k_survival/signpost', (-11.2, -4.6, 0), 30, height=2.0)
 prop('lifebuoy', (7.95, -6.3, 0.35), 90, height=0.75, tilt=(90, 0))
 prop('k_town/cart', (-12.2, -2.6, 0), 80, height=1.5)
@@ -309,7 +315,7 @@ for m in bpy.data.materials: toonify(m)
 
 _k = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kit.py')).read()
 exec(_k[_k.index('# ------------------------------------------------------------------ DETAIL builder'):_k.index('def finish(cams')])
-unclip(ref=(6.0, -10.0, 2.0)); build_details()
+unclip(ref=(6.0, -10.0, 2.0)); build_details(); settle()
 
 if EXPORT:
     import json
@@ -328,6 +334,8 @@ if EXPORT:
 
 # camera
 cams = {'wide': ((15.5, -15.0, 2.3), (1.0, -3.0, 3.4), 27), 'rho': ((8.9, -11.2, 1.55), (6.8, -7.6, 1.45), 40), 'sea': ((5.6, -5.5, 1.7), (24.0, -70.0, 6.0), 35)}
+if CAMNAME == 'qa':
+    exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'set_qa.py')).read(), globals()); set_qa(cams); raise SystemExit(0)
 p, t, lens = cams[CAMNAME]
 bpy.ops.object.camera_add(location=p); cam = bpy.context.object; cam.data.lens = lens
 d = Vector(t) - Vector(p); cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler(); sc.camera = cam

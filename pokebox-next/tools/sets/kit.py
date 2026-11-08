@@ -347,6 +347,16 @@ def unclip(margin=0.03, passes=4, extra=(), ref=None):
                 move(small, d); moved += 1
         bpy.context.view_layer.update()
         if moved == n0: break
+    for it in movers():                                                 # last word to the walls: prop-prop steps never end inside one
+        for w in walls:
+            b = it[2]
+            ox = min(b[3], w[3]) - max(b[0], w[0]); oy = min(b[4], w[4]) - max(b[1], w[1]); oz = min(b[5], w[5]) - max(b[2], w[2])
+            if ox <= 0.005 or oy <= 0.005 or oz <= 0.05: continue
+            wx, wy = (w[0] + w[3]) / 2, (w[1] + w[4]) / 2
+            if (w[3] - w[0]) < (w[4] - w[1]): d = Vector((w[3] - b[0] + margin, 0, 0)) if ref.x >= wx else Vector((w[0] - b[3] - margin, 0, 0))
+            else: d = Vector((0, w[4] - b[1] + margin, 0)) if ref.y >= wy else Vector((0, w[1] - b[4] - margin, 0))
+            move(it, d); moved += 1
+    bpy.context.view_layer.update()
     print('UNCLIP moved', moved)
     L = movers()
     for i in range(len(L)):
@@ -355,6 +365,67 @@ def unclip(margin=0.03, passes=4, extra=(), ref=None):
             if L[i][0] == 'case' and L[j][0] == 'case': continue
             ox = min(a_[3], c_[3]) - max(a_[0], c_[0]); oy = min(a_[4], c_[4]) - max(a_[1], c_[1]); oz = min(a_[5], c_[5]) - max(a_[2], c_[2])
             if ox > 0.08 and oy > 0.08 and oz > 0.08: print('OVERLAP', nm(L[i]), nm(L[j]), round(ox, 2), round(oy, 2))
+
+VEG = ('pine', 'tree', 'bush', 'grass', 'rock', 'fern', 'flower', 'plant', 'mushroom', 'stump')
+TERRAIN = ('Moor', 'Ground', 'Terrain', 'Beach', 'Sand', 'Field')
+NOSUPPORT = ('Prop_Vine', 'Laundry', 'Line', 'Fog', 'Beam', 'LightShaft', 'Water', 'Sea')   # nothing stands on these
+HANGING = ('lantern', 'lamp', 'banner', 'net', 'chandelier', 'laundry', 'flag', 'sconce', 'torch', 'mast', 'boat', 'bird', 'gull',
+           'poster', 'notice', 'hook', 'bell', 'shelf')
+def settle(max_move=0.6, embed_veg=0.06, skip=()):
+    """drop / lift every dressing prop (P_* roots) onto what is really under it (QA gate: nothing floats, nothing sinks).
+    Ordinary props rest on the highest surface under their footprint; vegetation and rocks only look at the terrain and sit a
+    little into it (never floating on a slope); hanging things (lanterns, banners, signs...) are left where they are."""
+    bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
+    roots = [o for o in bpy.data.objects if o.name.startswith('P_') and o.parent is None and o.name not in skip]
+    owner = {}
+    for r in roots:
+        for o in r.children_recursive: owner[o.name] = r.name
+    def bb(objs):
+        pts = [o.matrix_world @ Vector(c) for o in objs if o.type == 'MESH' for c in o.bound_box]
+        return (Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts))), Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))) if pts else None
+    roots.sort(key=lambda r: (bb([o for o in r.children_recursive]) or (Vector((0, 0, 0)),))[0].z)
+    moved = 0
+    for r in roots:
+        low = r.name.lower()
+        if any(h in low for h in HANGING) or any(s in low for s in globals().get('SETTLE_SKIP', ())): continue
+        kids = [o for o in r.children_recursive if o.type == 'MESH']; b = bb(kids)
+        if not b: continue
+        veg = any(v in low for v in VEG); hits = []
+        for fx in (0.2, 0.5, 0.8):
+            for fy in (0.2, 0.5, 0.8):
+                p = Vector((b[0].x + (b[1].x - b[0].x) * fx, b[0].y + (b[1].y - b[0].y) * fy, b[0].z + min(0.35, 0.5 * (b[1].z - b[0].z))))   # start inside the prop's lower half: things lying ON it are not under it
+                for _ in range(16):
+                    hit, loc, nrm, idx, ob, mw = sc.ray_cast(dg, p, Vector((0, 0, -1)), distance=60)
+                    if not hit: break
+                    n = ob.original.name if hasattr(ob, 'original') else ob.name
+                    mine = owner.get(n) == r.name
+                    other_prop = n in owner and not mine
+                    if mine or n.startswith(NOSUPPORT) or (veg and (other_prop or not n.startswith(TERRAIN))) or (other_prop and any(v in owner[n].lower() for v in VEG)):
+                        p = loc + Vector((0, 0, -0.002)); continue
+                    hits.append(loc.z); break
+        if not hits: continue
+        support = (min(hits) - embed_veg) if veg else max(hits)
+        dz = support - b[0].z
+        if abs(dz) < 0.004: continue
+        if abs(dz) > max_move: print('SETTLE_SKIP', r.name, round(dz, 2)); continue
+        r.location.z += dz; moved += 1; bpy.context.view_layer.update()
+    print('SETTLE moved', moved)
+
+def keep_clear(rects, axis=0, margin=0.05):
+    """move dressing props out of floor rectangles that must stay free (door steps, paths): [(x0, y0, x1, y1), ...]"""
+    bpy.context.view_layer.update()
+    for r in [o for o in bpy.data.objects if o.name.startswith('P_') and o.parent is None and not any(s in o.name for s in globals().get('SKIPCLEAR', ()))]:
+        pts = [o.matrix_world @ Vector(c) for o in r.children_recursive if o.type == 'MESH' for c in o.bound_box]
+        if not pts: continue
+        lo = Vector((min(p.x for p in pts), min(p.y for p in pts))); hi = Vector((max(p.x for p in pts), max(p.y for p in pts)))
+        if min(p.z for p in pts) > 0.5: continue
+        for (x0, y0, x1, y1) in rects:
+            if lo.x < x1 and hi.x > x0 and lo.y < y1 and hi.y > y0:
+                c = (lo[axis] + hi[axis]) / 2; a0, a1 = (x0, x1) if axis == 0 else (y0, y1)
+                d = (a1 - lo[axis] + margin) if c > (a0 + a1) / 2 else (a0 - hi[axis] - margin)
+                if axis == 0: r.location.x += d; lo.x += d; hi.x += d
+                else: r.location.y += d; lo.y += d; hi.y += d
+                print('KEEPCLEAR', r.name, round(d, 2))
 
 def flat_colors():
     """untextured materials → {name: [r, g, b, roughness]} so Unreal gets exact colours (FBX diffuse import is unreliable)"""
@@ -374,7 +445,9 @@ def build_details():
 
 def finish(cams, marks=None, world_rgb=(0.02, 0.025, 0.04), exposure=-0.4, drop=()):
     """preview render (cams[CAMNAME]) with ink lines, or in export mode write <OUT>.fbx + <OUT>.json and quit"""
-    unclip(ref=sum((Vector(c[0]) for c in cams.values()), Vector()) / max(1, len(cams))); build_details()
+    unclip(ref=sum((Vector(c[0]) for c in cams.values()), Vector()) / max(1, len(cams))); build_details(); settle()
+    if CAMNAME == 'qa':   # review gate: numbers + review images, then quit (tools/sets/set_qa.py)
+        exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'set_qa.py')).read(), globals()); set_qa(cams); raise SystemExit(0)
     for m in bpy.data.materials: toonify(m)
     if EXPORT:
         import json

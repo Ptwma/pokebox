@@ -90,14 +90,14 @@ for k, a in enumerate((200, 215, 232, 300, 318, 335, 20, 40, 120, 140)):
 # ------------------------------------------------------------------ dressing (owner: "a little full, not empty")
 D = random.Random(3)
 prop('Mug', (1.75, -1.3, 0.78), 0, height=0.1); prop('Bottle_1', (2.2, -1.25, 0.78), 0, height=0.28); prop('CandleStick', (1.55, -1.6, 0.78), 0, height=0.25)
-prop('Chest_Wood', (-2.9, -1.2, 0), 60, height=0.6)
-prop('Rope_3', (2.6, -0.8, 0.01), 30, height=0.2); prop('Bucket_Wooden_1', (-1.6, -2.7, 0), 0, height=0.4); prop('CandleStick_Stand', (-0.9, 2.6, 0), 0, height=1.3)
+prop('Chest_Wood', (-2.3, -0.95, 0), 60, height=0.6)   # QA: was through the sill/skirting
+prop('Bucket_Wooden_1', (-1.45, -2.45, 0), 0, height=0.4); prop('CandleStick_Stand', (-0.9, 2.6, 0), 0, height=1.3)
 prop('Stool', (-1.3, 0.2, 0), 0, height=0.45); book_stack((-1.3, 0.2, 0.45), 4, 20, rng=D)
 open_book((1.95, -1.55, 0.78), 200, w=0.3, d=0.22)          # the keeper's log, open
 papers((2.25, -1.0, 0.78), 4, 0.12, rng=D); candle((1.55, -1.1, 0.78), 0.12, 0.025)
 bookcase((-1.9, 2.3, 0), 39.7, w=0.9, h=1.3, d=0.32, levels=3, rng=D)   # a small shelf of charts and almanacs
-prop('Chair_1', (2.5, -2.2, 0), 210, height=0.95); prop('Pot_1', (0.2, 2.9, 1.4), 0, height=0.25)
-for k in range(3): prop('k_survival/fish', (-2.7 + k * 0.25, -2.2, 0.0), D.uniform(0, 360), height=0.1)
+prop('Chair_1', (2.3, -1.9, 0), 210, height=0.95); prop('Pot_1', (-0.2, 2.95, 1.4), 0, height=0.25)   # QA: pot was inside the tin funnel
+for k in range(3): prop('k_survival/fish', (-1.45 + (k - 1) * 0.07, -2.45 + (k % 2) * 0.05, 0.3 + k * 0.03), D.uniform(0, 360), height=0.1, tilt=(0, 25))   # QA: the catch sits in the bucket, not on the floor
 
 point((0, 0, 1.6), 1400, (1.0, 0.75, 0.42), 0.6)   # the lamp
 point((-2.4, -2.0, 2.4), 140, (0.6, 0.7, 1.0), 1.0)  # cool window fill

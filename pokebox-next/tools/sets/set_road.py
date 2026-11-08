@@ -25,6 +25,7 @@ for j in range(ny + 1):
         h = 0.0 if abs(y) < 2.6 else (0.06 * (abs(y) - 2.6)) ** 1.0 * (1 if y > 0 else 0.4)        # flat road bed, rising inland
         h += 0.18 * math.sin(x * 0.35 + 1.3) * math.sin(y * 0.4) * min(1, abs(y) / 4) + 0.04 * math.sin(x * 2.1 + y * 1.7)
         if y > 6: h += 0.07 * (y - 6) ** 1.25
+        if abs(y) < 2.3: h = min(h, -0.02)   # QA: the moor stays under the road bed (it poked through: z-fighting)
         row.append(bm.verts.new((x, y, h)))
     vs.append(row)
 for j in range(ny):
@@ -60,7 +61,7 @@ def drywall(xa, xb, y, h=0.9):
 drywall(X0 + 6, X1 - 1, 2.55); drywall(X0 + 6, X1 - 1, -2.55, 0.7)
 
 # ------------------------------------------------------------------ the town's north gate behind the road (stone arch, walls, a lamp)
-prop('k_pirate/castle-gate', (X0 + 4.0, 0, 0), 90, height=5.5)
+prop('k_pirate/castle-gate', (X0 + 4.0, 0, 0.045), 90, height=5.5)   # QA: threshold above the road bed
 for yy in (-5.2, 5.2): prop('k_pirate/castle-wall', (X0 + 4.0, yy, 0), 90, height=4.2)
 
 # ------------------------------------------------------------------ the milestone: a weathered stone with a carved, gilt-filled inscription
@@ -114,4 +115,5 @@ cams = {'wide': ((-3.0, -4.6, 1.7), (9.0, 1.5, 1.1), 26), 'stone': ((4.2, -0.6, 
         'north': ((-8.0, 0.4, 1.8), (24.0, 0.0, 1.5), 30)}
 marks = {'milestone': [600, -205, 0], 'lantern': [500, 210, 0], 'shrine': [1250, -330, 0], 'gate': [-1800, 0, 0], 'cart': [1750, 340, 0]}
 sea = box('SeaPreview', (300, 200, .1), (0, -100, -15.0), mat('SeaPreviewM', (0.05, 0.07, 0.11), 0.1))   # Unreal: the town's own sea
+SETTLE_SKIP = ('castle',)   # the town wall and gate are dug into the hill on purpose
 finish(cams, marks, world_rgb=(0.20, 0.14, 0.26), exposure=-0.3, drop=(sea,))

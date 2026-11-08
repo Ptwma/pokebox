@@ -43,8 +43,11 @@ for x in (-8, -3.5, 2.5, 7):
         box('Laundry', (R2.uniform(0.4, 0.8), 0.02, R2.uniform(0.5, 0.9)), (x, R2.uniform(-1.4, 1.4), z - 0.4), R2.choice([cloth1, cloth2]))
 
 # the market leftovers: crates, fish barrels, a cart, puddles
-for (x, y, r) in [(-9.5, 1.3, 10), (-9.0, 1.4, 40), (-9.2, 1.2, 0), (-2.6, -1.3, 20), (5.6, 1.3, 5), (6.2, 1.25, 30)]:
-    piece('Prop_Crate', (x, y, 0.0), r)
+_cr = {}
+for (x, y, r) in [(-9.75, 1.3, 10), (-8.55, 1.38, 4), (-2.6, -1.3, 20), (5.35, 1.3, 5), (6.6, 1.32, -3)]:   # QA: no two crates in each other
+    _cr[(x, y)] = piece('Prop_Crate', (x, y, 0.0), r)
+bpy.context.view_layer.update(); _ch = _cr[(-9.75, 1.3)].dimensions.z
+piece('Prop_Crate', (-9.15, 1.33, _ch + 0.002), 28)   # the third crate stacked on the first two
 for (x, y) in [(-6.8, -1.4), (-6.2, -1.5), (3.2, 1.4), (8.4, -1.4)]:
     cyl('Barrel', 0.32, 0.85, (x, y, 0.43), wood, 14)
     cyl('BarrelBand', 0.335, 0.06, (x, y, 0.2), iron, 14); cyl('BarrelBand', 0.335, 0.06, (x, y, 0.68), iron, 14)
@@ -112,24 +115,29 @@ for (y, rot) in ((HW, 180), (-HW, 0)):  # grime at the foot of the walls, drainp
         if DA.random() < 0.5: dbox(I, (w * 0.5, 0.013, h * 0.25), (x, yy + sg * 0.012, z + h * 0.3), mat('PosterRed', (0.45, 0.08, 0.06)))
 # gutter channel down the middle of the lane, cobble edging, a lobster pot and oars
 dbox(I, (LEN * 2, 0.25, 0.02), (0, 0, 0.005), grime)
+_south = [d[0] for d in DOORS if d[1] < 0]
+_lx = next((c for c in (-4.3, 1.3, -11.0, 9.8) if all(abs(c + 0.6 - dx) > 1.6 for dx in _south)), -4.3)   # QA: clear of the door steps and the bag
 for k in range(3):
-    x = -10.2 + k * 0.6
+    x = _lx + k * 0.6
     for j in range(6): dbox(I, (0.02, 0.02, 0.45), (x + 0.22 * math.cos(j * 1.047), -1.4 + 0.22 * math.sin(j * 1.047), 0.22), dark)
     for zz in (0.02, 0.44): dcyl(I, 0.24, 0.03, (x, -1.4, zz), dark, 12)
 for k in range(2): dbox(I, (0.06, 0.12, 2.6), (8.9 + k * 0.25, HW - 0.5, 1.25), wood, ry=-12 + k * 4)
 
 # ------------------------------------------------------------------ dressing (owner: "a little full, not empty")
 D = random.Random(9)
-prop('Stall_Cart_Empty', (7.6, 0.9, 0), 170, height=1.8); prop('FarmCrate_Apple', (-1.8, 1.45, 0), 10, height=0.5); prop('FarmCrate_Empty', (-1.2, 1.5, 0), 40, height=0.5)
+_north = [d[0] for d in DOORS if d[1] > 0]; _cx = next((c for c in (8.6, 7.6, -5.0, 1.5) if all(abs(c - dx) > 1.9 for dx in _north)), 8.6)
+prop('Stall_Cart_Empty', (_cx, 0.75, 0), 97, height=1.8)   # QA: long axis along the lane (at 170 it stuck through the house)   # QA: a spot with no door step under it; prop('FarmCrate_Apple', (-1.8, 1.45, 0), 10, height=0.5); prop('FarmCrate_Empty', (-1.2, 1.5, 0), 40, height=0.5)
 prop('Barrel_Apples', (9.6, -1.35, 0), 0, height=0.95); prop('Barrel_Holder', (-10.4, -1.2, 0), 90, height=1.0)
 for (x, y) in [(-7.8, 1.5), (2.2, -1.5), (5.0, -1.55)]: prop('k_pirate/crate-bottles', (x, y, 0), D.uniform(0, 90), height=0.6)
 for (x, y) in [(-5.0, -1.55), (0.4, 1.55), (6.8, -1.5)]: prop('Bucket_Metal', (x, y, 0), D.uniform(0, 360), height=0.38)
-for (x, y) in [(-2.8, -1.4), (3.9, 1.5)]: prop('k_survival/fish', (x, y, 0.62 if x > 0 else 0.0), D.uniform(0, 360), height=0.12)
+for (x, y, z) in [(-2.6, -1.3, 1.0), (3.2, 1.4, 0.9)]: prop('k_survival/fish', (x, y, z), D.uniform(0, 360), height=0.12)   # on the crate / barrel top (settle drops them)
 for (x, y) in [(-8.6, -1.6), (4.4, 1.6)]: prop('Rope_2', (x, y, 0.01), D.uniform(0, 360), height=0.2)
-for x in (-6.0, 3.0, 8.0): prop('Lantern_Wall', (x, 1.7, 2.5), 180, height=0.5)
+for x in (-2.9, 3.0, 8.0): prop('Lantern_Wall', (x, 1.7, 2.5), 180, height=0.5)   # QA: the -6 one hung inside the fishing net
 prop('k_survival/barrel-open', (-0.6, -1.5, 0), 0, height=0.9); prop('k_town/stall-stool', (-0.2, -0.9, 0), 0, height=0.5)
 prop('Bag', (-9.6, -1.5, 0), 20, height=0.5); prop('Pouch_Large', (6.4, 1.5, 0), 0, height=0.4)
 
 cams = {'wide': ((-11.2, -0.4, 1.7), (6.0, 0.3, 2.0), 24), 'spark': ((-3.0, -1.2, 1.2), (1.0, 0.2, 1.4), 30)}
 marks = {'start': [-950, 0, 0], 'spark': [100, 0, 0], 'exit': [1100, 0, 0]}
+SKIPCLEAR = ('Stall_Cart',)
+keep_clear([(d[0] - 0.62, (d[1] + face(d[1], d[2]) * 0.45) - 0.2, d[0] + 0.62, (d[1] + face(d[1], d[2]) * 0.45) + 0.2) for d in DOORS])   # door steps stay free
 finish(cams, marks, world_rgb=(0.05, 0.06, 0.08), exposure=0.0)
