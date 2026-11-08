@@ -42,9 +42,11 @@ S.prologue('Your book is blank.', 'What you write in it is up to you.')
 # =============================================================== SCENE 1 — Before the Rite
 S.scene('s1_harbour', 'Before the Rite',
     setf('rho', v=2), setf('gus', v=3), setf('omari', v=2), setf('rho_pages', v=0),
-    blanked(False), place(P(-420, 340) + ':15'), sun(-7, 250, 0.75, (1.0, .58, .36)), music('harbour'), {'amb': 'harbour'},
-    npc('gus', P(-250, 430), 200), npc('rho', P(760, 930), 160), npc('omari', P(-450, 330), 30), npc('bruce', P(480, 150), 250),
-    npc('zuri', P(-900, 220), 10), npc('sunita', P(-330, 140), 0), npc('kelvin', P(300, 430), 300),
+    # QA 2026-11-08: the old marks stood INSIDE the green stall (hero, Gus, Omari) → every close-up was a stall pillar. The open
+    # quay between the stalls and the pier (set x -2..4 m, y -2..-6 m) is the stage now; Zuri and Sunita keep to their stalls' fronts.
+    blanked(False), place(P(60, 460) + ':335'), sun(-7, 250, 0.75, (1.0, .58, .36)), music('harbour'), {'amb': 'harbour'},
+    npc('gus', P(190, 400), 155), npc('rho', P(760, 930), 160), npc('omari', P(-80, 420), 10), npc('bruce', P(460, 240), 230),
+    npc('zuri', P(-185, 360), 0), npc('sunita', P(-160, 200), 300), npc('kelvin', P(340, 520), 200),
     title('EPISODE ONE', 'The Unwritten'),
     nar('Tonight every sixteen-year-old in Lumen Harbor opens a Codex for the first time.'),
     nar('Tonight the Script decides who you are.'),
@@ -300,8 +302,8 @@ def clue(flag, *lines):
     return [setf(flag), add('CLUES'), lines, toast('A clue is written in your Codex.')]
 
 S.scene('s7_gate', 'Who Opened the Gate?',
-    setf('CLUES', v=0), place(P(-420, 340) + ':15'), sun(-25, 120, 0.7, (.85, .88, .95)),
-    npc('gus', P(780, 1150), 90), npc('kelvin', P(-950, 300), 0), npc('zuri', P(-820, 230), 20), npc('rho', P(120, 520), 180),
+    setf('CLUES', v=0), place(P(60, 460) + ':335'), sun(-25, 120, 0.7, (.85, .88, .95)),
+    npc('gus', P(780, 1150), 90), npc('kelvin', P(-930, 520), 0), npc('zuri', P(-185, 360), 20), npc('rho', P(120, 520), 180),
     npc('vale', P(-180, 620), 90), npc('bruce', SC(0, -1500), 0), npc('omari', SC(0, -1500), 0), {'amb': 'rain'}, music('suspense'), fade(0, 1.0),
     nar('Morning. The harbour in daylight, silent. White figures everywhere, frozen mid-step.'),
     hub(objective='Find out who opened the sea gate', exit='seen.square', spots=[

@@ -619,9 +619,13 @@ void APBXDirector::StoryShot(const FString& Who)
 	}
 	if (Best > -1e8f) ShotSide = FMath::Sign(FVector::DotProduct(Eye - Mid, FaceRight * (Spk == Player ? 1.f : -1.f)));
 	else
-	{   // nothing clear at all: straight in front of the face, as close as the room allows
-		Look = Hs; Fov = 30.f; Eye = Hs + FaceDir * 120.f;
-		if (GetWorld()->SweepSingleByChannel(Hit, Hs, Eye, FQuat::Identity, ECC_Camera, Ball, Q)) Eye = Hs + FaceDir * FMath::Max(45.f, Hit.Distance - 15.f);
+	{   // nothing clear at eye level: look down on the face from above the clutter, then straight in front (never closer than 90 cm)
+		Look = Hs; Fov = 38.f; Eye = Hs + FaceDir * 150.f + FVector(0, 0, 80.f);
+		if (Inside(Eye) || !Free(Eye, Hs))
+		{
+			Eye = Hs + FaceDir * 140.f;
+			if (GetWorld()->SweepSingleByChannel(Hit, Hs, Eye, FQuat::Identity, ECC_Camera, Ball, Q)) Eye = Hs + FaceDir * FMath::Max(90.f, Hit.Distance - 15.f);
+		}
 	}
 	const float Clear = Tried ? float(Ok) / Tried : 0.f;
 	SLOG("[PBXSTORY] shot %s K0 %d clear %.2f eye %s look %s Hs %s Hl %s", *Who, K0, Clear, *Eye.ToCompactString(), *Look.ToCompactString(), *Hs.ToCompactString(), *Hl.ToCompactString());
