@@ -274,7 +274,7 @@ void APBXDirector::StoryPump()
 			for (TActorIterator<AActor> It(GetWorld()); It; ++It) if (It->ActorHasTag(TEXT("PBX_SkyDome")))
 				if (UStaticMeshComponent* DC = It->FindComponentByClass<UStaticMeshComponent>())
 					if (UMaterialInstanceDynamic* MD = DC->CreateDynamicMaterialInstance(0))
-						MD->SetScalarParameterValue(TEXT("Exposure"), bNight ? .018f : FMath::Clamp(.25f + .75f * (float)K, .25f, 1.f));
+						MD->SetScalarParameterValue(TEXT("Exposure"), bNight ? .018f : FMath::Clamp(.15f + .5f * (float)K, .15f, .65f));
 			if (bNight) Pitch = 12.0;
 			for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
 			{

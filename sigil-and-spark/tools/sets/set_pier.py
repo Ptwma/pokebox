@@ -336,6 +336,8 @@ if EXPORT:
     for o in [o for o in bpy.data.objects if o.type == 'MESH' and o.parent is not None and o.parent.type == 'EMPTY']:
         mw = o.matrix_world.copy(); o.parent = None; o.matrix_world = mw
     drop = [o for o in bpy.data.objects if o.type in ('CAMERA', 'LIGHT') or o is fog or o is beam or o is water]   # Unreal: the town's own sea shows instead (no seam)
+    # the low-poly preview lighthouse on its rock stood in the real sea of the Unreal harbour like a toy (QA 2026-11-09): out
+    drop += [o for o in (tower, lamp_room, cap, rock) if o] + [o for o in bpy.data.objects if o.get('band')]
     lights = [{'pos': [round(o.location.x * 100, 1), round(-o.location.y * 100, 1), round(o.location.z * 100, 1)], 'energy': o.data.energy, 'color': list(o.data.color), 'type': o.data.type} for o in bpy.data.objects if o.type == 'LIGHT' and o.data.type == 'POINT']
     for o in drop: bpy.data.objects.remove(o)
     fbx = os.path.splitext(OUT)[0] + '.fbx'; os.makedirs(os.path.dirname(fbx), exist_ok=True)
