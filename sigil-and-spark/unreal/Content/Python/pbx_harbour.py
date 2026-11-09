@@ -89,7 +89,7 @@ def dress(reimport_merged=False):
         a.set_actor_label(f'{TAG}{i:02d}_{name}'); a.set_actor_scale3d(unreal.Vector(s, s, s)); n += 1
     log('placed', n)
 
-def sky(hdri='small_harbour_sunset_skyonly', exposure=1.0, rebuild=False, yaw=0.0):
+def sky(hdri='small_harbour_sunset_skyonly', exposure=1.0, rebuild=False, yaw=0.0, center=None, label='SkyDome'):
     """the photographed sky: the HDRI on an unlit, two-sided dome (radius 4 km) centred on the stage"""
     f = glob.glob(os.path.join(PH, 'hdri', hdri + '*.exr'))
     if not f: log('hdri not downloaded', hdri); return
@@ -134,10 +134,11 @@ def sky(hdri='small_harbour_sunset_skyonly', exposure=1.0, rebuild=False, yaw=0.
     MEL.set_material_instance_texture_parameter_value(mi, 'Sky', tex); MEL.set_material_instance_scalar_parameter_value(mi, 'Exposure', exposure); MEL.set_material_instance_scalar_parameter_value(mi, 'Yaw', yaw)
     MEL.update_material_instance(mi); EAL.save_asset(mip)
     for a in EAS.get_all_level_actors():
-        if a.get_actor_label() == TAG + 'SkyDome': EAS.destroy_actor(a)
+        if a.get_actor_label() == TAG + label: EAS.destroy_actor(a)
     sph = unreal.load_asset('/Engine/BasicShapes/Sphere')
-    d = EAS.spawn_actor_from_object(sph, unreal.Vector(STAGE.x, STAGE.y, STAGE.z), unreal.Rotator(0, 0, 0))
-    d.set_actor_label(TAG + 'SkyDome'); d.set_actor_scale3d(unreal.Vector(8000, 8000, 8000))   # 100 cm sphere x 8000 = 4 km radius
+    c0 = center or STAGE
+    d = EAS.spawn_actor_from_object(sph, unreal.Vector(c0.x, c0.y, c0.z), unreal.Rotator(0, 0, 0))
+    d.set_actor_label(TAG + label); d.set_actor_scale3d(unreal.Vector(8000, 8000, 8000))   # 100 cm sphere x 8000 = 4 km radius
     c = d.get_component_by_class(unreal.StaticMeshComponent)
     c.set_material(0, mi); c.set_editor_property('cast_shadow', False); c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     log('sky', hdri, 'cube' if cube else 'latlong')

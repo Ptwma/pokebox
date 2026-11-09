@@ -282,8 +282,17 @@ void APBXDirector::StoryPump()
 			FPBXSpot P; bool bOk = false; bool bFloorPlace = false;
 			{	// video sets (owner 2026-11-08): on a stage the old town's mountain ring and foliage would float in the sky
 				// around the set → everything tagged PBX_Town (pbx_harbour.tag_town) hides while the scene is on a stage
+				// and the OTHER sets (300 m apart) would float on the horizon: actors tagged PBX_Stage_<Name> (pbx_allsets.tag_stages)
+				// show only while their own stage plays
 				const bool bStage = S.StartsWith(TEXT("stage:"));
-				for (TActorIterator<AActor> It(GetWorld()); It; ++It) if (It->ActorHasTag(TEXT("PBX_Town"))) It->SetActorHiddenInGame(bStage);
+				TArray<FString> Sp; S.ParseIntoArray(Sp, TEXT(":"));
+				const FName Mine = bStage && Sp.Num() >= 2 ? FName(*(TEXT("PBX_Stage_") + Sp[1])) : NAME_None;
+				for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+				{
+					if (It->ActorHasTag(TEXT("PBX_Town"))) { It->SetActorHiddenInGame(bStage); continue; }
+					for (const FName& Tg : It->Tags)
+						if (Tg.ToString().StartsWith(TEXT("PBX_Stage_"))) { It->SetActorHiddenInGame(bStage && Tg != Mine); break; }
+				}
 			}
 			if (S.StartsWith(TEXT("door:")))
 			{

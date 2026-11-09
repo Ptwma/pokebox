@@ -163,6 +163,8 @@ def apply(name='Pier', extra=None):
         if hit is None: continue
         if hit == 'IRON': sm.set_material(i, flat('RealIron', (.045, .043, .045), .42)); done += 1; continue
         if hit == 'BUOY': sm.set_material(i, flat('RealBuoy', (.75, .12, .06), .55)); done += 1; continue
+        if 'plaster' in key and name != 'Pier':   # inside / in the alley: plain lime plaster (the painted harbour houses are the Pier's)
+            sm.set_material(i, inst('white_rough_plaster', 2.0, (.95, .92, .86), 1.0)); done += 1; continue
         if 'plaster' in key:   # one tint per house (the kit names carry the house tag: _h1, _h20 ...)
             hs = re.findall(r'h(\d+)', n.lower()); k = (int(hs[0]) if hs else 0) % len(PLASTERS)
             tx, sz, tn = PLASTERS[k]; sm.set_material(i, inst(tx, sz, tn, 1.0)); done += 1; continue
