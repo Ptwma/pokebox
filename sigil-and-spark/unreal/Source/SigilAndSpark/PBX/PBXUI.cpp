@@ -388,7 +388,12 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 			.Visibility_Lambda([this] { return M->FilmA > .001f && M->FilmBrush.IsValid() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 			[
 				SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
-				[ SNew(SImage).Image_Lambda([this] { return M->FilmBrush.Get(); }).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->FilmA)); }) ]
+				[ SNew(SImage).Image_Lambda([this] { return M->FilmBrush.Get(); }).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->FilmA)); })
+					// video mode (owner: choices over the playing scene, never a frozen frame): while a choice / hub holds the last
+					// frame of the clip, the picture keeps moving — a slow push-in with a little drift, like a camera breathing
+					.RenderTransform_Lambda([this] { const float k = FMath::SmoothStep(0.f, 14.f, M->FilmHold); const float s = 1.f + .045f * k;
+						return FSlateRenderTransform(FScale2D(s), FVector2D(M->ViewSize.X * .006f * FMath::Sin(M->FilmHold * .21f) * k, -M->ViewSize.Y * .004f * k)); })
+					.RenderTransformPivot(FVector2D(.5f, .45f)) ]
 			]
 		]
 
@@ -559,14 +564,14 @@ void SPBXHud::Construct(const FArguments& Args, TSharedPtr<FPBXUIModel> InModel)
 		// ---------------- choice / menus (center): an ink vignette darkens the world behind the page
 		+ SOverlay::Slot()
 		[
-			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->bMenuLeft ? .35f : M->bStoryChoice ? .45f : .7f)); }).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			SNew(SImage).Image(Codex(TEXT("ui_vignette"), FVector2f(960.f, 540.f))).ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(1, 1, 1, M->bMenuLeft ? .35f : M->bStoryChoice ? .22f : .7f)); }).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
 		]
 		+ SOverlay::Slot().Padding(0, 24)   // r67: scaled down to fit when a list is taller than the screen (Your Codex, long story choices)
 		[
 			SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::DownOnly).HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
 			SNew(SVerticalBox).Visibility_Lambda([this] { return (M->Mode == EPBXUIMode::Choice || M->Mode == EPBXUIMode::Menu) ? EVisibility::Visible : EVisibility::Collapsed; })
-			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, M->bStoryChoice ? M->ViewSize.Y * .06f : 0.f)); })
+			.RenderTransform_Lambda([this] { return FSlateRenderTransform(FVector2D(M->bMenuLeft ? -M->ViewSize.X * .24f : 0.f, M->bStoryChoice ? M->ViewSize.Y * .27f : 0.f)); })   // video mode: story choices low (Telltale), the faces stay free
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceTitle); }).Font(PBXUI::Font(TEXT("title"), 68, 4)).ColorAndOpacity(IvoryC)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 22)[SNew(STextBlock).Text_Lambda([this] { return FText::FromString(M->ChoiceSub); }).Font(PBXUI::Font(TEXT("italic"), 28, 2)).ColorAndOpacity(IvoryC).Justification(ETextJustify::Center)]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[SAssignNew(ChoiceHost, SBox)]
@@ -770,6 +775,41 @@ TSharedRef<SWidget> SPBXHud::MakeOptions()
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
 	TSharedRef<SVerticalBox> Col = SNew(SVerticalBox);
 	const bool bC = !M->bCards && (M->Options.Num() > 5 || M->bStoryChoice);   // story choices: compact rows (3-4 lines must fit under the spoken line)   // long lists (Settings, Pause) use compact rows
+	if (M->bStoryChoice && !M->bCards)
+	{	// video mode (Telltale / Dispatch): a dark ink band per option over the scene, its number on a wax seal, ivory words;
+		// hover or keys pick the highlight (rubric-red bar + brighter band), click / Enter / 1-4 choose
+		for (int32 i = 0; i < M->Options.Num(); i++)
+		{
+			const FPBXOption& O = M->Options[i];
+			auto OnDown = [this, i](const FGeometry&, const FPointerEvent&) { M->Selected = i; if (M->OnPick && M->Options.IsValidIndex(i) && M->Options[i].bEnabled) M->OnPick(i); return FReply::Handled(); };
+			auto OnMove = [this, i](const FGeometry&, const FPointerEvent&) { if (M->Options.IsValidIndex(i) && M->Options[i].bEnabled) M->Selected = i; return FReply::Unhandled(); };
+			auto Band = [this, i] { const bool bS = M->Selected == i; const bool bOn = M->Options.IsValidIndex(i) && M->Options[i].bEnabled;
+				return FSlateColor(FLinearColor(InkC.R, InkC.G, InkC.B, !bOn ? .35f : bS ? .80f : .58f)); };
+			Col->AddSlot().AutoHeight().Padding(0, 4)
+			[
+				SNew(SBox).WidthOverride(760)
+				.RenderTransform_Lambda([this, i] { const bool bS = M->Selected == i; return FSlateRenderTransform(FVector2D(bS ? 10.f : 0.f, 0.f)); })
+				[
+					SNew(SBorder).BorderImage(White()).BorderBackgroundColor_Lambda(Band).Padding(0).OnMouseButtonDown_Lambda(OnDown)
+					.OnMouseMove_Lambda(OnMove)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth()
+						[ SNew(SBox).WidthOverride(6)[ SNew(SImage).Image(White()).ColorAndOpacity_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : FLinearColor(0, 0, 0, 0)); }) ] ]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(14, 8, 14, 8)
+						[ SNew(SBox).WidthOverride(40).HeightOverride(40)
+							[ SNew(SBorder).BorderImage(Seal()).BorderBackgroundColor_Lambda([this, i] { return FSlateColor(M->Selected == i ? CrimsonC : FLinearColor(.30f, .08f, .06f, .9f)); }).HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(0)
+								[ SNew(STextBlock).Text(FText::AsNumber(i + 1)).Font(PBXUI::Font(TEXT("title"), 20)).ColorAndOpacity(IvoryC) ] ] ]
+						+ SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center).Padding(0, 10, 18, 10)
+						[ SNew(STextBlock).Text(FText::FromString(O.Title)).Font(PBXUI::Font(TEXT("bold"), 27)).WrapTextAt(640.f)
+							.ColorAndOpacity_Lambda([this, i] { const bool bOn = M->Options.IsValidIndex(i) && M->Options[i].bEnabled; return FSlateColor(!bOn ? FLinearColor(.6f, .58f, .55f, .7f) : M->Selected == i ? FLinearColor::White : IvoryC * .92f); })
+							.ShadowOffset(FVector2D(1.5f, 1.5f)).ShadowColorAndOpacity(FLinearColor(0, 0, 0, .8f)) ]
+					]
+				]
+			];
+		}
+		return Col;
+	}
 	for (int32 i = 0; i < M->Options.Num(); i++)
 	{
 		const FPBXOption& O = M->Options[i];
@@ -835,7 +875,8 @@ TSharedRef<SWidget> SPBXHud::MakeMoves()
 void SPBXHud::Tick(const FGeometry& G, const double Time, const float Dt)
 {
 	SCompoundWidget::Tick(G, Time, Dt);
-	M->ViewSize = FVector2D(G.GetLocalSize()); M->Time += Dt; M->PageInk = FMath::Max(0.f, M->PageInk - Dt / 1.4f);
+	M->ViewSize = FVector2D(G.GetLocalSize()); M->Time += Dt;
+	M->FilmHold = (M->FilmA > .001f && (M->Mode == EPBXUIMode::Choice || M->bHubLook)) ? M->FilmHold + Dt : FMath::Max(0.f, M->FilmHold - Dt * 8.f); M->PageInk = FMath::Max(0.f, M->PageInk - Dt / 1.4f);
 	PBXUI::TickSparks(*M, Dt);
 	M->MovesIn = M->bMoves ? FMath::Min(1.f, M->MovesIn + Dt * 4.f) : 0.f;
 	// a list built in the same frame its panel turns visible can lay out stacked (no geometry yet): rebuild it once more a few frames later

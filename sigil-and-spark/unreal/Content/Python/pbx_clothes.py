@@ -123,5 +123,6 @@ def import_all(ids=None):
         parts.append({'name': 'Clothes', 'mesh': p, 'face': False})
         man[cid]['parts'] = parts; done.append(cid)
     open(_manifest_path(), 'w', encoding='utf-8').write(json.dumps(man, indent=1))
+    refresh_materials(done)   # the import resets the slots after import_one assigned them (QA: WorldGrid on 8 of 9) → assign again
     log('manifest updated', done)
     return done
