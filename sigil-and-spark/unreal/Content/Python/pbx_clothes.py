@@ -76,7 +76,7 @@ def import_one(cid):
     mats = sk.get_editor_property('materials')
     for i, m in enumerate(mats):
         slot = str(m.get_editor_property('material_slot_name'))
-        g = next((x for x in info if slot.endswith(x['kind']) or x['kind'] in slot), info[i] if i < len(info) else None)
+        g = next((x for x in info if slot.endswith(x['kind'])), None) or next((x for x in info if x['kind'] in slot), info[i] if i < len(info) else None)
         if g: m.set_editor_property('material_interface', _fabric_mi(cid, g['kind'], g['fabric'], g['tint']))
     sk.set_editor_property('materials', mats); EAL.save_asset(path)
     log('imported', cid, len(mats), 'garments')

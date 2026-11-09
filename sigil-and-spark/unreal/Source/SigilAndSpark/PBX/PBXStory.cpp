@@ -39,6 +39,8 @@
 #include "CollisionQueryParams.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Sound/SoundBase.h"
+#include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogPBXStory, Log, All);
 #define SLOG(Fmt, ...) UE_LOG(LogPBXStory, Display, TEXT(Fmt), ##__VA_ARGS__)
@@ -267,6 +269,12 @@ void APBXDirector::StoryPump()
 			{ if (MoodBack.bSky) SC->SetIntensity(MoodBack.SkyI * (bNight ? .35f : 1.f)); break; }
 			for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It) if (UExponentialHeightFogComponent* FC = It->GetComponent())
 			{ FC->SetFogInscatteringColor(bNight ? FLinearColor(.05f, .06f, .10f) : FLinearColor(.40f, .42f, .47f)); break; }
+			// the photographed sky domes (pbx_harbour.sky, tag PBX_SkyDome) are unlit: a sunset photo stayed bright in the night
+			// scenes (the alley in fog, the lamp room) → the dome's Exposure follows the scene's sun
+			for (TActorIterator<AActor> It(GetWorld()); It; ++It) if (It->ActorHasTag(TEXT("PBX_SkyDome")))
+				if (UStaticMeshComponent* DC = It->FindComponentByClass<UStaticMeshComponent>())
+					if (UMaterialInstanceDynamic* MD = DC->CreateDynamicMaterialInstance(0))
+						MD->SetScalarParameterValue(TEXT("Exposure"), bNight ? .018f : FMath::Clamp(.25f + .75f * (float)K, .25f, 1.f));
 			if (bNight) Pitch = 12.0;
 			for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
 			{

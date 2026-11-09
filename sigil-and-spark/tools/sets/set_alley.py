@@ -52,8 +52,14 @@ for (x, y) in [(-6.8, -1.4), (-6.2, -1.5), (3.2, 1.4), (8.4, -1.4)]:
     cyl('Barrel', 0.32, 0.85, (x, y, 0.43), wood, 14)
     cyl('BarrelBand', 0.335, 0.06, (x, y, 0.2), iron, 14); cyl('BarrelBand', 0.335, 0.06, (x, y, 0.68), iron, 14)
 piece('Prop_Wagon', (-4.2, 0.75, 0), 97)   # QA: along the lane (at 10 deg its shafts went through the house)
-for (x, y, s) in [(-1.0, 0.2, 1.2), (1.8, -0.5, 0.9), (4.6, 0.4, 1.4), (-7.4, -0.2, 0.8)]:
-    d = cyl('Puddle', s, 0.006, (x, y, 0.012), puddle, 24); d.scale.y = s * 0.6
+# puddles: irregular blobs of a few overlapping ellipses each, mostly along the gutter and in the cobble dips (QA: the
+# perfect ellipses read as blue discs)
+PR = random.Random(23)
+for (x, y, s) in [(-1.0, 0.15, 0.9), (1.8, -0.35, 0.6), (4.6, 0.3, 1.0), (-7.4, -0.15, 0.6), (-4.9, 1.2, 0.35), (7.6, -1.1, 0.4), (9.9, 0.1, 0.7)]:
+    for k in range(PR.randint(3, 5)):
+        r = s * PR.uniform(0.35, 0.7)
+        d = cyl('Puddle', r, 0.004, (x + PR.uniform(-s, s) * 0.6, y + PR.uniform(-s, s) * 0.25, 0.010 + k * 0.0004), puddle, 20)
+        d.scale.y = r * PR.uniform(0.45, 0.8); d.rotation_euler.z = PR.uniform(0, math.pi)
 
 # the red lamp halfway down (key light) + a cold fill from the open end
 box('LampArm', (0.04, 0.5, 0.04), (0.6, 1.75, 3.3), iron); box('LampFrame', (0.24, 0.24, 0.32), (0.6, 1.5, 3.1), iron)
@@ -115,6 +121,10 @@ for (y, rot) in ((HW, 180), (-HW, 0)):  # grime at the foot of the walls, drainp
         if DA.random() < 0.5: dbox(I, (w * 0.5, 0.013, h * 0.25), (x, yy + sg * 0.012, z + h * 0.3), mat('PosterRed', (0.45, 0.08, 0.06)))
 # gutter channel down the middle of the lane, cobble edging, a lobster pot and oars
 dbox(I, (LEN * 2, 0.25, 0.02), (0, 0, 0.005), grime)
+for sy in (-1, 1):   # the gutter's kerb stones, laid in short irregular lengths
+    xx = -LEN
+    while xx < LEN:
+        ln = DA.uniform(0.35, 0.6); dbox(I, (ln - 0.02, 0.1, 0.05), (xx + ln / 2, sy * 0.17, 0.02), mat('StepStone', (0.40, 0.38, 0.35)), rz=DA.uniform(-2, 2)); xx += ln
 _south = [d[0] for d in DOORS if d[1] < 0]
 _lx = next((c for c in (-4.3, 1.3, -11.0, 9.8) if all(abs(c + 0.6 - dx) > 1.6 for dx in _south)), -4.3)   # QA: clear of the door steps and the bag
 for k in range(3):
@@ -134,6 +144,9 @@ for (x, y) in [(-4.95, -0.95), (0.4, 1.55), (6.8, -1.5)]: prop('Bucket_Metal', (
 for (x, y, z) in [(-2.6, -1.1, 1.2), (3.2, 1.4, 0.9)]: prop('k_survival/fish', (x, y, z), D.uniform(0, 360), height=0.12)   # on the crate / barrel top (settle drops them)
 for (x, y) in [(-8.6, -1.6), (4.4, 1.6)]: prop('Rope_2', (x, y, 0.01), D.uniform(0, 360), height=0.2)
 for x in (-2.9, 3.0, 8.0): prop('Lantern_Wall', (x, 1.7, 2.5), 180, height=0.5)   # QA: the -6 one hung inside the fishing net
+# warm practical light from those lanterns and from a few doorways: pools of light on the wet stones (night scene)
+for x in (-2.9, 3.0, 8.0): point((x, 1.35, 2.45), 400, (1.0, 0.58, 0.26), 0.12)
+for (x, y, rot) in DOORS[::3]: point((x, y + face(y, rot) * 0.9, 2.3), 150, (1.0, 0.55, 0.25), 0.3)
 prop('k_survival/barrel-open', (-0.6, -1.5, 0), 0, height=0.9); prop('k_town/stall-stool', (-0.2, -0.9, 0), 0, height=0.5)
 prop('Bag', (-9.6, -1.5, 0), 20, height=0.5); prop('Pouch_Large', (6.4, 1.5, 0), 0, height=0.4)
 

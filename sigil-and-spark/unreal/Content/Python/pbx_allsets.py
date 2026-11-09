@@ -51,6 +51,14 @@ def tag_stages():
         a.set_editor_property('tags', [unreal.Name(t) for t in tags]); n += 1
     print('[allsets] stage-tagged', n)
 
+def tag_domes():
+    EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem); n = 0
+    for a in EAS.get_all_level_actors():
+        if a.get_actor_label().startswith('HBR_SkyDome'):
+            tags = [str(x) for x in a.get_editor_property('tags')]
+            if 'PBX_SkyDome' not in tags: a.set_editor_property('tags', [unreal.Name(x) for x in tags + ['PBX_SkyDome']]); n += 1
+    print('[allsets] domes tagged', n)
+
 def run():
     importlib.reload(R); importlib.reload(H)
     R.textures()

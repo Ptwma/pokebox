@@ -38,6 +38,19 @@ OUTFITS = {
     'kid':      [('trousers', 'ribbed_corduroy', (.30, .32, .40)), ('shirt_short', 'cotton_jersey', (.25, .55, .80)), ('shoes', 'brown_leather', (.26, .18, .12))],
 }
 
+# detail pass (owner 2026-11-09 19:19: "the clothes want a little more detail"): a raised TRIM band in a second material
+# along every hem / cuff / neckline, a front placket with buttons on shirts, vests and coats, a waistband (belt) on
+# trousers and skirts, dark soles on footwear, and soft fabric folds (low-frequency displacement) everywhere.
+# kind -> (trim fabric or None = same fabric, trim tint or a multiplier on the garment tint, band m, buttons, button radius m)
+TRIM = {
+    'shirt_long':  (None, 0.72, 0.018, 6, 0.0055), 'shirt_short': (None, 0.72, 0.018, 5, 0.0055),
+    'vest':        ('fabric_leather_01', (.10, .07, .05), 0.016, 5, 0.007),
+    'coat':        ('fabric_leather_01', (.09, .07, .06), 0.026, 5, 0.011),
+    'robe':        ('velour_velvet', (.55, .42, .16), 0.03, 0, 0),
+    'trousers':    ('brown_leather', (.14, .09, .06), 0.016, 0, 0), 'skirt': ('brown_leather', (.16, .10, .07), 0.016, 0, 0),
+    'boots':       ('brown_leather', (.06, .045, .035), 0.012, 0, 0), 'shoes': ('brown_leather', (.06, .045, .035), 0.010, 0, 0),
+}
+
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=BODY, use_anim=False, ignore_leaf_bones=True, automatic_bone_orientation=False)
 arm = next(o for o in bpy.context.scene.objects if o.type == 'ARMATURE')
@@ -78,6 +91,17 @@ _m = lambda k, f=lambda a: sum(a) / len(a): f(_acc[k]) if _acc.get(k) else None
 LM = {'ground': Z0, 'ankle': (_m('foot', max) or Z0 + 0.09) - 0.01, 'knee': (_m('calf', max) or Z0 + 0.45),
       'hip': _m('pelvis') or Z0 + 0.85, 'neck': _m('neck', min) or _m('spine05', max) or Z1 - 0.02}
 print('LANDMARKS', {k: round(v - Z0, 3) for k, v in LM.items()})
+# body axes: forward = heel→toe (the ball of the foot lies in front of the ankle), the centre line from the spine
+_fa, _ba, _sp = [], [], []
+for v in body.data.vertices:
+    d = _dom(v); p = body.matrix_world @ v.co
+    if d.startswith('foot'): _fa.append(p)
+    elif d.startswith('ball'): _ba.append(p)
+    elif d.startswith('spine'): _sp.append(p)
+_avg = lambda a: sum(a, Vector()) / len(a) if a else Vector()
+FWD = (_avg(_ba) - _avg(_fa)) if _fa and _ba else Vector((0, -1, 0)); FWD.z = 0; FWD = FWD.normalized() if FWD.length > 1e-6 else Vector((0, -1, 0))
+LAT = FWD.cross(Vector((0, 0, 1))).normalized(); CEN = _avg(_sp) if _sp else Vector()
+print('AXES fwd', tuple(round(c, 2) for c in FWD))
 
 def _arm_ok(v, mode):
     """sleeves by skin weight: long = upper + lower arm, short = upper arm, none = no arm at all; hands never"""
@@ -143,6 +167,10 @@ def make(kind, fabric, tint, layer):
     # skirt for robes / coats / skirts: a flared tube from the lowest ring of the shell down to the hem
     if spec.get('skirt') is not None:
         add_skirt(g, LM[spec['skirt'][0]] + spec['skirt'][1])
+    details(g, kind, spec)
+    tx = bpy.data.textures.get('PBX_Folds') or bpy.data.textures.new('PBX_Folds', 'CLOUDS')
+    tx.noise_scale = 0.09; tx.noise_depth = 1
+    dp = g.modifiers.new('folds', 'DISPLACE'); dp.texture = tx; dp.texture_coords = 'GLOBAL'; dp.strength = 0.006 / SCALE; dp.mid_level = 0.5
     so = g.modifiers.new('thick', 'SOLIDIFY'); so.thickness = 0.004 / SCALE; so.offset = 1.0
     sub = g.modifiers.new('sub', 'SUBSURF'); sub.levels = 1; sub.render_levels = 1
     # the armature modifier must stay LAST so the export keeps the skinning
@@ -152,9 +180,61 @@ def make(kind, fabric, tint, layer):
         while g.modifiers[-1] != am: bpy.ops.object.modifier_move_down(modifier=am.name)
     g['kind'] = kind
     mat = bpy.data.materials.new(f'M_{CID}_{kind}'); mat['fabric'] = fabric; mat['tint'] = list(tint)
-    g.data.materials.clear(); g.data.materials.append(mat)
-    for p in g.data.polygons: p.material_index = 0
+    tf, tt, *_ = TRIM.get(kind, (None, 0.72, 0, 0, 0))
+    trim = bpy.data.materials.new(f'M_{CID}_{kind}_trim'); trim['fabric'] = tf or fabric
+    trim['tint'] = [c * tt for c in tint] if isinstance(tt, float) else list(tt)
+    keep_idx = [p.material_index for p in g.data.polygons]   # details() marked the trim faces with index 1
+    g.data.materials.clear(); g.data.materials.append(mat); g.data.materials.append(trim)
+    for p, k in zip(g.data.polygons, keep_idx): p.material_index = 1 if k == 1 else 0
     return g
+
+def details(g, kind, spec):
+    if kind not in TRIM: return
+    tf, tt, band, nbut, brad = TRIM[kind]
+    me = g.data; M = g.matrix_world; Mi = M.inverted(); R3 = M.to_3x3().normalized()
+    bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table(); bm.normal_update()
+    defl = bm.verts.layers.deform.verify()
+    for f in bm.faces: f.material_index = 0   # the body copy carries its own slot indices
+    W = {v: M @ v.co for v in bm.verts}
+    from mathutils.kdtree import KDTree
+    bverts = [v for v in bm.verts if any(e.is_boundary for e in v.link_edges)]
+    kd = KDTree(max(1, len(bverts)))
+    for i, v in enumerate(bverts): kd.insert(W[v], i)
+    kd.balance()
+    z_hi = LM.get(spec['hi'][0], Z1) + spec['hi'][1] if 'hi' in spec else 1e9
+    band_v = set()
+    for v in bm.verts:
+        p = W[v]; d = kd.find(p)[2] if bverts else 1e9
+        if kind in ('trousers', 'skirt') and abs(p.z - z_hi) < 0.045: band_v.add(v)        # waistband / belt
+        elif kind in ('boots', 'shoes') and p.z < Z0 + 0.022: band_v.add(v)               # sole
+        elif d < band: band_v.add(v)                                                      # hems, cuffs, neckline
+        elif nbut and abs((p - CEN).dot(LAT)) < 0.014 and (p - CEN).dot(FWD) > 0 and p.z < z_hi - 0.03:   # front placket
+            band_v.add(v)
+    lift = 0.0028 / SCALE
+    nrm = {v: v.normal.copy() for v in band_v}
+    for v in band_v: v.co += nrm[v] * lift
+    for f in bm.faces:
+        if all(v in band_v for v in f.verts): f.material_index = 1
+    # buttons down the placket: small discs on the surface, skinned like the cloth under them
+    if nbut:
+        cand = [v for v in bm.verts if abs((W[v] - CEN).dot(LAT)) < 0.01 and (W[v] - CEN).dot(FWD) > 0]
+        if cand:
+            zs_ = [W[v].z for v in cand]; z_lo, z_top = min(zs_) + 0.05, min(max(zs_), z_hi) - 0.07
+            for k in range(nbut):
+                zt = z_lo + (z_top - z_lo) * k / max(1, nbut - 1)
+                v0 = min(cand, key=lambda v: abs(W[v].z - zt))
+                n = (R3 @ v0.normal).normalized(); p0 = W[v0] + n * (0.0045 + 0.0028)
+                ax = n.orthogonal().normalized(); ay = n.cross(ax)
+                ring_b, ring_t = [], []
+                for i in range(10):
+                    a_ = math.tau * i / 10; o = (ax * math.cos(a_) + ay * math.sin(a_)) * brad
+                    ring_b.append(bm.verts.new(Mi @ (p0 + o))); ring_t.append(bm.verts.new(Mi @ (p0 + o * 0.85 + n * brad * 0.45)))
+                for vv in ring_b + ring_t:
+                    for gi_, w in v0[defl].items(): vv[defl][gi_] = w
+                for i in range(10):
+                    j = (i + 1) % 10; bm.faces.new((ring_b[i], ring_b[j], ring_t[j], ring_t[i])).material_index = 1
+                bm.faces.new(ring_t).material_index = 1
+    bm.normal_update(); bm.to_mesh(me); bm.free()
 
 def add_skirt(g, z_hem):
     """flare from the shell's hip ring down to hem_rel (fraction of body height); weights: pelvis above, thighs by side.
@@ -171,7 +251,7 @@ def add_skirt(g, z_hem):
         if sum(x.weight for x in v.groups if gname.get(x.group, '').startswith(('pelvis', 'thigh', 'spine'))) / tot >= 0.5: ring.append(p)
     if len(ring) < 8: print('SKIRT: no hip ring'); return
     print('SKIRT ring', len(ring))
-    zmin = zh + 0.05   # starts a little inside the shell so there is no gap at the waist
+    zmin = LM["hip"] + 0.08   # starts at the waist, over the shell, so no skin or hem shows between them
     c = sum(ring, Vector()) / len(ring)
     rx = max(abs(p.x - c.x) for p in ring) * 1.10 + 0.012; ry = max(abs(p.y - c.y) for p in ring) * 1.14 + 0.012
     bm = bmesh.new(); bm.from_mesh(me)
@@ -212,7 +292,7 @@ for o in out_objs: o.select_set(True)
 bpy.ops.export_scene.fbx(filepath=OUT, use_selection=True, object_types={'ARMATURE', 'MESH'}, add_leaf_bones=False, use_armature_deform_only=False,
                          apply_unit_scale=True, apply_scale_options='FBX_SCALE_ALL', bake_anim=False, mesh_smooth_type='FACE', use_mesh_modifiers=True,
                          primary_bone_axis='Y', secondary_bone_axis='X')
-json.dump({'garments': [{'name': o.name, 'kind': o['kind'], 'fabric': o.data.materials[0]['fabric'], 'tint': list(o.data.materials[0]['tint'])} for o in out_objs]},
+json.dump({'garments': [{'name': o.name, 'kind': o['kind'] + sfx, 'fabric': m['fabric'], 'tint': list(m['tint'])} for o in out_objs for m, sfx in zip(o.data.materials, ('', '_trim'))]},
           open(os.path.splitext(OUT)[0] + '.json', 'w'), indent=1)
 print('CLOTHES DONE', OUT, len(out_objs))
 
@@ -222,7 +302,7 @@ try:
     sc = bpy.context.scene; sc.render.engine = 'BLENDER_WORKBENCH'; sc.display.shading.color_type = 'MATERIAL'
     sc.render.resolution_x, sc.render.resolution_y = 700, 1000
     for o in out_objs:
-        m = o.data.materials[0]; m.diffuse_color = (*o.data.materials[0]['tint'], 1)
+        for m in o.data.materials: m.diffuse_color = (*m['tint'], 1)
     bm_ = bpy.data.materials.new('skin'); bm_.diffuse_color = (.75, .62, .55, 1); body.data.materials.clear(); body.data.materials.append(bm_)
     cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam); sc.camera = cam
     cam.data.type = 'ORTHO'; cam.data.ortho_scale = HGT * 1.25 + 0.3

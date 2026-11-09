@@ -52,7 +52,9 @@ for i in range(6):
     box('LecternPost', (0.14, 0.14, 1.0), (x, y, 0.5), dark)
     box('LecternFoot', (0.5, 0.5, 0.06), (x, y, 0.03), dark)
     top = box('LecternTop', (0.62, 0.46, 0.05), (x, y, 1.05), wood, rot=(18, 0, face - 90))
-    LM = _M((x, y, 1.0775), face - 90, 18)
+    # the book frame must turn exactly like the top (Blender XYZ Euler: tilt about X first, then the yaw) — _M composes
+    # the other way round, which left the books skewed off the slanted tops
+    LM = Matrix.Translation((x, y, 1.05)) @ Euler((math.radians(18), 0, math.radians(face - 90)), 'XYZ').to_matrix().to_4x4() @ Matrix.Translation((0, 0, 0.025))
     book(LM, (0, 0, 0.0), 0.075, 0.27, 0.36, cov=_bookmats()['cov'][(0, 2, 4, 0, 2, 4)[i]], lying=True, rng=random.Random(i))
     dbox(LM, (0.05, 0.02, 0.06), (0.17, -0.01, 0.04), _bookmats()['gilt'])   # brass clasp
     LECTERNS.append((x, y))
@@ -133,7 +135,7 @@ for (x, y) in [(-0.45, L - 1.9), (0.5, L - 1.85)]: prop('CandleStick_Triple', (x
 prop('BookStand', (-2.2, 7.6, 0), 0, height=1.3); prop('Chest_Wood', (2.6, 8.6, 0), 180, height=0.7); prop('Chest_Wood', (-3.4, 8.8, 0), 160, height=0.7)
 open_book((-2.2, 7.6, 1.32), 180, tilt=-15)
 for (x, y) in [(-4.95, 9.25), (4.95, 9.25), (-4.95, -9.25), (4.95, -9.25)]: prop('Vase_4', (x, y, 0), D.uniform(0, 360), height=0.8)   # QA: were through the bench ends
-for (x, y) in [(-4.3, -4.0), (4.3, 4.0), (-4.3, 5.9), (4.3, -6.1)]: book_stack((x, y, 0.5), rng=D)   # left on the benches
+for (x, y) in [(-4.85, -4.0), (4.85, 4.0), (-4.85, 5.9), (4.85, -6.1)]: book_stack((x, y, 0.5), rng=D)   # left on the benches (QA: at x 4.3 they floated beside the seats)
 for (x, y, n) in [(-5.0, 8.2, 5), (5.0, 8.1, 3), (-5.0, -8.2, 4), (5.0, -8.2, 6)]:                    # floor candle clusters
     for k in range(n): candle((x + D.uniform(-0.25, 0.25), y + D.uniform(-0.25, 0.25), 0), D.uniform(0.08, 0.32), D.uniform(0.025, 0.04))
 book_stack((3.3, 8.2, 0), 8, rng=D); book_stack((3.6, 8.5, 0), 5, rng=D); book_stack((-4.0, 8.3, 0), 6, rng=D)
