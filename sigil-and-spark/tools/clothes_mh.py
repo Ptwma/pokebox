@@ -60,6 +60,35 @@ if OUTFIT and os.path.exists(OUTFIT):   # the torso / hips live only in the defa
     bpy.ops.import_scene.fbx(filepath=OUTFIT, use_anim=False, ignore_leaf_bones=True, automatic_bone_orientation=False)
     new = [o for o in bpy.context.scene.objects if o not in before]
     new_arms = [o for o in new if o.type == 'ARMATURE']; new_meshes = [o for o in new if o.type == 'MESH']
+    # where the body skin and the default garment overlap (the rim around the garment's cut-out), keep only the garment:
+    # two layers there were pushed out together and came through each other as ragged frills at the waist / hems
+    from mathutils.kdtree import KDTree
+    # the garment's hems are folded inside (inner faces facing the skin): pushed out along their normals they turned into
+    # ragged frills → drop every garment face that faces against the skin under it
+    _bw = [(body.matrix_world @ v.co, (body.matrix_world.to_3x3() @ v.normal).normalized()) for v in body.data.vertices]
+    _bk = KDTree(len(_bw))
+    for i, (p_, _) in enumerate(_bw): _bk.insert(p_, i)
+    _bk.balance()
+    for o in new_meshes:
+        bmo = bmesh.new(); bmo.from_mesh(o.data); bmo.normal_update(); R3o = o.matrix_world.to_3x3()
+        inner = []
+        for f in bmo.faces:
+            c_ = o.matrix_world @ f.calc_center_median(); _, i_, _ = _bk.find(c_)
+            if (R3o @ f.normal).normalized().dot(_bw[i_][1]) < -0.6: inner.append(f)
+        bmesh.ops.delete(bmo, geom=inner, context='FACES'); bmo.to_mesh(o.data); bmo.free()
+        print('INNER faces dropped', len(inner))
+    _ow = [o.matrix_world @ v.co for o in new_meshes for v in o.data.vertices]
+    if _ow:
+        _kd = KDTree(len(_ow))
+        for i, p_ in enumerate(_ow): _kd.insert(p_, i)
+        _kd.balance()
+        # snap (not delete: deleting cut the sleeves / legs off as separate islands) the skin under the garment onto it,
+        # so the weld below fuses the two layers into one connected surface
+        Mb = body.matrix_world; Mbi = Mb.inverted(); n_ = 0
+        for v in body.data.vertices:
+            co, _, d = _kd.find(Mb @ v.co)
+            if d < 0.022: v.co = Mbi @ co; n_ += 1
+        print('OVERLAP snapped', n_, 'body verts onto the garment')
     for o in new_meshes:
         for m in o.modifiers:
             if m.type == 'ARMATURE': m.object = arm
@@ -69,7 +98,7 @@ if OUTFIT and os.path.exists(OUTFIT):   # the torso / hips live only in the defa
         bpy.ops.object.join()
     for o in new_arms: bpy.data.objects.remove(o)
     bpy.ops.object.select_all(action='DESELECT')
-    bm0 = bmesh.new(); bm0.from_mesh(body.data); bmesh.ops.remove_doubles(bm0, verts=bm0.verts, dist=0.004 / (body.matrix_world.to_scale()[0] or 1)); bm0.to_mesh(body.data); bm0.free()
+    bm0 = bmesh.new(); bm0.from_mesh(body.data); _s = body.matrix_world.to_scale()[0] or 1; bmesh.ops.remove_doubles(bm0, verts=bm0.verts, dist=0.004 / _s); bmesh.ops.dissolve_degenerate(bm0, edges=bm0.edges, dist=0.001 / _s); bm0.to_mesh(body.data); bm0.free()
 dg = bpy.context.evaluated_depsgraph_get()
 zs = [(body.matrix_world @ v.co).z for v in body.data.vertices]
 Z0, Z1 = min(zs), max(zs); HGT = Z1 - Z0
@@ -148,6 +177,10 @@ def make(kind, fabric, tint, layer):
     big = max(len(i) for i in islands) if islands else 0
     small = [x for i in islands if len(i) < max(60, big * 0.12) for x in i]
     if small: bmesh.ops.delete(bm, geom=small, context='VERTS')
+    # close the seams where the body skin meets the default garment (two open borders a few mm apart): weld border to
+    # border, so only the real hems stay open (QA: the trim band ran along those seams as ragged dark lines)
+    _bd = [v for v in bm.verts if any(e.is_boundary for e in v.link_edges)]
+    if _bd: bmesh.ops.remove_doubles(bm, verts=_bd, dist=0.016 / SCALE)
     # clean hems: cut the shell with horizontal planes at lo / hi (the weight-picked border was ragged)
     Mi = g.matrix_world.inverted(); nz = (Mi.to_3x3() @ Vector((0, 0, 1))).normalized()
     for key, inner in (('lo', True), ('hi', False)):
@@ -197,7 +230,15 @@ def details(g, kind, spec):
     for f in bm.faces: f.material_index = 0   # the body copy carries its own slot indices
     W = {v: M @ v.co for v in bm.verts}
     from mathutils.kdtree import KDTree
-    bverts = [v for v in bm.verts if any(e.is_boundary for e in v.link_edges)]
+    z_lo_ = LM.get(spec['lo'][0], Z0) + spec['lo'][1] if 'lo' in spec else -1e9
+    z_hi_ = LM.get(spec['hi'][0], Z1) + spec['hi'][1] if 'hi' in spec else 1e9
+    def _hem(v):   # a REAL hem: at a cut plane, the neckline, a cuff (out along the arm) or the skirt's hem — not a seam
+        p = W[v]
+        if abs(p.z - z_lo_) < 0.025 or abs(p.z - z_hi_) < 0.025 or p.z > LM['neck'] - 0.06: return True
+        if abs((p - CEN).dot(LAT)) > 0.30: return True                         # sleeve ends
+        if spec.get('skirt') and p.z < LM['hip'] - 0.10: return True              # the skirt / coat hem
+        return False
+    bverts = [v for v in bm.verts if any(e.is_boundary for e in v.link_edges) and _hem(v)]
     kd = KDTree(max(1, len(bverts)))
     for i, v in enumerate(bverts): kd.insert(W[v], i)
     kd.balance()
@@ -285,7 +326,7 @@ for layer, (kind, fabric, tint) in enumerate(OUTFITS.get(CID, OUTFITS['player_m'
     out_objs.append(make(kind, fabric, tint, layer))
     print('GARMENT', kind, fabric, len(out_objs[-1].data.vertices), 'verts')
 body.hide_set(True); body.hide_render = True
-arm.name = 'Armature'   # Unreal drops an armature object called 'Armature', so the root bone stays 'root' (same skeleton as the body)
+arm.name = 'root'   # the body FBX imports with its root JOINT as the armature OBJECT: exported under the name 'root' it becomes the root bone again (named 'Armature' Unreal dropped it, the skeleton started at pelvis and could not merge)
 for o in bpy.context.scene.objects: o.select_set(False)
 arm.select_set(True)
 for o in out_objs: o.select_set(True)

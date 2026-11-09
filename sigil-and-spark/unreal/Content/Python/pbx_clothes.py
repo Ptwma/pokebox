@@ -39,6 +39,24 @@ def export_bodies(ids=None):
             ok = unreal.Exporter.run_asset_export_task(t); n += ok; log('export', cid, tag, ok)
     return n
 
+def _import_albedo(fabric):
+    """some Poly Haven sets name the colour map _albedo (brown_leather): import it as PH_<fabric>_diff"""
+    import glob
+    f = sorted(glob.glob(os.path.join(SRC, 'polyhaven', 'textures', fabric, f'{fabric}_albedo_*.jpg')) + glob.glob(os.path.join(SRC, 'polyhaven', 'textures', fabric, f'{fabric}_diff_*.jpg')))
+    if not f: return None
+    t = unreal.AssetImportTask()
+    for k, v in (('filename', f[-1]), ('destination_path', TEX), ('destination_name', f'PH_{fabric}_diff'), ('automated', True), ('replace_existing', True), ('save', True)): t.set_editor_property(k, v)
+    AT.import_asset_tasks([t]); log('imported albedo', fabric)
+    return unreal.load_asset(f'{TEX}/PH_{fabric}_diff')
+
+def refresh_materials(ids=None):
+    """re-make every garment material from the json (no mesh import)"""
+    for cid in ids or CAST:
+        js = os.path.join(OUT, cid + '_clothes.json')
+        if not os.path.exists(js): continue
+        for g in json.load(open(js, encoding='utf-8'))['garments']: _fabric_mi(cid, g['kind'], g['fabric'], g['tint'])
+        log('materials', cid)
+
 def _fabric_mi(cid, kind, fabric, tint):
     path = f'{DST}/{cid}/MI_{cid}_{kind}'
     mi = unreal.load_asset(path) if EAL.does_asset_exist(path) else AT.create_asset(path.split('/')[-1], f'{DST}/{cid}', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
@@ -47,6 +65,7 @@ def _fabric_mi(cid, kind, fabric, tint):
     mi.set_editor_property('parent', parent)
     for k, suf in (('BaseTex', '_diff'), ('NormalTex', '_nor'), ('ArmTex', '_arm')):
         tx = unreal.load_asset(f'{TEX}/PH_{fabric}{suf}')
+        if not tx and suf == '_diff': tx = _import_albedo(fabric)
         if tx: MEL.set_material_instance_texture_parameter_value(mi, k, tx)
         else: log('missing texture', fabric + suf)
     MEL.set_material_instance_scalar_parameter_value(mi, 'UVScale', UVS.get(fabric, 5.0))
@@ -83,11 +102,16 @@ def import_one(cid):
     return path
 
 def import_all(ids=None):
+    import shutil, time
+    shutil.copy(_manifest_path(), _manifest_path() + time.strftime('.bak_%Y%m%d_%H%M'))
     man = manifest(); done = []
     for cid in ids or CAST:
         p = import_one(cid)
         if not p: continue
-        parts = [x for x in man[cid]['parts'] if x.get('name') != 'Clothes']
+        # our clothes replace the MetaHuman default garment (it is thicker than our shells and would come through them);
+        # the old entry is kept in 'parts_default' so the swap can be undone
+        man[cid].setdefault('parts_default', [x for x in man[cid]['parts'] if x.get('name') != 'Clothes'])
+        parts = [x for x in man[cid]['parts_default'] if not x.get('mesh', '').endswith('_Outfits')]
         parts.append({'name': 'Clothes', 'mesh': p, 'face': False})
         man[cid]['parts'] = parts; done.append(cid)
     open(_manifest_path(), 'w', encoding='utf-8').write(json.dumps(man, indent=1))
