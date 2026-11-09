@@ -287,7 +287,7 @@ void APBXDirector::StoryPump()
 				auto Expo = [bNight](FPostProcessSettings& PP)
 				{
 					PP.bOverride_AutoExposureBias = true; PP.AutoExposureBias = bNight ? -.5f : -.6f;
-					PP.bOverride_AutoExposureMinBrightness = bNight; PP.AutoExposureMinBrightness = 4.f;
+					PP.bOverride_AutoExposureMinBrightness = bNight; PP.AutoExposureMinBrightness = 5.5f;   // capture 8: the night alley still burned orange at 4
 				};
 				if (Cam) { Expo(Cam->GetCameraComponent()->PostProcessSettings); Cam->GetCameraComponent()->PostProcessBlendWeight = 1.f; }
 				if (Player && Player->Camera && Player->GetActorLocation().Z > -3000.f) { Expo(Player->Camera->PostProcessSettings); Player->Camera->PostProcessBlendWeight = 1.f; }

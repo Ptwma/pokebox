@@ -55,6 +55,10 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "UnrealClient.h"
+#if WITH_EDITOR
+#include "ShaderCompiler.h"
+#include "AssetCompilingManager.h"
+#endif
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Widgets/SWeakWidget.h"
 
@@ -2890,6 +2894,19 @@ void APBXDirector::FilmCaptureTick()
 {
 	if (!bFilmCap || !bFilmRec) return;
 	while (FilmPending.IsValid() && FilmPending->load() > 24) FPlatformProcess::Sleep(.004f);   // bounded memory: wait for the encoders
+	// a minimised / locked window has an 8x8 back buffer: a screenshot then CRASHES the RHI thread (capture 8 died at frame
+	// 18938). Freeze the story instead (time almost stopped, no frame taken, cues keep their frame numbers) until it is back.
+	const FIntPoint VS = (GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport) ? GEngine->GameViewport->Viewport->GetSizeXY() : FIntPoint(0, 0);
+	const bool bOk = VS.X >= 640 && VS.Y >= 360;
+	static bool bHeld = false;
+	if (bOk == bHeld) { bHeld = !bOk; UGameplayStatics::SetGlobalTimeDilation(this, bOk ? 1.f : .0001f); PBXLOG("[PBXFILM] window %s (%dx%d)", bOk ? TEXT("back, recording") : TEXT("minimised, holding"), VS.X, VS.Y); }
+	if (!bOk) return;
+#if WITH_EDITOR
+	// every material / mesh in view must be COMPILED before the frame is taken: uncooked -game draws the default WorldGrid
+	// while a shader compiles (QA: the clothes of 8 characters came out as grey checkers for the whole capture)
+	if (GShaderCompilingManager && GShaderCompilingManager->IsCompiling()) GShaderCompilingManager->FinishAllCompilation();
+	FAssetCompilingManager::Get().FinishAllCompilation();
+#endif
 	FScreenshotRequest::RequestScreenshot(FilmDir / FString::Printf(TEXT("f_%06d.jpg"), FilmFrame), false, false);
 	FilmFrame++;
 }
