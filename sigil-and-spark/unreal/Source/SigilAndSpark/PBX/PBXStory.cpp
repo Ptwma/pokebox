@@ -41,6 +41,7 @@
 #include "Sound/SoundBase.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/OverlapResult.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogPBXStory, Log, All);
 #define SLOG(Fmt, ...) UE_LOG(LogPBXStory, Display, TEXT(Fmt), ##__VA_ARGS__)
@@ -151,20 +152,24 @@ FVector APBXDirector::StoryFloor(const FVector& Want, const AActor* Ignore) cons
 	UWorld* W = GetWorld(); if (!W) return Want;
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(StoryFloor), false);
 	for (TActorIterator<ACharacter> It(W); It; ++It) Q.AddIgnoredActor(*It);   // people don't block (they get placed too)
+	int32 NMiss = 0, NHigh = 0, NBody = 0, NHead = 0; FString Blocker;
 	for (int32 r = 0; r <= 14; r++)
 		for (int32 k = 0; k < (r == 0 ? 1 : 16); k++)
 		{
 			const float A = k * 2.f * PI / 16.f; const FVector P = Want + FVector(FMath::Cos(A), FMath::Sin(A), 0.f) * (r * 45.f);
 			FHitResult H;
-			if (!W->LineTraceSingleByChannel(H, P + FVector(0, 0, 60.f), P - FVector(0, 0, 160.f), ECC_Visibility, Q)) continue;   // start BELOW roofs
-			if (FMath::Abs(H.Location.Z - Want.Z) > 45.f) continue;
+			if (!W->LineTraceSingleByChannel(H, P + FVector(0, 0, 60.f), P - FVector(0, 0, 160.f), ECC_Visibility, Q)) { NMiss++; continue; }   // start BELOW roofs
+			if (FMath::Abs(H.Location.Z - Want.Z) > 45.f) { NHigh++; continue; }
 			const FVector C = H.Location + FVector(0, 0, 98.f);
-			if (W->OverlapAnyTestByChannel(C, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(36.f, 88.f), Q)) continue;
+			TArray<FOverlapResult> Ovs;
+			if (W->OverlapMultiByChannel(Ovs, C, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(36.f, 88.f), Q) && Ovs.Num())
+			{ NBody++; if (Blocker.IsEmpty() && Ovs[0].GetActor()) Blocker = Ovs[0].GetActor()->GetName(); continue; }
 			// a clear head: nothing between the floor and 2.1 m (awnings, beams)
-			if (W->LineTraceTestByChannel(H.Location + FVector(0, 0, 20.f), H.Location + FVector(0, 0, 210.f), ECC_Visibility, Q)) continue;
+			FHitResult H2;
+			if (W->LineTraceSingleByChannel(H2, H.Location + FVector(0, 0, 20.f), H.Location + FVector(0, 0, 210.f), ECC_Visibility, Q)) { NHead++; if (Blocker.IsEmpty() && H2.GetActor()) Blocker = TEXT("head:") + H2.GetActor()->GetName(); continue; }
 			return H.Location;
 		}
-	SLOG("[PBXSTORY] no floor near %s", *Want.ToCompactString());
+	SLOG("[PBXSTORY] no floor near %s (miss %d high %d body %d head %d, first blocker %s)", *Want.ToCompactString(), NMiss, NHigh, NBody, NHead, *Blocker);
 	return Want;
 }
 

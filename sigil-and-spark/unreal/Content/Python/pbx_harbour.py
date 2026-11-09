@@ -141,6 +141,9 @@ def sky(hdri='small_harbour_sunset_skyonly', exposure=1.0, rebuild=False, yaw=0.
     d.set_actor_label(TAG + label); d.set_actor_scale3d(unreal.Vector(8000, 8000, 8000))   # 100 cm sphere x 8000 = 4 km radius
     c = d.get_component_by_class(unreal.StaticMeshComponent)
     c.set_material(0, mi); c.set_editor_property('cast_shadow', False); c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+    # the PROFILE too, and the actor: a 4 km solid sphere with collision swallowed every stage (every floor trace started
+    # inside it: no NPC could be placed, no camera could find a free spot — QA 2026-11-09)
+    c.set_collision_profile_name('NoCollision'); d.set_actor_enable_collision(False)
     d.set_editor_property('tags', [unreal.Name('PBX_SkyDome')])   # the game dims it with the scene's sun (PBXStory 'sun')
     log('sky', hdri, 'cube' if cube else 'latlong')
 
