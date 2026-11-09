@@ -190,7 +190,7 @@ private:
 	struct FStoryFrame { TArray<TSharedPtr<class FJsonValue>> Nodes; int32 I = 0; };
 	TArray<FStoryFrame> SStack;
 	struct FStorySpot { FString Id, Label; FVector Pos = FVector::ZeroVector; TArray<TSharedPtr<class FJsonValue>> Do; bool bOnce = true; };
-	TArray<FStorySpot> HubSpots; bool bHub = false;
+	TArray<FStorySpot> HubSpots; bool bHub = false; int32 HubHover = -1; void HubFrame(); void HubLookEnd();
 	TFunction<void()> OnFuse;
 	UPROPERTY() TObjectPtr<UAudioComponent> StoryVoice;
 	UPROPERTY() TObjectPtr<UAudioComponent> StoryMusic;

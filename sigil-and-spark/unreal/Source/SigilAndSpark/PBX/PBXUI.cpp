@@ -323,9 +323,19 @@ public:
 			const float R = (K.bEdge ? 9.f : 11.f) + Pulse * 3.f;
 			FLinearColor Halo(1.f, .78f, .42f, K.A * (.18f + .12f * Pulse)), Core(1.f, .9f, .7f, K.A * .85f), Ring(.08f, .05f, .04f, K.A * .7f);
 			auto Box = [&](float Sz, const FLinearColor& C, int32 L) { FSlateDrawElement::MakeBox(Out, L, G.ToPaintGeometry(FVector2f(Sz, Sz), FSlateLayoutTransform(FVector2f(K.P) - FVector2f(Sz, Sz) * .5f)), Dot.Get(), ESlateDrawEffect::None, C); };
-			Box(R * 3.2f, Halo, Layer); Box(R * 1.15f, Ring, Layer + 1); Box(R * .8f, Core, Layer + 2);
+			if (K.bHover) { Halo.A = FMath::Min(1.f, Halo.A * 2.2f); Core = FLinearColor(1.f, .96f, .86f, 1.f); }
+			const float HS = K.bHover ? 1.35f : 1.f;
+			Box(R * 3.2f * HS, Halo, Layer); Box(R * 1.15f * HS, Ring, Layer + 1); Box(R * .8f * HS, Core, Layer + 2);
+			if (M->bHubLook && !K.Label.IsEmpty() && !K.bEdge)   // the name / action under the dot; brighter when the mouse is on it
+			{
+				const FSlateFontInfo F = PBXUI::Font(TEXT("body"), K.bHover ? 22 : 17, 1);
+				const FVector2f TS = FVector2f(FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(K.Label, F));
+				const FVector2f At = FVector2f(K.P) + FVector2f(-TS.X * .5f, R * 1.6f + 6.f);
+				FSlateDrawElement::MakeText(Out, Layer + 3, G.ToPaintGeometry(TS, FSlateLayoutTransform(At + FVector2f(1.5f, 1.5f))), K.Label, F, ESlateDrawEffect::None, FLinearColor(0, 0, 0, K.A * .8f));
+				FSlateDrawElement::MakeText(Out, Layer + 4, G.ToPaintGeometry(TS, FSlateLayoutTransform(At)), K.Label, F, ESlateDrawEffect::None, K.bHover ? FLinearColor(1.f, .9f, .6f, 1.f) : FLinearColor(1.f, 1.f, 1.f, K.A));
+			}
 		}
-		return Layer + 2;
+		return Layer + 4;
 	}
 private:
 	TSharedPtr<FPBXUIModel> M; TSharedPtr<FSlateBrush> Dot;

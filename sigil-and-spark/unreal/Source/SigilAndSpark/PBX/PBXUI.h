@@ -39,7 +39,8 @@ struct FPBXUIModel
 	TFunction<void(int32)> OnPick;
 	float FuseT = 0.f, FuseMax = 0.f; bool bStoryChoice = false;
 	// v3 owner 2026-11-06 "show the way a little, without bothering the player": soft ink marks over the hub's hotspots
-	struct FMark { FVector2D P = FVector2D::ZeroVector; float A = 0.f; bool bEdge = false; }; TArray<FMark> Marks;
+	struct FMark { FVector2D P = FVector2D::ZeroVector; float A = 0.f; bool bEdge = false; bool bHover = false; FString Label; }; TArray<FMark> Marks;
+	bool bHubLook = false;   // video-mode hub: locked view, click a mark (owner 2026-11-08: "locked position, choose by clicking a character")
 	// v3 prologue cards ("explain the basics in simple words at the start"): text over everything, even the fade
 	FString CardText, CardSub; float CardA = 0.f;   // v3: a timed story choice (the burning fuse) drawn low on the screen, the line still readable
 	// battle

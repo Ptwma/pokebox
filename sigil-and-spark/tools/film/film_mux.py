@@ -29,7 +29,8 @@ def load(kind, name):
         a = np.stack([np.interp(t, np.arange(len(a)), a[:, c]) for c in range(2)], axis=1).astype(np.float32)
     return a
 
-frames = sorted(glob.glob(os.path.join(CAP, 'f_*.png')))
+frames = sorted(glob.glob(os.path.join(CAP, 'f_*.jpg')) or glob.glob(os.path.join(CAP, 'f_*.png')))
+EXT = os.path.splitext(frames[0])[1] if frames else '.png'
 if not frames: sys.exit('no frames in ' + CAP)
 N = int(os.path.basename(frames[-1])[2:8]) + 1
 cues = [json.loads(l) for l in open(os.path.join(CAP, 'cues.jsonl'), encoding='utf-8') if l.strip()]
@@ -67,14 +68,14 @@ wav = os.path.join(CAP, '_mix.wav')
 with wave.open(wav, 'wb') as w:
     w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR); w.writeframes((mix[:int(N / FPS * SR)] * 32767).astype(np.int16).tobytes())
 if FF and os.path.exists(FF):
-    cmd = [FF, '-y', '-framerate', str(FPS), '-i', os.path.join(CAP, 'f_%06d.png'), '-i', wav, '-c:v', 'libx264', '-preset', 'slow', '-crf', '16',
+    cmd = [FF, '-y', '-framerate', str(FPS), '-i', os.path.join(CAP, 'f_%06d' + EXT), '-i', wav, '-c:v', 'libx264', '-preset', 'slow', '-crf', '16',
            '-pix_fmt', 'yuv420p', '-vf', 'scale=1920:1080:flags=lanczos', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', OUT]
 else:   # no ffmpeg on this PC: Blender's built-in encoder (same H.264), run in the background
     enc = os.path.join(CAP, '_encode.py')
     open(enc, 'w').write(f"""import bpy, os
 s = bpy.data.scenes.new('FILM'); s.render.resolution_x, s.render.resolution_y, s.render.resolution_percentage = 1920, 1080, 100; s.render.fps = {FPS}
 se = s.sequence_editor_create(); coll = se.strips if hasattr(se, 'strips') else se.sequences
-fr = sorted(f for f in os.listdir(r'{CAP}') if f.startswith('f_') and f.endswith('.png'))
+fr = sorted(f for f in os.listdir(r'{CAP}') if f.startswith('f_') and f.endswith(('.png', '.jpg')))
 st = coll.new_image('img', os.path.join(r'{CAP}', fr[0]), 1, 1)
 for f in fr[1:]: st.elements.append(f)
 try: st.transform.filter = 'BICUBIC'

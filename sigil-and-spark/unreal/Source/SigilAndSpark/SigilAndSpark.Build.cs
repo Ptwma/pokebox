@@ -12,6 +12,7 @@ public class SigilAndSpark : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"ImageCore",
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",

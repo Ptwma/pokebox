@@ -31,6 +31,7 @@
 #include "Sound/SoundBase.h"
 #include "Engine/OverlapResult.h"
 #include "ImageUtils.h"
+#include "ImageCore.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
@@ -716,7 +717,7 @@ void APBXDirector::Tick(float Dt)
 }
 
 // =================================================================== input
-bool APBXDirector::WantsCursor() const { return UI->bPause || Menu != EMenu::None || UI->Mode == EPBXUIMode::Choice || (Bt.bActive && UI->bMoves); }
+bool APBXDirector::WantsCursor() const { return UI->bPause || Menu != EMenu::None || UI->Mode == EPBXUIMode::Choice || (Bt.bActive && UI->bMoves) || (bHub && UI->bHubLook); }
 
 void APBXDirector::LogMHHeights()
 {
@@ -787,7 +788,12 @@ void APBXDirector::PausePick(int32 i)
 	else if (i == 1) { ResumeHardPause(); ToTitle(); }
 	else FPlatformMisc::RequestExit(false);
 }
-void APBXDirector::InConfirmMouse() { if (UI->bPause || UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None) return; InConfirm(); }   // the buttons take their own clicks
+void APBXDirector::InConfirmMouse()
+{
+	if (UI->bPause || UI->Mode == EPBXUIMode::Choice || Menu != EMenu::None) return;   // the buttons take their own clicks
+	if (bHub && UI->bHubLook) { if (HubSpots.IsValidIndex(HubHover)) StoryUseSpot(HubHover); return; }   // locked hub: only the marks are clickable
+	InConfirm();
+}   // the buttons take their own clicks
 void APBXDirector::InPause()
 {
 	if (UI->bPause) { ResumeHardPause(); return; }
@@ -2883,20 +2889,21 @@ void APBXDirector::FilmCaptureTick()
 {
 	if (!bFilmCap || !bFilmRec) return;
 	while (FilmPending.IsValid() && FilmPending->load() > 24) FPlatformProcess::Sleep(.004f);   // bounded memory: wait for the encoders
-	FScreenshotRequest::RequestScreenshot(FilmDir / FString::Printf(TEXT("f_%06d.png"), FilmFrame), false, false);
+	FScreenshotRequest::RequestScreenshot(FilmDir / FString::Printf(TEXT("f_%06d.jpg"), FilmFrame), false, false);
 	FilmFrame++;
 }
 
 void APBXDirector::OnFilmShot(int32 W, int32 Hh, const TArray<FColor>& Px)
 {
 	if (!bFilmCap) return;
-	const FString Path = FilmDir / FString::Printf(TEXT("f_%06d.png"), FilmShotN++);
+	const FString Path = FilmDir / FString::Printf(TEXT("f_%06d.jpg"), FilmShotN++);   // JPEG q96: ~0.5 MB a frame (PNG 3 MB filled the disk)
 	TArray64<FColor> Copy; Copy.SetNumUninitialized(Px.Num()); for (int64 i = 0; i < Px.Num(); i++) { Copy[i] = Px[i]; Copy[i].A = 255; }
 	TSharedPtr<std::atomic<int32>> Pend = FilmPending; Pend->fetch_add(1);
 	Async(EAsyncExecution::ThreadPool, [Path, W, Hh, Copy = MoveTemp(Copy), Pend]()
 	{
-		TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(W, Hh, TArrayView64<const FColor>(Copy.GetData(), Copy.Num()), Png);
-		FFileHelper::SaveArrayToFile(Png, *Path); Pend->fetch_sub(1);
+		TArray64<uint8> Jpg; FImageView View(const_cast<FColor*>(Copy.GetData()), W, Hh);
+		if (FImageUtils::CompressImage(Jpg, TEXT("jpg"), View, 96)) FFileHelper::SaveArrayToFile(Jpg, *Path);
+		Pend->fetch_sub(1);
 	});
 }
 

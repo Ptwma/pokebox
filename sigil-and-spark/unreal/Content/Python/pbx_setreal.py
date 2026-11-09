@@ -74,49 +74,52 @@ def textures():
         a.set_editor_property('max_texture_size', 2048); EAL.save_loaded_asset(a)
     log('imported', len(pairs))
 
-def master():
-    path = G + '/Materials/M_PBX_Triplanar'
-    if EAL.does_asset_exist(path): return unreal.load_asset(path)
-    m = AT.create_asset('M_PBX_Triplanar', G + '/Materials', unreal.Material, unreal.MaterialFactoryNew())
-    m.set_editor_property('tangent_space_normal', False)   # the triplanar normal is built in world space
+def master(rebuild=False):
+    """world-aligned (triplanar) PBR with Epic's own WorldAlignedTexture / WorldAlignedNormal functions (2026-11-08: a
+    hand-written Custom-node version showed the ARM map as colour)"""
+    path = G + '/Materials/M_PBX_TriplanarWA'
+    if EAL.does_asset_exist(path) and not rebuild: return unreal.load_asset(path)
+    m = unreal.load_asset(path) if EAL.does_asset_exist(path) else AT.create_asset('M_PBX_TriplanarWA', G + '/Materials', unreal.Material, unreal.MaterialFactoryNew())
+    if rebuild: MEL.delete_all_material_expressions(m)
+    m.set_editor_property('tangent_space_normal', False)
     E = lambda c, x, y: MEL.create_material_expression(m, c, x, y)
     def sp(name, v, x, y):
         e = E(unreal.MaterialExpressionScalarParameter, x, y); e.set_editor_property('parameter_name', name); e.set_editor_property('default_value', v); return e
-    wp = E(unreal.MaterialExpressionWorldPosition, -1200, -200); nn = E(unreal.MaterialExpressionVertexNormalWS, -1200, -80)
-    size = sp('Size', 2.0, -1200, 40); bump = sp('Bump', 1.0, -1200, 120)
-    texs = {}
-    for i, k in enumerate(('Base', 'Arm', 'Nor')):
-        o = E(unreal.MaterialExpressionTextureObjectParameter, -1200, 220 + 160 * i); o.set_editor_property('parameter_name', k + 'Tex')
-        if k == 'Nor': o.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
-        elif k == 'Arm': o.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
-        texs[k] = o
-    outs = []
-    for mode in range(3):
-        cu = E(unreal.MaterialExpressionCustom, -600, -300 + 400 * mode); cu.set_editor_property('code', TRI)
-        cu.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
-        ins = []
-        for k in ('WP', 'N', 'Size', 'Bump', 'Base', 'Arm', 'Nor', 'Mode'):
-            ci = unreal.CustomInput(); ci.set_editor_property('input_name', k); ins.append(ci)
-        cu.set_editor_property('inputs', ins)
-        for k, src in (('WP', wp), ('N', nn), ('Size', size), ('Bump', bump), ('Base', texs['Base']), ('Arm', texs['Arm']), ('Nor', texs['Nor'])):
-            MEL.connect_material_expressions(src, '', cu, k)
-        c = E(unreal.MaterialExpressionConstant, -800, -200 + 400 * mode); c.set_editor_property('r', float(mode)); MEL.connect_material_expressions(c, '', cu, 'Mode')
-        outs.append(cu)
-    tint = E(unreal.MaterialExpressionVectorParameter, -400, -500); tint.set_editor_property('parameter_name', 'Tint'); tint.set_editor_property('default_value', unreal.LinearColor(1, 1, 1, 1))
-    mb = E(unreal.MaterialExpressionMultiply, -200, -400); MEL.connect_material_expressions(outs[0], '', mb, 'A'); MEL.connect_material_expressions(tint, '', mb, 'B')
+    WAT = unreal.load_asset('/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedTexture')
+    WAN = unreal.load_asset('/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedNormal')
+    size = sp('Size', 2.0, -1400, 0); cm = E(unreal.MaterialExpressionMultiply, -1250, 0); cm.set_editor_property('const_b', 100.0)
+    MEL.connect_material_expressions(size, '', cm, 'A')
+    v3 = E(unreal.MaterialExpressionAppendVector, -1100, 0); v2 = E(unreal.MaterialExpressionAppendVector, -1180, 60)
+    MEL.connect_material_expressions(cm, '', v2, 'A'); MEL.connect_material_expressions(cm, '', v2, 'B')
+    MEL.connect_material_expressions(v2, '', v3, 'A'); MEL.connect_material_expressions(cm, '', v3, 'B')
+    contrast = sp('Contrast', 4.0, -1400, 120)
+    outs = {}
+    for i, (k, fn, st) in enumerate((('Base', WAT, None), ('Arm', WAT, unreal.MaterialSamplerType.SAMPLERTYPE_MASKS), ('Nor', WAN, unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL))):
+        o = E(unreal.MaterialExpressionTextureObjectParameter, -1100, 200 + 200 * i); o.set_editor_property('parameter_name', k + 'Tex')
+        if st is not None: o.set_editor_property('sampler_type', st)
+        dflt = unreal.load_asset(f'{TEX}/PH_castle_brick_07' + {'Base': '_diff', 'Arm': '_arm', 'Nor': '_nor'}[k])   # a parameter needs a default of the right type
+        if dflt: o.set_editor_property('texture', dflt)
+        f = E(unreal.MaterialExpressionMaterialFunctionCall, -800, 200 + 200 * i); f.set_material_function(fn)
+        MEL.connect_material_expressions(o, '', f, 'TextureObject')
+        MEL.connect_material_expressions(v3, '', f, 'TextureSize')
+        MEL.connect_material_expressions(contrast, '', f, 'ProjectionTransitionContrast')
+        outs[k] = f
+    tint = E(unreal.MaterialExpressionVectorParameter, -500, -100); tint.set_editor_property('parameter_name', 'Tint'); tint.set_editor_property('default_value', unreal.LinearColor(1, 1, 1, 1))
+    mb = E(unreal.MaterialExpressionMultiply, -300, 0); MEL.connect_material_expressions(outs['Base'], 'XYZ Texture', mb, 'A'); MEL.connect_material_expressions(tint, '', mb, 'B')
     MEL.connect_material_property(mb, '', unreal.MaterialProperty.MP_BASE_COLOR)
-    r = E(unreal.MaterialExpressionComponentMask, -300, 0); r.set_editor_property('r', True); MEL.connect_material_expressions(outs[1], '', r, '')
-    g = E(unreal.MaterialExpressionComponentMask, -300, 80); g.set_editor_property('g', True); MEL.connect_material_expressions(outs[1], '', g, '')
-    b = E(unreal.MaterialExpressionComponentMask, -300, 160); b.set_editor_property('b', True); MEL.connect_material_expressions(outs[1], '', b, '')
-    rm = E(unreal.MaterialExpressionMultiply, -150, 80); MEL.connect_material_expressions(g, '', rm, 'A'); MEL.connect_material_expressions(sp('RoughMul', 1.0, -300, 240), '', rm, 'B')
+    r = E(unreal.MaterialExpressionComponentMask, -400, 300); r.set_editor_property('r', True); MEL.connect_material_expressions(outs['Arm'], 'XYZ Texture', r, '')
+    g = E(unreal.MaterialExpressionComponentMask, -400, 380); g.set_editor_property('g', True); MEL.connect_material_expressions(outs['Arm'], 'XYZ Texture', g, '')
+    b = E(unreal.MaterialExpressionComponentMask, -400, 460); b.set_editor_property('b', True); MEL.connect_material_expressions(outs['Arm'], 'XYZ Texture', b, '')
+    rm = E(unreal.MaterialExpressionMultiply, -250, 380); MEL.connect_material_expressions(g, '', rm, 'A'); MEL.connect_material_expressions(sp('RoughMul', 1.0, -400, 540), '', rm, 'B')
     MEL.connect_material_property(r, '', unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
     MEL.connect_material_property(rm, '', unreal.MaterialProperty.MP_ROUGHNESS)
     MEL.connect_material_property(b, '', unreal.MaterialProperty.MP_METALLIC)
-    MEL.connect_material_property(outs[2], '', unreal.MaterialProperty.MP_NORMAL)
+    MEL.connect_material_property(outs['Nor'], 'XYZ Texture', unreal.MaterialProperty.MP_NORMAL)
     MEL.recompile_material(m); EAL.save_asset(path); log('master', MEL.get_statistics(m).num_pixel_shader_instructions, 'instr')
     return m
 
-PLASTER_TINTS = [(.95, .93, .88), (.80, .84, .92), (.95, .82, .74), (.80, .86, .76), (.86, .80, .82)]   # houses painted differently
+PLASTERS = [('white_rough_plaster', 2.0, (1, 1, 1)), ('painted_plaster_wall', 2.0, (1, .98, .95)), ('red_plaster_weathered', 2.0, (1, 1, 1)),
+            ('blue_plaster_weathered', 2.0, (1, 1, 1)), ('white_stucco', 2.0, (.97, .93, .86))]   # houses painted differently (real painted plasters)
 
 def flat(name, rgb, rough):
     import pbx_sets
@@ -161,8 +164,8 @@ def apply(name='Pier', extra=None):
         if hit == 'IRON': sm.set_material(i, flat('RealIron', (.045, .043, .045), .42)); done += 1; continue
         if hit == 'BUOY': sm.set_material(i, flat('RealBuoy', (.75, .12, .06), .55)); done += 1; continue
         if 'plaster' in key:   # one tint per house (the kit names carry the house tag: _h1, _h20 ...)
-            hs = re.findall(r'h(\d+)', n.lower()); k = (int(hs[0]) if hs else 0) % len(PLASTER_TINTS)
-            sm.set_material(i, inst(hit[0], hit[1], PLASTER_TINTS[k], hit[3], f'_{k}')); done += 1; continue
+            hs = re.findall(r'h(\d+)', n.lower()); k = (int(hs[0]) if hs else 0) % len(PLASTERS)
+            tx, sz, tn = PLASTERS[k]; sm.set_material(i, inst(tx, sz, tn, 1.0)); done += 1; continue
         sm.set_material(i, inst(*hit)); done += 1
     EAL.save_asset(sm.get_path_name())
     log('set', name, 'real surfaces', done, 'unmatched', skip)

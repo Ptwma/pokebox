@@ -464,9 +464,9 @@ bool APBXDirector::StoryHub(const TSharedPtr<FJsonObject>& N)
 		const FJArr* Do; if (O->TryGetArrayField(TEXT("do"), Do)) Sp.Do = *Do;
 		HubSpots.Add(Sp);
 	}
-	if (StoryCond(Exit) && !Exit.IsEmpty()) { HubSpots.Reset(); bHub = false; UI->Objective.Empty(); return true; }
+	if (StoryCond(Exit) && !Exit.IsEmpty()) { HubSpots.Reset(); bHub = false; UI->Objective.Empty(); HubLookEnd(); return true; }
 	if (!HubSpots.Num()) { SLOG("[PBXSTORY] ERROR hub in %s has no spots left and exit '%s' is false", *StoryScene, *Exit); HubSpots.Reset(); bHub = false; return true; }
-	bHub = true; StoryCamRelease();
+	bHub = true; StoryCamRelease(); HubFrame();
 	if (bAuto) QDo([this] { if (bHub && HubSpots.Num()) StoryUseSpot(0); });   // autotest: visit the spots in order
 	return false;
 }
@@ -476,7 +476,7 @@ void APBXDirector::StoryUseSpot(int32 i)
 	if (!HubSpots.IsValidIndex(i)) return;
 	const FStorySpot Sp = HubSpots[i];
 	if (Sp.bOnce) SVars.Add(TEXT("seen.") + Sp.Id, 1);
-	bHub = false; HubSpots.Reset(); UI->Prompt.Empty();
+	bHub = false; HubSpots.Reset(); UI->Prompt.Empty(); HubLookEnd();
 	SLOG("[PBXSTORY] spot %s:%s", *StoryScene, *Sp.Id);
 	StoryPush(&Sp.Do); QStoryPump();
 }
@@ -701,7 +701,7 @@ void APBXDirector::StoryCamTick(float Dt)
 bool APBXDirector::StoryFilm(const FString& Id)
 {
 	static const bool bNoFilm = FParse::Param(FCommandLine::Get(), TEXT("pbxnofilm"));
-	if (bNoFilm || Id.IsEmpty()) { StoryFilmStop(); return false; }
+	if (bNoFilm || bFilmCap || Id.IsEmpty()) { StoryFilmStop(); return false; }   // capturing = making the clips: always live
 	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Movies") / StoryEp / (Id + TEXT(".mp4")));
 	if (!FPaths::FileExists(File)) { FilmMissed++; StoryFilmStop(); return false; }
 	if (!FilmPlayer)
@@ -735,6 +735,38 @@ void APBXDirector::StoryCamRelease()
 	if (Cam) Cam->GetCameraComponent()->SetFieldOfView(70.f);
 }
 
+// ---------------------------------------------------------------- video-mode hub: a LOCKED view of the place (Dispatch /
+// Telltale): no walking; every spot is a dot with its label over the character / object; hover highlights, click = its beat
+void APBXDirector::HubFrame()
+{
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!PC || !Cam || !HubSpots.Num()) return;
+	FBox B(ForceInit); for (const FStorySpot& S : HubSpots) B += S.Pos;
+	if (Player) B += PlayerLoc();
+	const FVector C = B.GetCenter(); const float Rad = FMath::Max(250.f, B.GetExtent().Size2D());
+	FVector Dir = Player ? (PlayerLoc() - C) : FVector(-1, 0, 0); Dir.Z = 0.f;
+	if (Dir.SizeSquared() < 1.f) Dir = FVector(-1, 0, 0);
+	Dir.Normalize();
+	const float Fov = 50.f, Dist = FMath::Clamp(Rad * 1.25f / FMath::Tan(FMath::DegreesToRadians(Fov * .5f)), 450.f, 2600.f);
+	FVector At = C + Dir * Dist + FVector(0, 0, 170.f + Dist * .12f);
+	// keep the lens out of walls: pull it in along the line until it is free
+	FHitResult H; FCollisionQueryParams Q(SCENE_QUERY_STAT(HubCam), false); if (Player) Q.AddIgnoredActor(Player);
+	if (GetWorld()->LineTraceSingleByChannel(H, C + FVector(0, 0, 150.f), At, ECC_Visibility, Q)) At = H.Location - (At - C).GetSafeNormal() * 40.f;
+	Cam->SetActorLocationAndRotation(At, (C + FVector(0, 0, 110.f) - At).Rotation());
+	Cam->GetCameraComponent()->SetFieldOfView(Fov);
+	PC->SetViewTargetWithBlend(Cam, .8f, VTBlend_Cubic);
+	PC->SetIgnoreMoveInput(true); PC->SetIgnoreLookInput(true);
+	if (Player) Player->SetActorHiddenInGame(false);
+	UI->bHubLook = true; HubHover = -1;
+}
+
+void APBXDirector::HubLookEnd()
+{
+	if (!UI->bHubLook) return;
+	UI->bHubLook = false; HubHover = -1;
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) { PC->SetIgnoreMoveInput(false); PC->SetIgnoreLookInput(false); }
+}
+
 // ---------------------------------------------------------------- hub marks: soft ink dots over what you can look at
 void APBXDirector::StoryMarksTick()
 {
@@ -744,6 +776,22 @@ void APBXDirector::StoryMarksTick()
 	const float Scale = FMath::Max(.1f, UWidgetLayoutLibrary::GetViewportScale(this));
 	int32 VX = 0, VY = 0; PC->GetViewportSize(VX, VY); const FVector2D View = FVector2D(VX, VY) / Scale;
 	const FVector P = PlayerLoc();
+	if (UI->bHubLook)   // locked view: every spot labelled, the one under the mouse highlighted
+	{
+		float MX = -1e4f, MY = -1e4f; PC->GetMousePosition(MX, MY); const FVector2D Mouse = FVector2D(MX, MY) / Scale;
+		HubHover = -1; float Best = 70.f;
+		for (int32 i = 0; i < HubSpots.Num(); i++)
+		{
+			FVector2D S; if (!PC->ProjectWorldLocationToScreen(HubSpots[i].Pos + FVector(0, 0, 120.f), S, true)) continue;
+			S /= Scale; const float D = FVector2D::Distance(S, Mouse); if (D < Best) { Best = D; HubHover = i; }
+		}
+		for (int32 i = 0; i < HubSpots.Num(); i++)
+		{
+			FVector2D S; if (!PC->ProjectWorldLocationToScreen(HubSpots[i].Pos + FVector(0, 0, 120.f), S, true)) continue;
+			FPBXUIModel::FMark K; K.P = S / Scale; K.A = .9f; K.bHover = i == HubHover; K.Label = HubSpots[i].Label; UI->Marks.Add(K);
+		}
+		return;
+	}
 	for (int32 i = 0; i < HubSpots.Num(); i++)
 	{
 		const FVector W = HubSpots[i].Pos + FVector(0, 0, 120.f);

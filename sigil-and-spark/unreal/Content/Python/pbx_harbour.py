@@ -89,7 +89,7 @@ def dress(reimport_merged=False):
         a.set_actor_label(f'{TAG}{i:02d}_{name}'); a.set_actor_scale3d(unreal.Vector(s, s, s)); n += 1
     log('placed', n)
 
-def sky(hdri='small_harbour_sunset', exposure=1.0):
+def sky(hdri='small_harbour_sunset_skyonly', exposure=1.0, rebuild=False, yaw=0.0):
     """the photographed sky: the HDRI on an unlit, two-sided dome (radius 4 km) centred on the stage"""
     f = glob.glob(os.path.join(PH, 'hdri', hdri + '*.exr'))
     if not f: log('hdri not downloaded', hdri); return
@@ -102,16 +102,22 @@ def sky(hdri='small_harbour_sunset', exposure=1.0):
     if not tex: log('hdri import failed'); return
     cube = isinstance(tex, unreal.TextureCube)
     mpath = f'{SKY}/M_HDRIDome_{"Cube" if cube else "LL"}'
+    if rebuild:
+        for a in EAS.get_all_level_actors():
+            if a.get_actor_label() == TAG + 'SkyDome': EAS.destroy_actor(a)
+        for p_ in (f'{SKY}/MI_HDRI_{hdri}', mpath):
+            if EAL.does_asset_exist(p_): EAL.delete_asset(p_)
     if not EAL.does_asset_exist(mpath):
         m = AT.create_asset(mpath.split('/')[-1], SKY, unreal.Material, unreal.MaterialFactoryNew())
-        m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT); m.set_editor_property('two_sided', True)
+        m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT); m.set_editor_property('two_sided', True); m.set_editor_property('is_sky', True)   # Is Sky: no fog over it (the 4 km dome sat inside the height fog)
         E = lambda c, x, y: MEL.create_material_expression(m, c, x, y)
         o = E(unreal.MaterialExpressionTextureObjectParameter, -900, 0); o.set_editor_property('parameter_name', 'Sky'); o.set_editor_property('texture', tex)
         ex = E(unreal.MaterialExpressionScalarParameter, -900, 200); ex.set_editor_property('parameter_name', 'Exposure'); ex.set_editor_property('default_value', 1.0)
         rot = E(unreal.MaterialExpressionScalarParameter, -900, 280); rot.set_editor_property('parameter_name', 'Yaw'); rot.set_editor_property('default_value', 0.0)
         wp = E(unreal.MaterialExpressionWorldPosition, -900, -200); cp = E(unreal.MaterialExpressionCameraPositionWS, -900, -120)
         cu = E(unreal.MaterialExpressionCustom, -500, 0); cu.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
-        code = ("float3 d = normalize(WP - CP); float c = cos(Yaw), s = sin(Yaw); d.xy = float2(c * d.x - s * d.y, s * d.x + c * d.y);"
+        # the photo's own ground never shows: tools/sets/hdri_skyonly.py repaints it with the sky above the horizon
+        code = ("float3 d = normalize(WP - CP); float c = cos(Yaw), s = sin(Yaw); d.xy = float2(c * d.x - s * d.y, s * d.x + c * d.y); "
                 + ("return TextureCubeSample(Sky, SkySampler, float3(d.x, d.y, d.z)).rgb * Exp;" if cube else
                    "float2 uv = float2(0.5 + atan2(d.y, d.x) / 6.2831853, acos(clamp(d.z, -1.0, 1.0)) / 3.1415927); return Texture2DSampleLevel(Sky, SkySampler, uv, 0).rgb * Exp;"))
         cu.set_editor_property('code', code)
@@ -125,7 +131,7 @@ def sky(hdri='small_harbour_sunset', exposure=1.0):
     mip = f'{SKY}/MI_HDRI_{hdri}'
     mi = unreal.load_asset(mip) if EAL.does_asset_exist(mip) else AT.create_asset(mip.split('/')[-1], SKY, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     mi.set_editor_property('parent', unreal.load_asset(mpath))
-    MEL.set_material_instance_texture_parameter_value(mi, 'Sky', tex); MEL.set_material_instance_scalar_parameter_value(mi, 'Exposure', exposure)
+    MEL.set_material_instance_texture_parameter_value(mi, 'Sky', tex); MEL.set_material_instance_scalar_parameter_value(mi, 'Exposure', exposure); MEL.set_material_instance_scalar_parameter_value(mi, 'Yaw', yaw)
     MEL.update_material_instance(mi); EAL.save_asset(mip)
     for a in EAS.get_all_level_actors():
         if a.get_actor_label() == TAG + 'SkyDome': EAS.destroy_actor(a)
@@ -136,7 +142,7 @@ def sky(hdri='small_harbour_sunset', exposure=1.0):
     c.set_material(0, mi); c.set_editor_property('cast_shadow', False); c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     log('sky', hdri, 'cube' if cube else 'latlong')
 
-def run(hdri='small_harbour_sunset', reimport_merged=False):
+def run(hdri='small_harbour_sunset_skyonly', reimport_merged=False):
     _clear(); tag_town(); dress(reimport_merged); sky(hdri)
     unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
     log('done')
