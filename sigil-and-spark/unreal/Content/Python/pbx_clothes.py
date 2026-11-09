@@ -50,18 +50,26 @@ def _import_albedo(fabric):
     return unreal.load_asset(f'{TEX}/PH_{fabric}_diff')
 
 def refresh_materials(ids=None):
-    """re-make every garment material from the json (no mesh import)"""
+    """re-make every garment material from the json and assign it to its slot (no mesh import)"""
     for cid in ids or CAST:
-        js = os.path.join(OUT, cid + '_clothes.json')
-        if not os.path.exists(js): continue
-        for g in json.load(open(js, encoding='utf-8'))['garments']: _fabric_mi(cid, g['kind'], g['fabric'], g['tint'])
-        log('materials', cid)
+        js = os.path.join(OUT, cid + '_clothes.json'); path = f'{DST}/{cid}/SKM_{cid}_Clothes'
+        if not os.path.exists(js) or not EAL.does_asset_exist(path): continue
+        info = json.load(open(js, encoding='utf-8'))['garments']; sk = unreal.load_asset(path)
+        mats = sk.get_editor_property('materials')
+        for i, m in enumerate(mats):
+            slot = str(m.get_editor_property('material_slot_name'))
+            g = next((x for x in info if slot.endswith(x['kind'])), None) or next((x for x in info if x['kind'] in slot), None)
+            if g: m.set_editor_property('material_interface', _fabric_mi(cid, g['kind'], g['fabric'], g['tint'])); mats[i] = m
+        sk.set_editor_property('materials', mats); EAL.save_asset(path)
+        log('materials', cid, [str(x.get_editor_property('material_interface').get_name()) for x in sk.get_editor_property('materials')][:3])
 
 def _fabric_mi(cid, kind, fabric, tint):
     path = f'{DST}/{cid}/MI_{cid}_{kind}'
     mi = unreal.load_asset(path) if EAL.does_asset_exist(path) else AT.create_asset(path.split('/')[-1], f'{DST}/{cid}', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     parent = unreal.load_asset(G + '/Materials/M_PBX_Surface')
-    MEL.set_material_usage(parent, unreal.MaterialUsage.MATUSAGE_SKELETAL_MESH)
+    if not parent.get_editor_property('used_with_skeletal_mesh'):
+        # the usage flag must be SAVED on the parent, or the game shows the default grid material on every garment (QA)
+        parent.set_editor_property('used_with_skeletal_mesh', True); MEL.recompile_material(parent); EAL.save_asset(G + '/Materials/M_PBX_Surface')
     mi.set_editor_property('parent', parent)
     for k, suf in (('BaseTex', '_diff'), ('NormalTex', '_nor'), ('ArmTex', '_arm')):
         tx = unreal.load_asset(f'{TEX}/PH_{fabric}{suf}')
@@ -96,7 +104,7 @@ def import_one(cid):
     for i, m in enumerate(mats):
         slot = str(m.get_editor_property('material_slot_name'))
         g = next((x for x in info if slot.endswith(x['kind'])), None) or next((x for x in info if x['kind'] in slot), info[i] if i < len(info) else None)
-        if g: m.set_editor_property('material_interface', _fabric_mi(cid, g['kind'], g['fabric'], g['tint']))
+        if g: m.set_editor_property('material_interface', _fabric_mi(cid, g['kind'], g['fabric'], g['tint'])); mats[i] = m   # the loop variable is a COPY of the struct (QA: every slot stayed WorldGrid)
     sk.set_editor_property('materials', mats); EAL.save_asset(path)
     log('imported', cid, len(mats), 'garments')
     return path

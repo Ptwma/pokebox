@@ -71,9 +71,15 @@ if OUTFIT and os.path.exists(OUTFIT):   # the torso / hips live only in the defa
     _bk.balance()
     for o in new_meshes:
         bmo = bmesh.new(); bmo.from_mesh(o.data); bmo.normal_update(); R3o = o.matrix_world.to_3x3()
+        _ob = [o.matrix_world @ v.co for v in bmo.verts if any(e.is_boundary for e in v.link_edges)]
+        _okd = KDTree(max(1, len(_ob)))
+        for i, p_ in enumerate(_ob): _okd.insert(p_, i)
+        _okd.balance()
         inner = []
         for f in bmo.faces:
-            c_ = o.matrix_world @ f.calc_center_median(); _, i_, _ = _bk.find(c_)
+            c_ = o.matrix_world @ f.calc_center_median()
+            if not _ob or _okd.find(c_)[2] > 0.035: continue          # only the folded-in hems, never the body of the garment (QA: holes)
+            _, i_, _ = _bk.find(c_)
             if (R3o @ f.normal).normalized().dot(_bw[i_][1]) < -0.6: inner.append(f)
         bmesh.ops.delete(bmo, geom=inner, context='FACES'); bmo.to_mesh(o.data); bmo.free()
         print('INNER faces dropped', len(inner))
@@ -194,7 +200,7 @@ def make(kind, fabric, tint, layer):
         edge = [v for v in bm.verts if any(e.is_boundary for e in v.link_edges)]
         bmesh.ops.smooth_vert(bm, verts=edge, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=False)
     bm.normal_update()
-    off = (spec['off'] + 0.008 + 0.007 * layer) / SCALE      # metres → the mesh's own units (an Unreal FBX imports in cm × 0.01)
+    off = (spec['off'] * 0.55 + 0.004 + 0.004 * layer) / SCALE   # metres → mesh units. QA 2026-11-09: the old 2-6 cm stack made a padded 'Michelin' suit
     for v in bm.verts: v.co += v.normal * off
     bm.to_mesh(g.data); bm.free()
     # skirt for robes / coats / skirts: a flared tube from the lowest ring of the shell down to the hem
