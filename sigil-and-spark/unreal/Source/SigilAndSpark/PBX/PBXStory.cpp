@@ -280,6 +280,18 @@ void APBXDirector::StoryPump()
 				if (UStaticMeshComponent* DC = It->FindComponentByClass<UStaticMeshComponent>())
 					if (UMaterialInstanceDynamic* MD = DC->CreateDynamicMaterialInstance(0))
 						MD->SetScalarParameterValue(TEXT("Exposure"), bNight ? .018f : FMath::Clamp(.15f + .5f * (float)K, .15f, .65f));
+			// exposure (QA 2026-11-09: the night alley and the candle-lit hall burned orange-white — auto exposure opened the
+			// dark scenes up without limit; the sunset sky was white): a darker bias everywhere, and at night an EV100 floor
+			// so a lamp-lit place stays a lamp-lit place
+			{
+				auto Expo = [bNight](FPostProcessSettings& PP)
+				{
+					PP.bOverride_AutoExposureBias = true; PP.AutoExposureBias = bNight ? -.5f : -.6f;
+					PP.bOverride_AutoExposureMinBrightness = bNight; PP.AutoExposureMinBrightness = 4.f;
+				};
+				if (Cam) { Expo(Cam->GetCameraComponent()->PostProcessSettings); Cam->GetCameraComponent()->PostProcessBlendWeight = 1.f; }
+				if (Player && Player->Camera && Player->GetActorLocation().Z > -3000.f) { Expo(Player->Camera->PostProcessSettings); Player->Camera->PostProcessBlendWeight = 1.f; }
+			}
 			if (bNight) Pitch = 12.0;
 			for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) if (ULightComponent* LC = It->GetLightComponent())
 			{

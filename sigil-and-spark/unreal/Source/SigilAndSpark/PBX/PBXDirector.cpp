@@ -395,7 +395,8 @@ void APBXDirector::ApplyPlayerLook()
 {
 	const bool bM = Game->State->bMale;
 	// he: the Fab "Free Stylized Boy" (retargeted UAL animations); she: Quaternius body + 3D clothes, cartoon proportions
-	if (Player->ApplyMetaHuman(LookId(bM, Game->State->Look)) || Player->ApplyMetaHuman(bM ? TEXT("player_m") : TEXT("player_f"))) Player->SetActorScale3D(FVector(1.f));   // phase 5 (+ r65 looks)
+	// film capture: the clips show ONE hero — player_m, the look that wears the made clothes (QA: look 0 = player_m2 in the MetaHuman t-shirt and shorts)
+	if (Player->ApplyMetaHuman(bFilmCap && bM ? FString(TEXT("player_m")) : LookId(bM, Game->State->Look)) || Player->ApplyMetaHuman(bM ? TEXT("player_m") : TEXT("player_f"))) Player->SetActorScale3D(FVector(1.f));   // phase 5 (+ r65 looks)
 	else if (bM) Player->ApplyLook(TEXT("boy"), FString(), .92f);
 	else Player->ApplyLook(TEXT("f"), TEXT("Hair_Long"), .9f, TEXT("player_f"), FLinearColor(.12f, .07f, .04f, 1));
 	Player->SetActorHiddenInGame(false);
